@@ -99,23 +99,7 @@ flowchart TB
   Rec -->|apply the answer| Mod
 ```
 
-| Boundary | Component | Job | Owns | Customer waits? | If it is down |
-|---|---|---|---|---|---|
-| Edge | Edge gateway | TLS, API key and token authentication, per-merchant rate limits, size and slow-client limits, fast 429 or 503 with `Retry-After` | nothing | Yes | Nothing can enter; scale out |
-| Edge | Cell router | Maps merchant to cell from a cached table; no payment logic | merchant-to-cell table | Yes | Uses its last known mapping |
-| Cell, sync | **Payments API** (modular core) | Create, capture, refund, status query, idempotency, PSP callback receiver | idempotency keys | Yes | Payments stop; other cells keep working |
-| Cell, sync | **Payment-transition module** | State machine, atomic refund limit, ledger and outbox writes; called by the API, reconciler, timers and callbacks | payments, attempts, refunds, ledger, outbox | Yes | Part of the callers |
-| Cell, sync | Fraud decision | Rules within about 50 ms, Redis velocity counters, fallback by risk tier, async analytics | rules, counters | Yes, with a time limit | Fallback policy applies |
-| Cell, sync | PSP adapters | One adapter per PSP behind one interface; deadline, breaker, rate limit, status inquiry, failover where allowed. A separate bulkhead per PSP; may become a service later | adapter metadata | Yes | Payment becomes `UNKNOWN` or fails fast |
-| Cell, data | PostgreSQL (primary and synchronous standbys, behind PgBouncer) | Stores all money state | all financial data | Yes | Standby takes over; committed payments are kept |
-| Cell, async | Outbox publisher | Moves committed events to the broker in batches | nothing | No | Events wait in the outbox |
-| Cell, async | Broker (Kafka or Redpanda) | Carries events to workers | event log | No | Events wait in the outbox |
-| Cell, async | Ledger projector | Builds balances and snapshots from entries; rebuildable read model | balance snapshots | No | Balances lag; payments unaffected |
-| Cell, async | Webhook dispatcher | Signed delivery, retries with backoff, dead-letter queue, per-endpoint isolation | delivery log | No | Notifications are late, never lost |
-| Cell, async | Reconciler | Resolves unknown and stuck operations; compares PSP settlement files | discrepancy records | No | Unknown payments stay unknown longer |
-| Shared | Vault and tokenization | Stores card data encrypted, issues tokens; own network segment and PCI scope | encrypted card data | Yes | Card payments cannot start |
-| Outside | PSPs and banks | Move the card money | their records | Yes | Outside our control, hence `UNKNOWN` |
-| Outside | Merchant webhook endpoints | Receive notifications | their records | No | Retry, then dead-letter |
+The [service catalog](service-catalog.md) lists each component's job, kind, deployment boundary, ownership and failure effect, plus [who calls whom](service-catalog.md#dependencies). The vault, cell router, edge gateway and six cell workers and services are the nine deployables; the payment-transition module and PSP adapters are libraries.
 
 Not on the diagram: observability, the Kubernetes platform, Redis, and the mock PSP with its load harness, which is built first. Settlement and payouts are not designed.
 
@@ -126,7 +110,7 @@ Not on the diagram: observability, the Kubernetes platform, Redis, and the mock 
 3. **Async never blocks sync.** Workers read committed data and can lag or fail without touching a payment. The reconciler and timer jobs are the exceptions that write, and only through the module. Timer jobs run in the reconciler process.
 4. **Card data stays in the vault.** Everything else sees a token.
 
-**Why not more microservices?** Splitting payment and ledger would turn one database transaction into a network call and a saga, adding failure cases and latency on the hot path. The parts that benefit from independence are already separate.
+**Why not more microservices?** Splitting payment and ledger would turn one database transaction into a network call and a saga, adding failure cases and latency on the hot path. The parts that benefit from independence are already separate, and [When to split a service](service-catalog.md#when-to-split-a-service) sets the rule for any more.
 
 ## Cells and routing
 

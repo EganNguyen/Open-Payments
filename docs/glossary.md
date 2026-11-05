@@ -10,7 +10,9 @@ Status: Draft · Last updated: 2026-11-05
 |---|---|
 | **Admission control / backpressure** | When overloaded, the system says "busy" quickly instead of letting requests pile up. |
 | **Append-only** | Records are never edited or deleted. A mistake is fixed by adding a correcting record. |
+| **Capability** | Something the platform must do. It may be a module, a library or a service, so a capability is not automatically a service. |
 | **Cell** | A complete, independent copy of the stack serving some merchants. More cells add capacity and limit the blast radius of a failure. |
+| **Deployable** | Code that runs and scales as its own process. |
 | **Double-entry ledger** | Every movement of money is written as matching debit and credit lines. If totals differ, something is wrong. |
 | **Idempotency** | Repeating a request has the same effect as doing it once, like pressing an elevator button twice. |
 | **Little's Law** | Requests in progress = requests per second × seconds each takes. |

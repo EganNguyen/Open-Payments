@@ -135,6 +135,14 @@ All values are starting points until measured. Other docs state the resulting ru
 - **Why:** Cells add routing and operations cost, and need is unmeasured.
 - **Consequence:** `merchant_id` is present from day one, so moving merchants later is a routing change.
 
+### D15
+
+**Split deployables by transaction and boundary, not by capability count.** Status: `Committed`.
+
+- **Decision:** Keep the capability map separate from the deployable list. A capability becomes its own deployable only under the [split rule](service-catalog.md#when-to-split-a-service). Start with the nine deployables already designed.
+- **Why:** Throughput doesn't set the service count. Splitting payment operations, idempotency or ledger writes would turn one database transaction into a distributed one, and would add a network hop to the payment path.
+- **Consequence:** A full platform can have 40 or more capabilities without 40 or more services. Future deployables are added only when their capability enters scope. The capability map is our own proposal, not Stripe's internal design.
+
 ## Assumptions and limits
 
 - **Numbers are targets, not measurements.** SLOs, thresholds, pool sizes and the 60% CPU target are replaced by measured values from L1 and O3.
