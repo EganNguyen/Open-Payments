@@ -59,6 +59,19 @@ macOS can't reserve cores for a process, so CPU isn't pinned. Each value below h
 
 **The memory and WAL settings gave no measurable throughput gain on their own.** The larger VM and tuned settings left host-side throughput unchanged (2,018/s against 2,027-2,078/s), since other limits were reached first. They're reasoned sizing, not proven improvements.
 
+## Expected end-to-end throughput
+
+**About 650-750 payments/s, with p99 platform overhead around 250-300 ms. This is calculated, not measured,** because the API, fraud service, PSP adapters, broker and workers aren't built.
+
+| Step | Value | Type |
+|---|---|---|
+| Clean durable commits/s | About 3,000 | Measured, one 60 s run |
+| Divide by 3.5 commits per payment | About 857 payments/s | Design formula |
+| Subtract 10-25% for writes the spike doesn't include | 640-770 payments/s | Assumed |
+| Check CPU at 5-8.5 ms per payment | About 4-6.5 of 18 cores | Mostly assumed |
+
+The SSD's flush sets this limit, not CPU, so changing CPU or memory settings won't move it much. A measured full-platform run replaces this estimate after Tasks 7-17. The [summary](../benchmarks/spike/macbook-2026-11-05/summary.md#realistic-end-to-end-performance-expectations) has the full calculation.
+
 ## What stays fixed
 
 These protect financial correctness, and no benchmark result may change them:
