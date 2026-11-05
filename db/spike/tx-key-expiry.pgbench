@@ -1,0 +1,5 @@
+-- One batch of idempotency key expiry (D19): delete keys resolved over 24 hours ago, never
+-- one with no resolved_at. Can't use a time partition, because the key must stay unique.
+begin;
+delete from idempotency_keys k using (select merchant_id, key from idempotency_keys where resolved_at < now() - interval '24 hours' limit :batch) old where k.merchant_id = old.merchant_id and k.key = old.key;
+commit;

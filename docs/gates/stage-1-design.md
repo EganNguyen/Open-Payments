@@ -45,8 +45,8 @@ Stage 1 is the spike, test tools, payment core and first ramp steps. The rules a
 | ☑ | Task 1: design docs corrected | Done, `f756607` |
 | ☑ | Task 2: API contract and event catalog drafts | Done, `ae5847d`, updated since |
 | ☑ | Task 3: replicated stack, and [commit behavior observed](../../benchmarks/spike/commit-cancel.md) | Done, `108a626` |
-| ☐ | Task 4: spike schemas and workloads | Nothing |
-| ☐ | Task 5: spike runner | Nothing |
+| ☑ | Task 4: spike schemas and workloads | Done, `511c8d9` |
+| ☑ | Task 5: [spike runner](../../benchmarks/spike/README.md), proven by a local dry run | Done |
 | ☐ | Task 6: Linux spike, D25 and D26 recorded, first migration written | Owner's choice of machines |
 | ☐ | Owner's choice of benchmark machines | Owner |
 
@@ -57,6 +57,13 @@ These block later stages. Each has a recommendation in the [spec](../superpowers
 - D36: is 5,000/s a peak or an average? Blocks L2 and G6, in Stage 4.
 - Which PSP sandbox, and one PSP or two? Blocks Stage 2.
 - Does v1 carry real money? Who owns the fraud fallback and shed order? How long is data kept? Blocks Stages 4 and 5.
+
+## Findings for Task 6 and D25
+
+Task 4 found these while writing the real schema. They need settling with the spike's results, and aren't approved yet.
+
+- **The outbox had no way to find unpublished rows.** The spike adds a partial index, `outbox_unpublished`, which isn't in the design.
+- **Time-partitioning forces two key changes (schema B).** `attempt_id` stops being unique alone, and `source_event_id` can't be globally unique, so a ledger transaction's ID must be derived from its source event ([D32](../decisions.md#d32)).
 
 ## Risks carried into the build
 

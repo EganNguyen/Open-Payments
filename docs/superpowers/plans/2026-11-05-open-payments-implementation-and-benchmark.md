@@ -12,7 +12,7 @@
 
 **Scope of this plan:** Tasks 1-17 are detailed, up to the first recorded ramp steps. The [roadmap](#roadmap-after-task-17) covers everything after that. It is enough to size and order the work, and each stage gets a detailed plan when it starts.
 
-**Status:** Tasks 1 and 2 are done. The [design review](../specs/2026-11-05-implementation-and-benchmark-design.md#what-the-review-found) and the owner's acceptance of D35, D37, D38 and D39 changed the tasks below. Tasks 1-3 are done, and Tasks 4-5 are ready to start.
+**Status:** Tasks 1 and 2 are done. The [design review](../specs/2026-11-05-implementation-and-benchmark-design.md#what-the-review-found) and the owner's acceptance of D35, D37, D38 and D39 changed the tasks below. Tasks 1-5 are done, and Task 6 needs the owner's choice of machines.
 
 | Gate | Tasks | Done by | Exit record |
 |---|---|---|---|
@@ -240,7 +240,7 @@ Expected: both exit 0.
 ### Task 5: Spike runner
 
 **Files:**
-- Create: `db/spike/run-matrix.sh`, `db/spike/matrix.yaml`, `db/spike/report.py`, `db/spike/test_report.py`, `benchmarks/spike/README.md`
+- Create: `db/spike/run-matrix.sh`, `db/spike/runner.py`, `db/spike/matrix.json`, `db/spike/report.py`, `db/spike/test_report.py`, `benchmarks/spike/README.md`
 
 **Interfaces:**
 - Produces: `benchmarks/spike/<run-id>/result.json` with `variant`, `target_tps`, `achieved_tps`, `latency_p50_ms`, `latency_p99_ms`, `primary_cpu_pct`, `wal_mb_s`, `commit_ms`, `deadlocks`, `verify_passed`, `valid`, and `benchmarks/spike/<run-id>/summary.md`.

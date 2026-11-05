@@ -1,0 +1,40 @@
+{
+  "required": {"payments": 5000, "commits_per_payment": 2, "refunds": 833, "callback_commits": 5833},
+  "baseline": {
+    "schema": "a-hash",
+    "scripts": {"sale": 90, "refund": 15},
+    "merchants": 100,
+    "refundable": 100000,
+    "entries": 2,
+    "rls": 0,
+    "pipeline": 0,
+    "batch": 100,
+    "pool": 100
+  },
+  "environments": {
+    "local": {"rates": [100], "prefill": 200000, "refundable": 10000, "clients": 32, "threads": 4},
+    "linux": {"rates": [2000, 4000, 6000, 8000, 10000, 12000, 14000, 16000], "prefill": 100000000, "clients": 256, "threads": 16}
+  },
+  "variants": [
+    {"name": "baseline", "why": "Starting point: schema A, sale mix, quorum commit, row trigger"},
+    {"name": "V1", "why": "Quorum commit off, for G3", "setup_system": ["alter system set synchronous_standby_names = ''"], "teardown_system": ["alter system reset synchronous_standby_names"]},
+    {"name": "V2", "why": "Balance trigger off, for G4", "setup": ["variant-trigger-off.sql"], "teardown": ["variant-trigger-row.sql"]},
+    {"name": "V3", "why": "Row-level security on", "set": {"scripts": {"sale": 1}, "rls": 1}, "setup": ["variant-rls-on.sql"], "teardown": ["variant-rls-off.sql"]},
+    {"name": "V4-pool50", "why": "Connection pool of 50", "set": {"pool": 50}},
+    {"name": "V4-pool200", "why": "Connection pool of 200", "set": {"pool": 200}},
+    {"name": "V4-pool400", "why": "Connection pool of 400", "set": {"pool": 400}},
+    {"name": "V5", "why": "Schema B: time-ordered partitions", "set": {"schema": "b-range"}},
+    {"name": "V6", "why": "Statements pipelined", "set": {"scripts": {"sale": 1}, "pipeline": 1}},
+    {"name": "V7", "why": "Batched idempotency key expiry running throughout", "set": {"scripts": {"sale": 90, "refund": 15, "key-expiry": 1}}},
+    {"name": "V8-m1", "why": "Refunds with one merchant", "set": {"scripts": {"refund": 1}, "merchants": 1}},
+    {"name": "V8-m100", "why": "Refunds with 100 merchants", "set": {"scripts": {"refund": 1}, "merchants": 100}},
+    {"name": "V8-m10000", "why": "Refunds with 10,000 merchants", "set": {"scripts": {"refund": 1}, "merchants": 10000}},
+    {"name": "V9-mark", "why": "Outbox publishing, marking each row", "set": {"scripts": {"sale": 100, "outbox-mark": 1}}},
+    {"name": "V9-marker", "why": "Outbox publishing, one progress marker", "set": {"scripts": {"sale": 100, "outbox-marker": 1}}},
+    {"name": "V9-log", "why": "Outbox publishing by log capture", "set": {"log_capture": true}},
+    {"name": "V10", "why": "One callback per operation, each its own transaction", "set": {"scripts": {"sale": 90, "refund": 15, "callback": 105}}},
+    {"name": "V11", "why": "Authorize and capture as two calls, instead of a sale", "set": {"scripts": {"auth-capture": 90, "refund": 15}}},
+    {"name": "V12", "why": "Balance check as a statement trigger", "setup": ["variant-trigger-statement.sql"], "teardown": ["variant-trigger-row.sql"]},
+    {"name": "V13", "why": "The full expected load together", "set": {"scripts": {"sale": 90, "refund": 15, "callback": 105, "outbox-mark": 1}}}
+  ]
+}
