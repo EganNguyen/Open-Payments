@@ -17,5 +17,6 @@ fi
 
 # A standby must not wait on standbys of its own.
 exec gosu postgres postgres -D "$PGDATA" \
-  -c config_file=/etc/postgresql/primary.conf \
+  -c config_file=/etc/postgresql/${PG_CONFIG:-primary.conf} \
+  -c shared_buffers=${STANDBY_SHARED_BUFFERS:-3GB} \
   -c synchronous_standby_names=''

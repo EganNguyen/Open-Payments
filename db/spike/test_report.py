@@ -113,3 +113,87 @@ def test_linux_summary_has_no_local_warning():
 
 def test_summary_marks_invalid_rows():
     assert "invalid" in report.render_summary([row(100, 5, valid=False)], "linux", 100)
+
+
+def test_generator_cpu_seconds_reads_the_childrens_line_of_times():
+    text = "tps = 10.0\n0m0.010s 0m0.020s\n1m2.500s 0m3.500s\n"
+    assert report.generator_cpu_seconds(text) == 66.0
+
+
+def test_generator_cpu_seconds_is_none_when_times_is_missing():
+    assert report.generator_cpu_seconds("tps = 10.0\n") is None
+
+
+def test_parse_stats_reads_cores_per_service():
+    text = "open-payments-primary-1 512.5%\nopen-payments-pgbouncer2-1 99.0%\nother 1.0%\n"
+    assert report.parse_stats(text) == {"primary": 5.125, "pgbouncer2": 0.99, "other": 0.01}
+
+
+def test_top_waits_orders_by_share_of_samples():
+    assert report.top_waits({"ClientRead": 30, "WALWrite": 10, "x": 0}, 2) == "ClientRead 75%, WALWrite 25%"
+
+
+def test_top_waits_with_no_samples_is_none():
+    assert report.top_waits({}, 3) is None
+
+
+def test_parse_ps_groups_processes_by_service():
+    text = (
+        " 150.0 postgres: primary: op_app openpayments 127.0.0.1(5) idle\n"
+        "  50.0 postgres: primary: walwriter\n"
+        "  20.0 postgres: standby1: walreceiver\n"
+        "  90.0 /opt/homebrew/opt/pgbouncer/bin/pgbouncer -d /x/run/pgbouncer3.ini\n"
+        "   5.0 /opt/homebrew/opt/postgresql@18/bin/postgres -D /x/primary -p 25432\n"
+        "  99.0 /Applications/Other.app/Other\n"
+    )
+    assert report.parse_ps(text) == {"primary": 2.0, "standby1": 0.2, "pgbouncer3": 0.9}
+
+
+def test_parse_iostat_reads_megabytes_and_transfers_from_the_last_line():
+    text = "              disk0 \n    KB/t  tps  MB/s \n   16.00  100  1.56 \n   32.00 2500 78.13 \n"
+    assert report.parse_iostat(text) == {"tps": 2500.0, "mb_s": 78.13}
+
+
+def test_parse_iostat_with_no_numbers_is_none():
+    assert report.parse_iostat("disk0\n") is None
+
+
+def test_parse_memory_free_reads_the_percentage():
+    assert report.parse_memory_free("The system has 1\nSystem-wide memory free percentage: 62%\n") == 62
+
+
+def test_parse_memory_free_without_the_line_is_none():
+    assert report.parse_memory_free("nothing") is None
+
+
+def test_aborted_clients_counts_each_abort_line():
+    text = "pgbench: error: client 1 script 0 aborted in command 2 query 0: ERROR: x\nclient 2 aborted in command 3 (SQL) of script 0\ntps = 1\n"
+    assert report.aborted_clients(text) == 2
+
+
+def test_aborted_clients_ignores_the_runs_closing_line():
+    assert report.aborted_clients("pgbench: error: Run was aborted; the above results are incomplete.\n") == 0
+
+
+def compare_row(name, target, achieved, p99, aborted=0, verified=True):
+    return {"variant": name, "target_tps": target, "achieved_tps": achieved, "commits_per_s": achieved * 2,
+            "latency_p50_ms": 10.0, "latency_p99_ms": p99, "aborted_clients": aborted,
+            "verify_passed": verified, "valid": aborted == 0, "waits": "WALWrite 50%"}
+
+
+def test_compare_lists_every_row_with_its_run():
+    text = report.compare({"run-a": [compare_row("baseline", 1000, 999.0, 100.0)]})
+    assert "| run-a | baseline | 1000 | 999.0 | 1998.0 | 10.0 | 100.0 | 0 | yes | yes | WALWrite 50% |" in text
+
+
+def test_compare_marks_a_run_that_fell_behind_or_failed_verification():
+    text = report.compare({"r": [compare_row("b", 1000, 900.0, 100.0), compare_row("b", 500, 500.0, 100.0, verified=False)]})
+    lines = [l for l in text.splitlines() if l.startswith("| r |")]
+    assert "| no | yes |" in lines[0]   # kept up: no; verified: yes
+    assert "| yes | no |" in lines[1]   # kept up: yes; verified: no
+
+
+def test_compare_shows_unknown_aborts_as_na():
+    row = compare_row("b", 1000, 1000.0, 1.0)
+    del row["aborted_clients"]
+    assert "| n/a |" in report.compare({"r": [row]})

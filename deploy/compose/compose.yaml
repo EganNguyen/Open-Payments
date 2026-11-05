@@ -6,19 +6,37 @@ name: open-payments
 x-postgres: &postgres
   image: postgres:18.6
   stop_grace_period: 30s
+  shm_size: 2g
   environment: &postgres-env
     POSTGRES_PASSWORD: op_local_only
     REPLICATOR_PASSWORD: op_local_only
     APP_PASSWORD: op_local_only
+    PG_CONFIG: ${PG_CONFIG:-primary.conf}
+    STANDBY_SHARED_BUFFERS: ${STANDBY_SHARED_BUFFERS:-3GB}
+
+x-pgbouncer: &pgbouncer
+  build: ./pgbouncer
+  depends_on:
+    primary:
+      condition: service_healthy
+  volumes:
+    - ./pgbouncer/pgbouncer.ini:/etc/pgbouncer/pgbouncer.ini:ro
+    - ./pgbouncer/userlist.txt:/etc/pgbouncer/userlist.txt:ro
+  healthcheck:
+    test: ["CMD-SHELL", "nc -z 127.0.0.1 6432"]
+    interval: 2s
+    timeout: 3s
+    retries: 30
 
 services:
   primary:
     <<: *postgres
-    command: ["postgres", "-c", "config_file=/etc/postgresql/primary.conf"]
+    command: ["postgres", "-c", "config_file=/etc/postgresql/${PG_CONFIG:-primary.conf}"]
     ports:
       - "127.0.0.1:15432:5432"
     volumes:
       - ./postgres/primary.conf:/etc/postgresql/primary.conf:ro
+      - ./postgres/primary.macbook.conf:/etc/postgresql/primary.macbook.conf:ro
       - ./postgres/init-primary.sh:/docker-entrypoint-initdb.d/10-init-primary.sh:ro
       - primary-data:/var/lib/postgresql
     healthcheck:
@@ -36,6 +54,7 @@ services:
         condition: service_healthy
     volumes:
       - ./postgres/primary.conf:/etc/postgresql/primary.conf:ro
+      - ./postgres/primary.macbook.conf:/etc/postgresql/primary.macbook.conf:ro
       - ./postgres/start-standby.sh:/usr/local/bin/start-standby.sh:ro
       - standby1-data:/var/lib/postgresql
     healthcheck: &standby-health
@@ -53,25 +72,35 @@ services:
         condition: service_healthy
     volumes:
       - ./postgres/primary.conf:/etc/postgresql/primary.conf:ro
+      - ./postgres/primary.macbook.conf:/etc/postgresql/primary.macbook.conf:ro
       - ./postgres/start-standby.sh:/usr/local/bin/start-standby.sh:ro
       - standby2-data:/var/lib/postgresql
     healthcheck: *standby-health
 
   pgbouncer:
-    build: ./pgbouncer
-    depends_on:
-      primary:
-        condition: service_healthy
+    <<: *pgbouncer
     ports:
       - "127.0.0.1:16432:6432"
+
+  # More PgBouncer processes, each single-threaded, for the spike's scaling runs.
+  pgbouncer2:
+    <<: *pgbouncer
+    profiles: [spike]
+  pgbouncer3:
+    <<: *pgbouncer
+    profiles: [spike]
+  pgbouncer4:
+    <<: *pgbouncer
+    profiles: [spike]
+
+  # Runs pgbench inside the Docker VM, so port forwarding isn't part of the measurement.
+  generator:
+    image: postgres:18.6
+    profiles: [spike]
+    entrypoint: ["sleep", "infinity"]
+    stop_grace_period: 1s
     volumes:
-      - ./pgbouncer/pgbouncer.ini:/etc/pgbouncer/pgbouncer.ini:ro
-      - ./pgbouncer/userlist.txt:/etc/pgbouncer/userlist.txt:ro
-    healthcheck:
-      test: ["CMD-SHELL", "nc -z 127.0.0.1 6432"]
-      interval: 2s
-      timeout: 3s
-      retries: 30
+      - ../..:/workspace
 
 volumes:
   primary-data:

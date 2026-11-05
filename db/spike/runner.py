@@ -3,7 +3,10 @@
 Each variant changes one thing from the baseline. Each rate gets a warm-up, then a measured
 run at a fixed arrival rate, and the data is verified afterward.
 """
+import collections
+import csv
 import glob
+import io
 import json
 import os
 import pathlib
@@ -22,12 +25,18 @@ COMPOSE = ["docker", "compose", "-f", str(ROOT / "deploy/compose/compose.yaml")]
 
 ADMIN = os.environ.get("DB_ADMIN_URL", "postgres://postgres:op_local_only@127.0.0.1:15432/openpayments")
 APP = os.environ.get("DB_URL", "postgres://op_app:op_local_only@127.0.0.1:16432/openpayments")
-BOUNCER_ADMIN = os.environ.get("DB_BOUNCER_ADMIN_URL", "postgres://postgres:op_local_only@127.0.0.1:16432/pgbouncer")
+# Comma-separated, one per PgBouncer process. The pool size is shared between them. Empty: no pooler.
+BOUNCER_ADMINS = [u for u in os.environ.get("DB_BOUNCER_ADMIN_URL", "postgres://postgres:op_local_only@127.0.0.1:16432/pgbouncer").split(",") if u]
+# A container to run pgbench and pooler commands in. It mounts the repo at /workspace.
+GENERATOR = os.environ.get("SPIKE_GENERATOR")
+SET = json.loads(os.environ.get("SPIKE_SET", "{}"))  # overrides the settings of every variant
 ENVIRONMENT = os.environ.get("SPIKE_ENV", "local")
 MEASURE = int(os.environ.get("MEASURE_SECONDS", "600"))
 WARMUP = int(os.environ.get("WARMUP_SECONDS", "120"))
 ONLY = [v for v in os.environ.get("ONLY", "").split(",") if v]
 RATES = [int(r) for r in os.environ.get("RATES", "").split(",") if r]  # overrides the matrix's rates
+REUSE_DATA = bool(os.environ.get("REUSE_DATA"))  # keep the loaded data for the first variant
+LABEL = os.environ.get("SPIKE_LABEL", "")  # added to the run ID
 CPU_COMMAND = os.environ.get("SPIKE_CPU_COMMAND")  # on Linux: prints the primary's CPU percent
 
 
@@ -66,33 +75,94 @@ def reset(settings):
     sql_file("seed-finish.sql", f"refundable={settings['refundable']}")
 
 
+def in_generator(args):
+    """Runs a command where the load comes from: in the generator container if there is one."""
+    return (["docker", "exec", GENERATOR] if GENERATOR else []) + args
+
+
+def inside(path):
+    """A repo path as the generator sees it."""
+    return str(path).replace(str(ROOT), "/workspace") if GENERATOR else str(path)
+
+
 def set_pool(size):
-    subprocess.run(["psql", BOUNCER_ADMIN, "-XAtq", "-c", f"set default_pool_size = {size}"],
-                   check=True, capture_output=True, text=True)
+    for url in BOUNCER_ADMINS:
+        subprocess.run(in_generator(["psql", url, "-XAtq", "-c", f"set default_pool_size = {size // len(BOUNCER_ADMINS)}"]),
+                       check=True, capture_output=True, text=True)
 
 
-def container_cpu(service):
-    """A container's CPU as a percent of the whole machine it can use."""
-    name = subprocess.run(COMPOSE + ["ps", "-q", service], capture_output=True, text=True).stdout.strip()
-    out = subprocess.run(["docker", "stats", "--no-stream", "--format", "{{.CPUPerc}}", name],
-                         capture_output=True, text=True).stdout.strip().rstrip("%")
-    cpus = int(subprocess.run(["docker", "info", "--format", "{{.NCPU}}"], capture_output=True, text=True).stdout)
-    return float(out) / cpus if out else 0.0
+NATIVE = os.environ.get("SPIKE_STACK") == "native"  # sample processes rather than containers
+CPUS = os.cpu_count() if NATIVE else int(subprocess.run(["docker", "info", "--format", "{{.NCPU}}"], capture_output=True, text=True).stdout or 1)
+
+
+def mean(values, digits=2):
+    return round(statistics.mean(values), digits) if values else None
 
 
 class Sampler(threading.Thread):
+    """Samples CPU per service, what backends wait on, and the pooler's queue."""
+
     def __init__(self):
         super().__init__(daemon=True)
         self.stop_flag = threading.Event()
-        self.primary, self.bouncer = [], []
+        self.primary, self.cores = [], collections.defaultdict(list)
+        self.total, self.waits, self.cl_waiting, self.sv_active = [], collections.Counter(), [], []
+        self.disk_tps, self.disk_mb_s, self.memory_free = [], [], []
+
+    def sample_cpu(self):
+        if CPU_COMMAND:
+            self.primary.append(float(subprocess.run(CPU_COMMAND, shell=True, capture_output=True, text=True).stdout))
+            return
+        if NATIVE:
+            cores = report.parse_ps(subprocess.run(["ps", "-Ao", "%cpu=,command="], capture_output=True, text=True).stdout)
+        else:
+            out = subprocess.run(["docker", "stats", "--no-stream", "--format", "{{.Name}} {{.CPUPerc}}"],
+                                 capture_output=True, text=True).stdout
+            cores = report.parse_stats(out)
+        if "primary" in cores:
+            self.primary.append(100 * cores["primary"] / CPUS)
+        self.total.append(sum(cores.values()))
+        for service, value in cores.items():
+            self.cores[service].append(value)
+
+    def sample_waits(self):
+        out = sql("select coalesce(wait_event, 'running'), count(*) from pg_stat_activity "
+                  "where backend_type = 'client backend' and state <> 'idle' and pid <> pg_backend_pid() group by 1")
+        for line in out.splitlines():
+            name, count = line.split("|")
+            self.waits[name] += int(count)
+
+    def sample_pool(self):
+        waiting = active = 0
+        for url in BOUNCER_ADMINS:
+            out = subprocess.run(in_generator(["psql", url, "-X", "--csv", "-c", "show pools"]), capture_output=True, text=True).stdout
+            for pool in csv.DictReader(io.StringIO(out)):
+                if pool["database"] != "pgbouncer":
+                    waiting += int(pool["cl_waiting"])
+                    active += int(pool["sv_active"])
+        self.cl_waiting.append(waiting)
+        self.sv_active.append(active)
+
+    def sample_host(self):
+        disk = report.parse_iostat(subprocess.run(["iostat", "-d", "-c", "2", "-w", "1", "disk0"], capture_output=True, text=True).stdout)
+        if disk:
+            self.disk_tps.append(disk["tps"])
+            self.disk_mb_s.append(disk["mb_s"])
+        free = report.parse_memory_free(subprocess.run(["memory_pressure", "-Q"], capture_output=True, text=True).stdout)
+        if free is not None:
+            self.memory_free.append(free)
 
     def run(self):
-        while not self.stop_flag.wait(5):
-            if CPU_COMMAND:
-                self.primary.append(float(subprocess.run(CPU_COMMAND, shell=True, capture_output=True, text=True).stdout))
-            else:
-                self.primary.append(container_cpu("primary"))
-                self.bouncer.append(container_cpu("pgbouncer"))
+        while not self.stop_flag.wait(2):
+            for sample in (self.sample_cpu, self.sample_waits, self.sample_pool, self.sample_host):
+                try:
+                    sample()
+                except (subprocess.SubprocessError, ValueError):
+                    pass  # a lost sample must not end the run
+
+    def service_cores(self, prefix):
+        """The busiest matching service, on average. PgBouncer's limit is one core per process."""
+        return max((mean(v) for k, v in self.cores.items() if k.startswith(prefix)), default=None)
 
 
 class SlotReader(threading.Thread):
@@ -108,17 +178,19 @@ class SlotReader(threading.Thread):
 
 
 def pgbench(settings, rate, seconds, threads, log_prefix=None):
-    args = ["pgbench", APP, "-n", "-M", "extended", "-R", str(rate), "-T", str(seconds),
+    args = ["pgbench", APP, "-n", "-M", settings.get("protocol", "extended"), "-R", str(rate), "-T", str(seconds),
             "-c", str(settings["clients"]), "-j", str(threads)]
     for name in ("merchants", "entries", "rls", "pipeline", "refundable", "batch"):
         args += ["-D", f"{name}={settings[name]}"]
     for name, weight in settings["scripts"].items():
-        args += ["-f", f"{HERE}/tx-{name}.pgbench@{weight}"]
+        args += ["-f", f"{inside(HERE)}/tx-{name}.pgbench@{weight}"]
     if log_prefix:
-        args += ["-l", "--log-prefix", log_prefix, "--sampling-rate", "0.1"]
+        args += ["-l", "--log-prefix", inside(log_prefix), "--sampling-rate", "0.1"]
         if not settings["pipeline"]:
             args += ["-r"]
-    return subprocess.run(args, capture_output=True, text=True)
+    if GENERATOR:  # pgbench's CPU isn't this process's child, so the shell reports it
+        args = ["bash", "-c", 'pgbench "$@"; status=$?; times; exit $status', "_"] + args[1:]
+    return subprocess.run(in_generator(args), capture_output=True, text=True)
 
 
 def measure(variant, settings, rate, raw_dir):
@@ -144,6 +216,8 @@ def measure(variant, settings, rate, raw_dir):
 
     summary = report.parse_summary(result.stdout + result.stderr)
     cpu_seconds = (used_after.ru_utime + used_after.ru_stime) - (used_before.ru_utime + used_before.ru_stime)
+    if GENERATOR:
+        cpu_seconds = report.generator_cpu_seconds(result.stdout) or float("inf")
     generator_cpu = round(100 * cpu_seconds / (MEASURE * threads), 1)
 
     verify = subprocess.run(["psql", ADMIN, "-XAtq", "-v", "ON_ERROR_STOP=1", "-f", str(HERE / "verify.sql")],
@@ -157,12 +231,22 @@ def measure(variant, settings, rate, raw_dir):
         "latency_p50_ms": report.percentile(latencies, 50),
         "latency_p99_ms": report.percentile(latencies, 99),
         "commit_ms": report.commit_latency_ms(result.stdout),
-        "primary_cpu_pct": round(statistics.mean(sampler.primary), 1) if sampler.primary else None,
-        "pgbouncer_cpu_pct": round(statistics.mean(sampler.bouncer), 1) if sampler.bouncer else None,
+        "primary_cpu_pct": mean(sampler.primary, 1),
+        "primary_cores": sampler.service_cores("primary"),
+        "standby_cores": sampler.service_cores("standby"),
+        "pgbouncer_core_max": sampler.service_cores("pgbouncer"),
+        "all_cores": mean(sampler.total),
+        "waits": report.top_waits(sampler.waits, 5),
+        "pool_active": mean(sampler.sv_active, 0),
+        "pool_waiting": mean(sampler.cl_waiting, 0),
+        "disk_tps": mean(sampler.disk_tps, 0),
+        "disk_mb_s": mean(sampler.disk_mb_s, 1),
+        "memory_free_pct_min": min(sampler.memory_free, default=None),
         "generator_cpu_pct": generator_cpu,
         "wal_mb_s": round(wal_bytes / MEASURE / 1_000_000, 2),
         "deadlocks": int(after[1]) - int(before[1]),
         "failed": summary["failed"],
+        "aborted_clients": report.aborted_clients(result.stdout + result.stderr),
         "verify_passed": verify.returncode == 0,
         "valid": report.is_valid(generator_cpu, summary["failed"], summary["aborted"]),
     }
@@ -170,24 +254,26 @@ def measure(variant, settings, rate, raw_dir):
 
 def main():
     matrix = json.loads((HERE / "matrix.json").read_text())
-    run_id = time.strftime("%Y%m%d-%H%M%S") + "-" + ENVIRONMENT
+    run_id = time.strftime("%Y%m%d-%H%M%S") + "-" + ENVIRONMENT + (f"-{LABEL}" if LABEL else "")
     out = ROOT / "benchmarks/spike" / run_id
     raw = out / "raw"
     raw.mkdir(parents=True)
     rows, loaded = [], None
     tokens = report.required_commits(**matrix["required"])
     power = subprocess.run(["pmset", "-g", "batt"], capture_output=True, text=True).stdout
-    (out / "environment.txt").write_text(f"environment: {ENVIRONMENT}\nmeasure: {MEASURE}s, warm-up: {WARMUP}s\n{power}")
+    (out / "environment.txt").write_text(
+        f"environment: {ENVIRONMENT}\nmeasure: {MEASURE}s, warm-up: {WARMUP}s\nconfig: {os.environ.get('PG_CONFIG', 'primary.conf')}\n"
+        f"stack: {'native' if NATIVE else 'compose'}\ngenerator: {GENERATOR or 'host'}\napp url host: {APP.split('@')[-1]}\npoolers: {len(BOUNCER_ADMINS)}\nset: {SET}\ndocker cpus: {CPUS}\n{power}")
 
     for variant in matrix["variants"]:
         if ONLY and variant["name"] not in ONLY:
             continue
-        settings = {**matrix["baseline"], **matrix["environments"][ENVIRONMENT], **variant.get("set", {})}
+        settings = {**matrix["baseline"], **matrix["environments"][ENVIRONMENT], **variant.get("set", {}), **SET}
         print(f"{variant['name']}: {variant['why']}", flush=True)
         identity = (settings["schema"], settings["merchants"], settings["prefill"])
-        if identity != loaded:
+        if identity != loaded and not (REUSE_DATA and loaded is None):
             reset(settings)
-            loaded = identity
+        loaded = identity
         for path in variant.get("setup", []):
             sql_file(path)
         for command in variant.get("setup_system", []):

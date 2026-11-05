@@ -1,0 +1,10 @@
+environment: macbook
+measure: 40s, warm-up: 5s
+config: primary.conf
+generator: open-payments-generator-1
+app url host: pgbouncer:6432/openpayments
+poolers: 1
+set: {'clients': 800, 'threads': 8}
+docker cpus: 18
+Now drawing from 'AC Power'
+ -InternalBattery-0 (id=7733347)	91%; charging; 0:31 remaining present: true

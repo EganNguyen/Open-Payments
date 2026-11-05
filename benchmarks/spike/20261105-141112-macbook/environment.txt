@@ -1,0 +1,4 @@
+environment: macbook
+measure: 60s, warm-up: 10s
+Now drawing from 'AC Power'
+ -InternalBattery-0 (id=7733347)	46%; charging; 1:05 remaining present: true

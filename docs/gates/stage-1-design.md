@@ -47,8 +47,8 @@ Stage 1 is the spike, test tools, payment core and first ramp steps. The rules a
 | ☑ | Task 3: replicated stack, and [commit behavior observed](../../benchmarks/spike/commit-cancel.md) | Done, `108a626` |
 | ☑ | Task 4: spike schemas and workloads | Done, `511c8d9` |
 | ☑ | Task 5: [spike runner](../../benchmarks/spike/README.md), proven by a local dry run | Done, `7ceb0dd` |
-| ☐ | Task 6: Linux spike, D25 and D26 recorded, first migration written | Owner's choice of machines |
-| ☐ | Owner's choice of benchmark machines | Owner |
+| ◐ | Task 6: [MacBook spike](../benchmarks/spike/macbook-2026-11-05/summary.md) done in part. The owner stopped database-only runs on 2026-11-05, to benchmark the full platform once built | D25 and D26 approved; first migration written |
+| ☐ | Accept that G1 stays open: a MacBook can't answer it, so it needs Linux before Stage 4 | Owner |
 
 ## Open, not blocking this gate
 
@@ -60,7 +60,7 @@ These block later stages. Each has a recommendation in the [spec](../superpowers
 
 ## Findings for Task 6 and D25
 
-Task 4 found these while writing the real schema. They need settling with the spike's results, and aren't approved yet.
+Task 4 and the MacBook spike found these. They aren't approved yet. The [summary](../benchmarks/spike/macbook-2026-11-05/summary.md#proposed-decisions-not-approved) has the proposal.
 
 - **The outbox had no way to find unpublished rows.** The spike adds a partial index, `outbox_unpublished`, which isn't in the design.
 - **Time-partitioning forces two key changes (schema B).** `attempt_id` stops being unique alone, and `source_event_id` can't be globally unique, so a ledger transaction's ID must be derived from its source event ([D32](../decisions.md#d32)).
@@ -68,7 +68,8 @@ Task 4 found these while writing the real schema. They need settling with the sp
 ## Risks carried into the build
 
 - Whether Npgsql sends a cancel when its own timeout fires on a commit. Task 13 must settle it, and an answer that breaks D28 is an escalation.
-- All throughput numbers are estimates until Task 6.
+- Production throughput numbers remain estimates. The [MacBook summary](../benchmarks/spike/macbook-2026-11-05/summary.md) labels each as measured, extrapolated, assumed or unverified.
+- Most spike variants, including the full mix (V13) and two cells, weren't measured.
 
 ## Sign-off
 

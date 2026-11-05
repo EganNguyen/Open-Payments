@@ -61,6 +61,9 @@ Read them in this order if you are new.
 | [Deadlock handling](docs/deadlock-handling.md) | Risks, prevention, retry behavior, proposed automation | Before writing database transaction code |
 | [Failure scenarios](docs/failure-scenarios.md) | 51 failures, 29 edge cases, 7 runbooks, drills | You plan for things going wrong |
 | [Scaling playbook](docs/scaling-playbook.md) | Ramp plan, sizing, decision gates, results log | You plan benchmarks |
+| [Local deployment](docs/architecture/local-deployment.md) | The database tier on the MacBook: topology, resources, what stays fixed | You run it locally |
+| [Benchmark guide](docs/benchmarks/benchmark-guide.md) | Deploy, run, monitor, verify, compare and reset | You run a benchmark |
+| [MacBook summary](docs/benchmarks/spike/macbook-2026-11-05/summary.md) | Results, SLOs, bottlenecks, end-to-end and production capacity expectations | You need what's measured so far |
 | [Verification](docs/verification.md) | Test IDs, 108 production problems, 25 readiness items, build phases | You need to prove a claim or plan a build phase |
 | [API contract](api/openapi.yaml) | Draft routes and fields, frozen only after C39 ([draft guides](docs/integration-guides-draft.md)) | You call or build the API |
 | [Event catalog](docs/event-catalog.md) | Shape and contents of published events | You publish or consume events |
@@ -83,12 +86,12 @@ The clickable UX prototype and case study for the merchant dashboard and checkou
 
 **Not done:**
 
-- No code, benchmarks or real measurements.
+- No application code. Measurements cover the [database tier on one MacBook](docs/benchmarks/spike/macbook-2026-11-05/summary.md) only, which doesn't prove production capacity.
 - Not designed: payouts and settlement beyond file ingestion, marketplace features, billing, advanced fraud, and the formal PCI assessment.
 
 **Suggested next steps:**
 
-1. Run a 2-3 day database spike to measure how many payment transactions one PostgreSQL primary sustains. This answers [gate G1](docs/scaling-playbook.md#decision-gates).
+1. Close the [design gate](docs/gates/stage-1-design.md): decide D25 and D26, and write the first migration. [Gate G1](docs/scaling-playbook.md#decision-gates) needs a Linux run, because a MacBook can't answer it.
 2. Start [Phase 0](docs/verification.md#build-phases): mock PSP, load scripts, automatic correctness checks.
 3. Build the payments core test first, then run the first benchmark steps.
 

@@ -1,0 +1,10 @@
+environment: macbook
+measure: 40s, warm-up: 5s
+config: primary.conf
+generator: host
+app url host: 127.0.0.1:16432/openpayments
+poolers: 1
+set: {'clients': 256}
+docker cpus: 18
+Now drawing from 'AC Power'
+ -InternalBattery-0 (id=7733347)	89%; charging; 0:33 remaining present: true

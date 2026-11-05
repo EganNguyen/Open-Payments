@@ -12,7 +12,7 @@
 
 **Scope of this plan:** Tasks 1-17 are detailed, up to the first recorded ramp steps. The [roadmap](#roadmap-after-task-17) covers everything after that. It is enough to size and order the work, and each stage gets a detailed plan when it starts.
 
-**Status:** Tasks 1 and 2 are done. The [design review](../specs/2026-11-05-implementation-and-benchmark-design.md#what-the-review-found) and the owner's acceptance of D35, D37, D38 and D39 changed the tasks below. Tasks 1-5 are done, and Task 6 needs the owner's choice of machines.
+**Status:** Tasks 1 and 2 are done. The [design review](../specs/2026-11-05-implementation-and-benchmark-design.md#what-the-review-found) and the owner's acceptance of D35, D37, D38 and D39 changed the tasks below. Tasks 1-5 are done. Task 6 is done in part on the owner's MacBook, whose results are in the [MacBook summary](../../benchmarks/spike/macbook-2026-11-05/summary.md); its Linux run still answers G1, and D25, D26 and the first migration are open.
 
 | Gate | Tasks | Done by | Exit record |
 |---|---|---|---|
@@ -26,7 +26,7 @@ The [spec](../specs/2026-11-05-implementation-and-benchmark-design.md#owner-deci
 
 | Decision | Blocks |
 |---|---|
-| Where recorded benchmarks run | Task 6's answers, Task 17 |
+| Where the Linux benchmarks run. The MacBook can't answer G1 | G1, Task 17 |
 | [D36](../../decisions.md#d36): peak or average? | L2 and G6, in the roadmap |
 | Which PSP sandbox | Stage 2 |
 

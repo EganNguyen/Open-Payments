@@ -1,0 +1,25 @@
+[
+  {
+    "variant": "baseline",
+    "target_tps": 10000,
+    "achieved_tps": 4866.4,
+    "commits_per_s": 9732.8,
+    "latency_p50_ms": 20269.136,
+    "latency_p99_ms": 39583.787,
+    "commit_ms": 4.778,
+    "primary_cpu_pct": 42.5,
+    "primary_cores": 7.65,
+    "standby_cores": 0.41,
+    "pgbouncer_core_max": 0.48,
+    "all_cores": 12.71,
+    "waits": "ClientRead 41%, SyncRep 21%, running 11%, BufferContent 11%, WALWrite 8%",
+    "pool_active": 100,
+    "pool_waiting": 694,
+    "generator_cpu_pct": 29.5,
+    "wal_mb_s": 19.96,
+    "deadlocks": 0,
+    "failed": 0,
+    "verify_passed": true,
+    "valid": true
+  }
+]
