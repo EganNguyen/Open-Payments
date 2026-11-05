@@ -1,0 +1,13 @@
+# APIs banned in request-path projects. RS0030 reports each use.
+# The analyzer matches documentation comment IDs; one line per symbol.
+
+P:System.Threading.Tasks.Task`1.Result;Use await instead of blocking on Result.
+M:System.Threading.Tasks.Task.Wait;Use await instead of Wait.
+M:System.Threading.Tasks.Task.Wait(System.TimeSpan);Use await instead of Wait.
+M:System.Threading.Tasks.Task.Wait(System.Int32);Use await instead of Wait.
+M:System.Runtime.CompilerServices.TaskAwaiter.GetResult;Use await instead of GetResult.
+M:System.Threading.Tasks.Task.Run(System.Action);Do not start fire-and-forget work on the request path.
+M:System.Threading.Thread.#ctor;Do not create threads on the request path.
+M:Npgsql.NpgsqlConnection.Open;Use OpenAsync.
+M:System.Net.Http.HttpClient.Send;Use SendAsync.
+M:System.Net.Http.HttpClient.SendAsync(System.Net.Http.HttpRequestMessage,System.Net.Http.HttpCompletionOption,System.Threading.CancellationToken);Use the cancellation-token overload of SendAsync.

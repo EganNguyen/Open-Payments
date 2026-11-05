@@ -3,3 +3,10 @@ __pycache__/
 .pytest_cache/
 .superpowers/
 benchmarks/spike/*/raw/
+.dotnet-home/
+.nuget/
+.tools/
+bin/
+obj/
+TestResults/
+*.user

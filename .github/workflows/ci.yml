@@ -1,0 +1,46 @@
+name: ci
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-dotnet@v4
+        with:
+          global-json-file: global.json
+
+      - name: Restore
+        run: dotnet restore OpenPayments.slnx
+
+      - name: Build with warnings as errors
+        run: dotnet build OpenPayments.slnx --no-restore -warnaserror
+
+      - name: Test
+        run: dotnet test OpenPayments.slnx --no-build --logger "console;verbosity=normal"
+
+      - name: Vulnerability scan (S6)
+        shell: bash
+        run: |
+          output=$(dotnet list OpenPayments.slnx package --vulnerable --include-transitive)
+          echo "$output"
+          if grep -q "has the following vulnerable packages" <<<"$output"; then
+            echo "::error::Vulnerable NuGet packages found"
+            exit 1
+          fi
+
+      - name: License scan (S6)
+        shell: bash
+        run: |
+          dotnet tool install --global nuget-license --version 4.0.18
+          export PATH="$PATH:$HOME/.dotnet/tools"
+          nuget-license -i OpenPayments.slnx -t \
+            -a "MIT;Apache-2.0;BSD-3-Clause;BSD-2-Clause;MS-PL" \
+            -mapping scripts/license-url-mappings.json -err

@@ -1,0 +1,9 @@
+<Solution>
+  <Folder Name="/src/">
+    <Project Path="src/OpenPayments.Domain/OpenPayments.Domain.csproj" />
+  </Folder>
+  <Folder Name="/tests/">
+    <Project Path="tests/OpenPayments.Analyzers.Tests/OpenPayments.Analyzers.Tests.csproj" />
+    <Project Path="tests/OpenPayments.Domain.Tests/OpenPayments.Domain.Tests.csproj" />
+  </Folder>
+</Solution>
