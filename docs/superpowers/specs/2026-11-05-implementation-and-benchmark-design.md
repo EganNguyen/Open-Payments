@@ -104,7 +104,6 @@ These remain open. Each has a recommendation.
 | [D36](../../decisions.md#d36): is 5,000/s a peak or an average? | Peak, with a stated average | L2, G6 | L2 stays as a full day at peak |
 | Where do recorded benchmarks run? | Rent Linux machines by the hour | Task 6's answers | No G1 answer, so no first migration |
 | Which PSP sandbox, and one PSP or two in v1? | One to start; choose by its recovery mode, sale support and limit | Stage 2 | C39 can't run, so the API can't freeze |
-| Thin or full merchant events? | The middle shape in the [catalog](../../event-catalog.md#thin-or-full-events) | Stage 3 | Follows the recommendation |
 
 ## Design readiness
 

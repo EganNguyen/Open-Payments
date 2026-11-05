@@ -348,4 +348,4 @@ D25 and D26 are reserved for the spike's answers: partitioning and retention, an
 - **Shed order** in [Rules for every failure](failure-scenarios.md#rules-for-every-failure) needs owner confirmation.
 - **Repeated order references.** An optional warning for edge case E5 is not designed.
 - **Settlement and refunds.** Refunds after `SETTLED` and disputes after a partial refund are undecided. See [lifecycle open questions](payment-lifecycle.md#open-questions).
-- **Near-term documents.** The [API contract](../api/openapi.yaml) and [event catalog](event-catalog.md) are drafts. The contract freezes after C39, and thin or full events needs owner confirmation. Acceptance tests are written with the code.
+- **Near-term documents.** The [API contract](../api/openapi.yaml) and [event catalog](event-catalog.md) are drafts. The contract freezes after C39. Acceptance tests are written with the code.

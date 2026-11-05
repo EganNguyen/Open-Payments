@@ -136,7 +136,7 @@ The dependency direction is `Api` to `Transitions` and `Psp`, and those to `Doma
 
 - **Read first:** [Payment lifecycle](payment-lifecycle.md), [Payment flow](architecture.md#payment-flow) and [Deadlock handling](deadlock-handling.md).
 - **Do:** build `Decide`, then the store, then create and attempt, capture and refunds.
-- **Done when:** U1-U4, C5, C6, C31a, S1, S3, S5 and S6 pass, and are recorded in `docs/phase-gates/phase-1.md`.
+- **Done when:** U1-U4, C5, C6, C31a, C43, S1, S3, S5 and S6 pass, and are recorded in `docs/phase-gates/phase-1.md`.
 - **Watch for:** the [patterns below](#core-patterns), which cover the mistakes that cost money.
 
 ### First benchmark (Task 17)

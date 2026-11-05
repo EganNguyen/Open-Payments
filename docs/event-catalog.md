@@ -44,9 +44,9 @@ Delivery is at-least-once, so a consumer can see an event twice. A lower `sequen
 
 ## Thin or full events
 
-`Open`, for the owner to confirm. Thin events carry only an ID and let the merchant fetch the current state. Full events carry a complete copy of the payment ([Stripe research](stripe-research.md#7-fix-event-ordering)).
+Thin events carry only an ID and let the merchant fetch the current state. Full events carry a complete copy of the payment ([Stripe research](stripe-research.md#7-fix-event-ordering)).
 
-**Recommendation: the middle shape above.** Events carry IDs, state and the amounts that changed, as [the architecture](architecture.md#events-and-webhooks) already says, and merchants fetch anything else. They avoid tying event shapes to a full API object, and most handlers need no extra status read, which matters at this volume. An event's fields are versioned by its own `schema_version`, separately from the API.
+**Decided by the owner on 2026-11-05: the middle shape above.** Events carry IDs, state and the amounts that changed, as [the architecture](architecture.md#events-and-webhooks) already says, and merchants fetch anything else. They avoid tying event shapes to a full API object, and most handlers need no extra status read, which matters at this volume. An event's fields are versioned by its own `schema_version`, separately from the API.
 
 ## Compatibility
 
