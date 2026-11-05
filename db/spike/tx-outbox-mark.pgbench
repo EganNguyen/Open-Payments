@@ -1,0 +1,7 @@
+-- Publisher, marking each row published, as the design started: reads a batch with
+-- SKIP LOCKED, and updates every row. The broker call is outside the transaction here,
+-- because this measures only the database's share.
+begin;
+with batch as (select created_at, id from outbox where published_at is null order by created_at limit :batch for update skip locked)
+update outbox o set published_at = now() from batch where o.created_at = batch.created_at and o.id = batch.id;
+commit;

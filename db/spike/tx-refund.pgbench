@@ -1,0 +1,21 @@
+-- One refund: reserve, then confirm. 2 commits, with no per-account lock (D38).
+-- Each target has been captured for far more than one refund, so targets last the run.
+\set n random(1, :refundable)
+select payment_id as pid, merchant_id as mid, uuidv7() as rid, uuidv7() as res, uuidv7() as con, uuidv7() as oid from spike_refundable where n = :n \gset
+
+begin;
+insert into idempotency_keys (merchant_id, key, request_hash, payment_id, refund_id) values (:mid::uuid, :rid, '\x01', :pid::uuid, :rid::uuid) on conflict do nothing;
+update payments set refund_pending_minor = refund_pending_minor + 1, version = version + 1, updated_at = now() where id = :pid::uuid and merchant_id = :mid::uuid and state in ('CAPTURED','PARTIALLY_REFUNDED') and refunded_minor + refund_pending_minor + 1 <= captured_minor;
+insert into refunds (id, payment_id, merchant_id, amount_minor, state, psp, psp_account_id) select :rid::uuid, :pid::uuid, :mid::uuid, 1, 'PENDING', 'mock', a.id from psp_accounts a where a.merchant_id = :mid::uuid limit 1;
+insert into ledger_transactions (id, merchant_id, payment_id, kind, source_event_id, effective_at) values (:res::uuid, :mid::uuid, :pid::uuid, 'refund_reserved', :res::uuid, now());
+insert into ledger_entries (txn_id, entry_no, merchant_id, account_id, subject_id, direction, amount_minor, currency) select :res::uuid, v.no::smallint, :mid::uuid, a.id, :pid::uuid, v.dir, 1, 'USD' from (values (1, 'merchant_payable', 'D'), (2, 'refund_reserved', 'C')) v(no, type, dir) join accounts a on a.merchant_id = :mid::uuid and a.account_type = v.type;
+commit;
+
+begin;
+update payments set refunded_minor = refunded_minor + 1, refund_pending_minor = refund_pending_minor - 1, state = case when refunded_minor + 1 = captured_minor then 'REFUNDED' else 'PARTIALLY_REFUNDED' end, event_seq = event_seq + 1, version = version + 1, updated_at = now() where id = :pid::uuid and merchant_id = :mid::uuid and refund_pending_minor >= 1;
+update refunds set state = 'SUCCEEDED', psp_reference = :rid where id = :rid::uuid and state in ('PENDING','UNKNOWN');
+update idempotency_keys set response_code = 200, response_body = '{"state":"SUCCEEDED"}', resolved_at = now() where merchant_id = :mid::uuid and key = :rid;
+insert into ledger_transactions (id, merchant_id, payment_id, kind, source_event_id, effective_at) values (:con::uuid, :mid::uuid, :pid::uuid, 'refund', :con::uuid, now());
+insert into ledger_entries (txn_id, entry_no, merchant_id, account_id, subject_id, direction, amount_minor, currency) select :con::uuid, v.no::smallint, :mid::uuid, a.id, :pid::uuid, v.dir, 1, 'USD' from (values (1, 'refund_reserved', 'D'), (2, 'psp_refund_payable', 'C')) v(no, type, dir) join accounts a on a.merchant_id = :mid::uuid and a.account_type = v.type;
+insert into outbox (id, merchant_id, aggregate_id, event_type, sequence, schema_version, payload) select :oid::uuid, :mid::uuid, :pid::uuid, 'payment.refunded', event_seq, 1, '{}' from payments where id = :pid::uuid;
+commit;

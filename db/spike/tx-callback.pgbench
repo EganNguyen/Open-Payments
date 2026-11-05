@@ -1,0 +1,10 @@
+-- One PSP callback that is already reflected in the payment: record it and apply it in
+-- one transaction (D30). The conditional update finds nothing to change, the common case
+-- when the synchronous answer got there first. 1 commit.
+\set n random(1, :refundable)
+select payment_id as pid, merchant_id as mid, uuidv7() as eid from spike_refundable where n = :n \gset
+
+begin;
+insert into psp_events (psp_account_id, psp_event_id, payload, processed_at) select a.id, :eid, '{"type":"payment.captured"}', now() from psp_accounts a where a.merchant_id = :mid::uuid limit 1 on conflict do nothing;
+update payments set version = version + 1 where id = :pid::uuid and merchant_id = :mid::uuid and state = 'PSP_PENDING';
+commit;

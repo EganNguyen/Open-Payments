@@ -1,0 +1,8 @@
+-- Publisher, keeping one progress marker instead of updating each row.
+-- This measures load only. A real marker can't simply use created_at, because a transaction
+-- that started earlier can commit later and be skipped, so choosing this option would need a
+-- commit-safe position, such as one held back to the oldest open transaction.
+begin;
+select count(*) as read_rows from (select id from outbox where created_at > (select position from spike_outbox_position) order by created_at limit :batch) r;
+update spike_outbox_position set position = coalesce((select max(created_at) from (select created_at from outbox where created_at > position order by created_at limit :batch) r), position);
+commit;

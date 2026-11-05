@@ -1,0 +1,40 @@
+-- One auto-captured payment as one PSP call (D29): transaction A, then transaction B.
+-- 2 commits. The PSP wait between them holds no connection, so it isn't modeled here.
+-- IDs come from one read outside the transactions, because pgbench can't make UUIDs.
+-- A real client generates them, so that read is one round trip more than production.
+\set m random_zipfian(1, :merchants, 1.1)
+\set amount random(100, 100000)
+select uuidv7() as pid, uuidv7() as aid, uuidv7() as lid, uuidv7() as oid, md5('m' || :m)::uuid as mid, md5('a' || :m)::uuid as pa \gset
+
+\if :pipeline
+\startpipeline
+\endif
+begin;
+\if :rls
+select set_config('app.merchant_id', :mid, true);
+\endif
+insert into idempotency_keys (merchant_id, key, request_hash, payment_id, attempt_id) values (:mid::uuid, :pid, '\x01', :pid::uuid, :aid::uuid) on conflict do nothing;
+insert into payments (id, merchant_id, state, amount_minor, currency, attempt_count, expires_at) values (:pid::uuid, :mid::uuid, 'PSP_PENDING', :amount, 'USD', 1, now() + interval '24 hours');
+insert into payment_attempts (attempt_id, payment_id, merchant_id, operation, psp, psp_account_id, state, method_ref, method_type) values (:aid::uuid, :pid::uuid, :mid::uuid, 'sale', 'mock', :pa::uuid, 'PENDING', 'tok', 'card');
+commit;
+\if :pipeline
+\endpipeline
+\endif
+
+\if :pipeline
+\startpipeline
+\endif
+begin;
+\if :rls
+select set_config('app.merchant_id', :mid, true);
+\endif
+update payments set state = 'CAPTURED', captured_minor = :amount, event_seq = event_seq + 1, version = version + 1, updated_at = now() where id = :pid::uuid and merchant_id = :mid::uuid and state = 'PSP_PENDING';
+update payment_attempts set state = 'SUCCEEDED', psp_reference = :aid where payment_id = :pid::uuid and attempt_id = :aid::uuid and state = 'PENDING';
+update idempotency_keys set response_code = 200, response_body = '{"state":"CAPTURED"}', resolved_at = now() where merchant_id = :mid::uuid and key = :pid;
+insert into ledger_transactions (id, merchant_id, payment_id, kind, source_event_id, effective_at) values (:lid::uuid, :mid::uuid, :pid::uuid, 'capture', :lid::uuid, now());
+insert into ledger_entries (txn_id, entry_no, merchant_id, account_id, subject_id, direction, amount_minor, currency) select :lid::uuid, v.no::smallint, :mid::uuid, md5(v.type || ':' || :m)::uuid, :pid::uuid, v.dir, :amount, 'USD' from (values (1, 'psp_receivable', 'D'), (2, 'merchant_payable', 'C'), (3, 'merchant_payable', 'D'), (4, 'fee_revenue', 'C')) v(no, type, dir) where v.no <= :entries;
+insert into outbox (id, merchant_id, aggregate_id, event_type, sequence, schema_version, payload) values (:oid::uuid, :mid::uuid, :pid::uuid, 'payment.captured', 1, 1, '{"state":"CAPTURED"}');
+commit;
+\if :pipeline
+\endpipeline
+\endif

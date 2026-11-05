@@ -1,0 +1,34 @@
+-- One payment as authorize then capture, separate PSP calls: up to 4 commits.
+-- Capture posts two ledger transactions: the hold release and the money (D21).
+\set m random_zipfian(1, :merchants, 1.1)
+\set amount random(100, 100000)
+select uuidv7() as pid, uuidv7() as aid, uuidv7() as cid, uuidv7() as hold, uuidv7() as rel, uuidv7() as money, uuidv7() as o1, uuidv7() as o2, md5('m' || :m)::uuid as mid, md5('a' || :m)::uuid as pa \gset
+
+begin;
+insert into idempotency_keys (merchant_id, key, request_hash, payment_id, attempt_id) values (:mid::uuid, :pid, '\x01', :pid::uuid, :aid::uuid) on conflict do nothing;
+insert into payments (id, merchant_id, state, amount_minor, currency, attempt_count, expires_at) values (:pid::uuid, :mid::uuid, 'PSP_PENDING', :amount, 'USD', 1, now() + interval '24 hours');
+insert into payment_attempts (attempt_id, payment_id, merchant_id, operation, psp, psp_account_id, state, method_ref, method_type) values (:aid::uuid, :pid::uuid, :mid::uuid, 'authorize', 'mock', :pa::uuid, 'PENDING', 'tok', 'card');
+commit;
+
+begin;
+update payments set state = 'AUTHORIZED', authorized_until = now() + interval '7 days', event_seq = event_seq + 1, version = version + 1, updated_at = now() where id = :pid::uuid and merchant_id = :mid::uuid and state = 'PSP_PENDING';
+update payment_attempts set state = 'SUCCEEDED', psp_reference = :aid where payment_id = :pid::uuid and attempt_id = :aid::uuid and state = 'PENDING';
+update idempotency_keys set response_code = 200, response_body = '{"state":"AUTHORIZED"}', resolved_at = now() where merchant_id = :mid::uuid and key = :pid;
+insert into ledger_transactions (id, merchant_id, payment_id, kind, source_event_id, effective_at) values (:hold::uuid, :mid::uuid, :pid::uuid, 'authorization', :hold::uuid, now());
+insert into ledger_entries (txn_id, entry_no, merchant_id, account_id, subject_id, direction, amount_minor, currency) select :hold::uuid, v.no::smallint, :mid::uuid, md5(v.type || ':' || :m)::uuid, :pid::uuid, v.dir, :amount, 'USD' from (values (1, 'auth_hold', 'D'), (2, 'auth_hold_contra', 'C')) v(no, type, dir);
+insert into outbox (id, merchant_id, aggregate_id, event_type, sequence, schema_version, payload) values (:o1::uuid, :mid::uuid, :pid::uuid, 'payment.authorized', 1, 1, '{"state":"AUTHORIZED"}');
+commit;
+
+begin;
+insert into idempotency_keys (merchant_id, key, request_hash, payment_id, attempt_id) values (:mid::uuid, :cid, '\x01', :pid::uuid, :cid::uuid) on conflict do nothing;
+insert into payment_attempts (attempt_id, payment_id, merchant_id, operation, psp, psp_account_id, state) values (:cid::uuid, :pid::uuid, :mid::uuid, 'capture', 'mock', :pa::uuid, 'PENDING');
+commit;
+
+begin;
+update payments set state = 'CAPTURED', captured_minor = :amount, authorized_until = null, event_seq = event_seq + 1, version = version + 1, updated_at = now() where id = :pid::uuid and merchant_id = :mid::uuid and state = 'AUTHORIZED';
+update payment_attempts set state = 'SUCCEEDED', psp_reference = :cid where payment_id = :pid::uuid and attempt_id = :cid::uuid and state = 'PENDING';
+update idempotency_keys set response_code = 200, response_body = '{"state":"CAPTURED"}', resolved_at = now() where merchant_id = :mid::uuid and key = :cid;
+insert into ledger_transactions (id, merchant_id, payment_id, kind, source_event_id, effective_at) values (:rel::uuid, :mid::uuid, :pid::uuid, 'hold_release', :rel::uuid, now()), (:money::uuid, :mid::uuid, :pid::uuid, 'capture', :money::uuid, now());
+insert into ledger_entries (txn_id, entry_no, merchant_id, account_id, subject_id, direction, amount_minor, currency) select case when v.no <= 2 then :rel::uuid else :money::uuid end, v.no::smallint, :mid::uuid, md5(v.type || ':' || :m)::uuid, :pid::uuid, v.dir, :amount, 'USD' from (values (1, 'auth_hold_contra', 'D'), (2, 'auth_hold', 'C'), (3, 'psp_receivable', 'D'), (4, 'merchant_payable', 'C'), (5, 'merchant_payable', 'D'), (6, 'fee_revenue', 'C')) v(no, type, dir) where v.no <= :entries + 2;
+insert into outbox (id, merchant_id, aggregate_id, event_type, sequence, schema_version, payload) values (:o2::uuid, :mid::uuid, :pid::uuid, 'payment.captured', 2, 1, '{"state":"CAPTURED"}');
+commit;

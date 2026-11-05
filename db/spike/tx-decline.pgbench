@@ -1,0 +1,18 @@
+-- One declined attempt: transaction A, then B returns the payment for another try (D16).
+-- 2 commits, no ledger rows.
+\set m random_zipfian(1, :merchants, 1.1)
+\set amount random(100, 100000)
+select uuidv7() as pid, uuidv7() as aid, uuidv7() as oid, md5('m' || :m)::uuid as mid, md5('a' || :m)::uuid as pa \gset
+
+begin;
+insert into idempotency_keys (merchant_id, key, request_hash, payment_id, attempt_id) values (:mid::uuid, :pid, '\x01', :pid::uuid, :aid::uuid) on conflict do nothing;
+insert into payments (id, merchant_id, state, amount_minor, currency, attempt_count, expires_at) values (:pid::uuid, :mid::uuid, 'PSP_PENDING', :amount, 'USD', 1, now() + interval '24 hours');
+insert into payment_attempts (attempt_id, payment_id, merchant_id, operation, psp, psp_account_id, state, method_ref, method_type) values (:aid::uuid, :pid::uuid, :mid::uuid, 'sale', 'mock', :pa::uuid, 'PENDING', 'tok', 'card');
+commit;
+
+begin;
+update payments set state = 'AWAITING_METHOD', event_seq = event_seq + 1, version = version + 1, updated_at = now() where id = :pid::uuid and merchant_id = :mid::uuid and state = 'PSP_PENDING';
+update payment_attempts set state = 'FAILED', failure_code = 'card_declined' where payment_id = :pid::uuid and attempt_id = :aid::uuid and state = 'PENDING';
+update idempotency_keys set response_code = 402, response_body = '{"state":"AWAITING_METHOD"}', resolved_at = now() where merchant_id = :mid::uuid and key = :pid;
+insert into outbox (id, merchant_id, aggregate_id, event_type, sequence, schema_version, payload) values (:oid::uuid, :mid::uuid, :pid::uuid, 'payment.attempt_failed', 1, 1, '{"failure_code":"card_declined"}');
+commit;
