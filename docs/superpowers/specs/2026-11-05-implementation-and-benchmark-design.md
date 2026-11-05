@@ -31,7 +31,7 @@ The design is strong on one question: did our own write succeed safely? Its weak
 | 1 | "PSP says not found, so the attempt failed" isn't safe | A delayed request can land after the lookup. The customer then pays on a new attempt and is charged twice. This was the design's main crash-recovery path | [D27](../../decisions.md#d27): only proof fails an attempt |
 | 2 | Inquiry by our ID is assumed, but real PSPs don't work that way | [Stripe](https://docs.stripe.com/error-low-level) recovers by replaying the same key, and warns against any retry after 24 hours. [Its Search](https://docs.stripe.com/search) can lag an hour in outages. [Adyen](https://docs.adyen.com/api-explorer/Checkout/latest/post/payments/_paymentPspReference_/cancels) offers cancel by our reference | [D27](../../decisions.md#d27): each adapter declares its recovery mode |
 | 3 | A replay after the PSP's key retention can run as a new charge | The docs treated the same key as safe forever. Stripe's retention is [at least 24 hours](https://docs.stripe.com/api/idempotent_requests), and Adyen's [7 days or more](https://docs.adyen.com/development-resources/api-idempotency) | [D27](../../decisions.md#d27), [D34](../../decisions.md#d34): timers ordered, replay window bounded |
-| 4 | Cancelling during `COMMIT` can silently break RPO 0 | PostgreSQL [keeps the transaction committed locally](https://paquier.xyz/postgresql-2/track-commit-synchronous/) and only warns. The guide's own sample code passed a cancellable token | [D28](../../decisions.md#d28), test C43 |
+| 4 | Cancelling during `COMMIT` can silently break RPO 0 | [Observed on 18.6](../../../benchmarks/spike/commit-cancel.md): a cancel returns a normal `COMMIT` success with a warning, while no standby has the row. `statement_timeout` doesn't limit the wait either. The guide's own sample code passed a cancellable token | [D28](../../decisions.md#d28), test C43 |
 | 5 | A callback could be marked seen, then lost in a crash | Inserting into `psp_events` and applying were separate steps, and dedupe would then drop the retry | [D30](../../decisions.md#d30) |
 | 6 | An `AUTHORIZED` payment has no way out but capture | A merchant can't release a customer's funds. `auth_hold` never clears, so CK7 would page on every uncaptured payment. Late approvals need a person | [D37](../../decisions.md#d37), accepted |
 | 7 | Replays answered with a stale result, and refusals were undefined | A stored 202 goes stale once the operation resolves | [D31](../../decisions.md#d31) |
@@ -116,7 +116,7 @@ These remain open. Each has a recommendation.
 | State machine, including void and expiry | `READY` | Authorization window per PSP | U2, C50 |
 | Pure `Decide` and shell | `READY` | Nothing | U2, U3 |
 | Idempotency | `READY` | Key expiry method | E1-E4, E25-E29, C5, C41; V7 |
-| Commit semantics | `READY` | Confirm on our version | C43 |
+| Commit semantics | `READY` | Server behavior [observed](../../../benchmarks/spike/commit-cancel.md); Npgsql's timeout behavior to confirm | Task 13, C43 |
 | PSP recovery contract | `READY` | Each adapter's mode, once a PSP is chosen | C44, C45, U5 |
 | Merchant PSP accounts | `READY` | Onboarding flow, with the merchant platform | C51, U6 |
 | PSP adapter for a real provider | `NEEDS-OWNER` | Which PSP | Then C39 |
@@ -172,7 +172,7 @@ Each is checked by a named test with a recorded run. **Exact values are from the
 | Same key, 100 concurrent | One payment, one effect, identical answers | C5 |
 | Late landing | With a not-found then a late approval: attempt not failed on the lookup, 0 extra charges | C44 |
 | Key retention | Past retention, 0 replays sent | C45 |
-| Ambiguous commit | Across forced faults on A and B: 0 PSP calls after a failed A, 0 declines after a failed B, 0 answers of success without a standby copy | C43 |
+| Ambiguous commit | Across forced faults on A and B: 0 cancel requests sent during `COMMIT`, 0 PSP calls after an unknown A, 0 declines after an unknown B, 0 answers of success without a standby copy, and the wait stops at its limit | C43 |
 | Client disconnect | Disconnect after A: the attempt reaches a final state, and a retry returns it | E3 |
 | Refund limit | 50 concurrent refunds above captured: `refunded + pending` never above captured | C6, CK3 |
 | Ledger | Every `txn_id` balances per currency, and 0 rows changed or deleted | CK1, U3 |
@@ -305,7 +305,7 @@ Stop and bring the evidence to the owner when:
 
 **For measurement:** every `MEASURE-FIRST` row in the [readiness table](#design-readiness).
 
-**Not verified by this review:** our reading of cancel during the synchronous wait comes from PostgreSQL's mailing lists and a committer's post, so C43 confirms it on our version. Adyen's rate limit and lookup behavior weren't confirmed. The PCI points come from vendor sources and need an assessor. Licensing depends on jurisdiction and needs legal advice.
+**Not verified by this review:** Whether Npgsql sends a cancel when its own timeout fires on a commit is untested, and Task 13 must settle it. Adyen's rate limit and lookup behavior weren't confirmed. The PCI points come from vendor sources and need an assessor. Licensing depends on jurisdiction and needs legal advice.
 
 ## Evidence
 

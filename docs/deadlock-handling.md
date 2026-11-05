@@ -73,7 +73,7 @@ public async Task<T> RunAsync<T>(Func<NpgsqlTransaction, Task<T>> work, Cancella
         try
         {
             var result = await work(tx);
-            await tx.CommitAsync(CancellationToken.None); // never cancelled (D28)
+            await CommitWithWaitLimitAsync(tx); // no cancel is ever sent; see D28
             return result;
         }
         catch (PostgresException e) when (

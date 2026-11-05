@@ -32,7 +32,7 @@ builder.Services.AddRateLimiter(o =>
 
 **Bounded concurrency in the process.** Fan-out work (webhook sends, event handling) uses a bounded `Channel<T>` with fixed workers, or `Parallel.ForEachAsync` with `MaxDegreeOfParallelism`. No fire-and-forget `Task.Run`, and no unbounded `Task.WhenAll` over input-sized lists.
 
-**Deadlines.** A request has a total budget of 5 s: fraud 50 ms, PSP up to 2.5 s, each database call 200 ms. The attempt timeout (starting at 30 s) stays above all of these and below the PSP's key retention ([D34](decisions.md#d34)). The `CancellationToken` is passed into every async call (analyzer CA2016 is enabled), so abandoned work stops, with two exceptions: `COMMIT` is never cancelled ([D28](decisions.md#d28)), and once transaction A has committed, the request's token gives way to a deadline token.
+**Deadlines.** A request has a total budget of 5 s: fraud 50 ms, PSP up to 2.5 s, each database call 200 ms. The attempt timeout (starting at 30 s) stays above all of these and below the PSP's key retention ([D34](decisions.md#d34)). The `CancellationToken` is passed into every async call (analyzer CA2016 is enabled), so abandoned work stops, with two exceptions: `COMMIT` is never cancelled, and has its own wait limit, starting at 3 s, because `statement_timeout` doesn't cover it ([D28](decisions.md#d28)). Once transaction A has committed, the request's token gives way to a deadline token.
 
 **Kestrel limits:**
 

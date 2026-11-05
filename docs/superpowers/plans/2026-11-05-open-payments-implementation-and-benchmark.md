@@ -590,7 +590,10 @@ Expected: PASS.
 - Produces:
 ```csharp
 Task<T> TxRunner.RunAsync<T>(MerchantId m, Func<NpgsqlConnection, NpgsqlTransaction, CancellationToken, Task<T>> work, CancellationToken ct);
-// ct applies to the work, never to COMMIT. A failed COMMIT throws CommitOutcomeUnknownException.
+// ct applies to the work, never to COMMIT. After the 3 s wait limit, a dropped connection,
+// or a "canceling wait" warning, COMMIT throws CommitOutcomeUnknownException.
+// Check how Npgsql's Command Timeout and Cancellation Timeout behave first. If its timeout
+// sends a cancel, enforce the limit outside the driver and close the socket instead.
 Task<KeyLookup> PaymentStore.ReadKeyAsync(MerchantId m, string key, byte[] requestHash, CancellationToken ct);
 // NotFound | Finished(StoredResponse) | Unresolved(PaymentView) | InFlight | HashMismatch
 Task<BeginResult> PaymentStore.BeginAttemptAsync(BeginAttempt cmd, CancellationToken ct);
@@ -615,7 +618,9 @@ Task<ApplyResult> PaymentStore.ApplyAsync(PaymentId p, PaymentCommand c, StoredR
 [Fact] public Task Ledger_role_cannot_update_or_delete();       // U3 append-only
 [Fact] public Task Resolved_at_set_in_same_transaction_as_final_state();
 [Fact] public Task C43_commit_ignores_request_cancellation();         // standbys stalled, token cancelled
+[Fact] public Task C43_commit_wait_limit_sends_no_cancel_and_reports_unknown(); // assert via server log: no "canceling wait"
 [Fact] public Task C43_failed_commit_reports_unknown_not_failure();   // connection dropped during COMMIT
+[Fact] public Task C43_commit_warning_is_treated_as_unknown_and_counted();      // injected cancel from outside the runner
 [Fact] public Task Key_conflict_does_not_abort_the_transaction();     // ON CONFLICT DO NOTHING
 [Fact] public Task E29_refusal_stores_no_key();
 ```

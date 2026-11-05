@@ -227,11 +227,11 @@ D25 and D26 are reserved for the spike's answers: partitioning and retention, an
 
 ### D28
 
-**Never cancel a commit, and treat a failed commit as unknown.** Status: `Committed`.
+**Never cancel a commit, limit the wait, and treat any interruption as unknown.** Status: `Committed`, amended 2026-11-05 after [observing the behavior](../benchmarks/spike/commit-cancel.md).
 
-- **Decision:** `COMMIT` runs with no cancellation token. If a commit fails or the connection drops, the outcome is unknown. After a failed transaction A, the PSP is not called and the client gets 503. After a failed transaction B, the client gets 202 and the attempt stays findable.
-- **Why:** PostgreSQL treats a cancel during the synchronous wait as a [warning, and the transaction stays committed locally](https://paquier.xyz/postgresql-2/track-commit-synchronous/), possibly unreplicated. By our reading of that behavior, a cancelled request could silently break RPO 0, and a client could be told about a commit that a failover then loses.
-- **Consequence:** The transaction runner keeps commit out of the request's cancellation. Test C43 stalls both standbys and cancels during commit, to confirm the behavior on the version we run.
+- **Decision:** No cancel request is ever sent during `COMMIT`. A commit that exceeds its wait limit (starting at 3 s) is abandoned by dropping the connection, without a cancel, and its outcome is unknown. So is any failed commit or dropped connection. A server warning during `COMMIT` that the wait was cancelled also makes the outcome unknown, and pages. After an unknown transaction A, the PSP is not called and the client gets 503. After an unknown transaction B, the client gets 202 and the attempt stays findable.
+- **Why:** On PostgreSQL 18.6, directly and through PgBouncer, a cancel during the synchronous wait returned **a normal `COMMIT` success with a warning**, while the row was visible on the primary and on neither stalled standby. A failover at that moment would lose a commit the client was told about. `statement_timeout` doesn't limit this wait, so a stalled commit would otherwise hang for as long as both standbys are stalled, breaking the rule that every wait has a limit.
+- **Consequence:** The transaction runner keeps commit out of the request's cancellation and owns the wait limit. If both standbys stall, each abandoned connection holds a pool slot until they recover, so the database concurrency limit sheds new work and writes stop until a standby returns. That is the correct price of RPO 0. Task 13 must prove Npgsql sends no cancel when its timeout fires. Test C43 covers the full path.
 
 ### D29
 

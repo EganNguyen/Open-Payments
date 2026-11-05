@@ -1,0 +1,2 @@
+"op_app" "op_local_only"
+"postgres" "op_local_only"
