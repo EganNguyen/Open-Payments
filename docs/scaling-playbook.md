@@ -182,7 +182,7 @@ A gate is a measured question with a recorded answer. Do not go past an unresolv
 | Gate | Question | If the answer is no |
 |---|---|---|
 | G1: Database | Can one primary sustain the measured write rate at 60% CPU or less with synchronous replication on? | Split into [cells](architecture.md#cells-and-routing) and repeat steps 4-9 per cell |
-| G2: PSP | Do the PSP contract and real sandbox allow the target rate and latency? Ask the PSP before Phase 2, since [default limits](architecture.md#psp-integration) can be far below target and depend on [how accounts are held](decisions.md#d35) | Add PSPs or renegotiate before more engineering |
+| G2: PSP | Do the PSP contract and real sandbox allow the target rate and latency? Ask the PSP before Phase 2. [Limits are per merchant account](decisions.md#d35), so check them against expected traffic per merchant, and especially the largest merchant | That merchant raises its limit, adds a PSP or sheds at its limit. It doesn't stop other merchants |
 | G3: Commit latency | Does synchronous replication keep overhead p99 within 100 ms? | Tune commit batching or add cells. Moving to asynchronous replication gives up zero data loss and is an owner decision |
 | G4: Ledger check | Is the deferred balance trigger affordable at full load? | Replace it with the continuous audit query plus [property tests](architecture.md#ledger) |
 | G5: Headroom | Does the system meet the SLO with one instance or one zone lost? | Add capacity or fix failover before sign-off |
@@ -231,7 +231,7 @@ Next step:
 | PSP simulator | Configurable latency, failures and throughput limit |
 | Load test automation | Repeatable full ramp from one command |
 | Observability dashboards | All [metrics](engineering-standards.md#observability) visible |
-| Failure injection | C1-C49 pass (C33 only if cells are adopted); no lost or duplicate successful payments |
+| Failure injection | C1-C51 pass (C33 only if cells are adopted; C35 only with fees or payouts); no lost or duplicate successful payments |
 | Final capacity report | 5,000 completed payments/s sustained for 60 min with gates met |
 
 **Report outline:**

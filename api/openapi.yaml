@@ -153,6 +153,30 @@ paths:
           $ref: '#/components/responses/Busy'
         '503':
           $ref: '#/components/responses/Busy'
+  /v1/payments/{id}/void:
+    post:
+      tags: [Payments]
+      operationId: voidPayment
+      summary: Release an authorized payment before capture
+      description: A capture and a void can't both be live. A 202 means the void is unresolved and the payment stays AUTHORIZED.
+      parameters:
+        - $ref: '#/components/parameters/Id'
+        - $ref: '#/components/parameters/IdempotencyKey'
+      responses:
+        '200':
+          $ref: '#/components/responses/Payment'
+        '202':
+          $ref: '#/components/responses/PaymentStillChecking'
+        '401':
+          $ref: '#/components/responses/Problem'
+        '404':
+          $ref: '#/components/responses/Problem'
+        '409':
+          $ref: '#/components/responses/Conflict'
+        '429':
+          $ref: '#/components/responses/Busy'
+        '503':
+          $ref: '#/components/responses/Busy'
   /v1/payments/{id}/refunds:
     post:
       tags: [Refunds]
@@ -296,7 +320,7 @@ components:
       pattern: '^[A-Z]{3}$'
     Method:
       type: object
-      description: How to pay, by reference. Never card data, which stays in the vault.
+      description: How to pay, by reference. Never card data, which PSP-hosted fields collect.
       required: [type, ref]
       properties:
         type:
@@ -305,7 +329,7 @@ components:
           examples: [card]
         ref:
           type: string
-          description: A token for the method.
+          description: The PSP's token for the method.
         details:
           type: object
           description: Typed by `type`.
@@ -390,7 +414,7 @@ components:
           format: uuid
         state:
           type: string
-          enum: [AWAITING_METHOD, PSP_PENDING, ACTION_REQUIRED, UNKNOWN, REVIEW, AUTHORIZED, CAPTURED, PARTIALLY_REFUNDED, REFUNDED, CANCELED]
+          enum: [AWAITING_METHOD, PSP_PENDING, ACTION_REQUIRED, UNKNOWN, REVIEW, AUTHORIZED, CAPTURED, PARTIALLY_REFUNDED, REFUNDED, CANCELED, VOIDED, EXPIRED]
         amount_minor:
           $ref: '#/components/schemas/AmountMinor'
         currency:

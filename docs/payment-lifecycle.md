@@ -51,8 +51,8 @@ stateDiagram-v2
   PSP_PENDING --> PROCESSING: accepted, result later (Proposed)
   PROCESSING --> CAPTURED: finalized (Proposed)
   PROCESSING --> AWAITING_METHOD: failed later (Proposed)
-  AUTHORIZED --> VOIDED: void (Proposed)
-  AUTHORIZED --> EXPIRED: window ends (Proposed)
+  AUTHORIZED --> VOIDED: PSP confirms void
+  AUTHORIZED --> EXPIRED: authorization window ends
   CAPTURED --> SETTLED: settlement matches (Proposed)
   SETTLED --> PAID_OUT: payout sent (Proposed)
   CAPTURED --> DISPUTED: chargeback opened (Proposed)
@@ -81,8 +81,8 @@ stateDiagram-v2
 | `REFUNDED` | Full captured amount returned | Yes | Fully returned | n/a | `Committed` |
 | `CANCELED` | Merchant canceled, or the payment window ended, with no successful attempt | Yes | None | n/a | `Committed` |
 | `PROCESSING` | PSP accepted; the result comes later, as with bank debits. Unlike `UNKNOWN`, we know where it stands | No | Pending | PSP result | `Proposed` |
-| `VOIDED` | Authorization cancelled before capture | Yes | Reservation released | n/a | `Proposed` |
-| `EXPIRED` | Authorization window ended without capture | Yes | Released by the issuer | n/a | `Proposed` |
+| `VOIDED` | Authorization cancelled before capture | Yes | Reservation released | n/a | `Committed` |
+| `EXPIRED` | Authorization window ended without capture | Yes | Released by the issuer | n/a | `Committed` |
 | `SETTLED` | Every settlement line for the payment has matched | No | In our settlement account | Payout | `Proposed` |
 | `PAID_OUT` | Merchant has been paid | Yes, on the happy path | With the merchant | Open question | `Proposed` |
 | `DISPUTED` | Customer's bank opened a chargeback | No | Held pending outcome | Dispute result | `Proposed` |
@@ -90,7 +90,7 @@ stateDiagram-v2
 
 ## Attempts
 
-Each authorize, sale or capture is one `payment_attempts` row with its own PSP key ([D5](decisions.md#d5), [D29](decisions.md#d29)). Its states are `PENDING`, `ACTION_REQUIRED`, `UNKNOWN`, `SUCCEEDED`, `FAILED` and `REVIEW`. A decline is `FAILED` with a `failure_code`.
+Each authorize, sale, capture or void is one `payment_attempts` row with its own PSP key ([D5](decisions.md#d5), [D29](decisions.md#d29), [D37](decisions.md#d37)). Its states are `PENDING`, `ACTION_REQUIRED`, `UNKNOWN`, `SUCCEEDED`, `FAILED` and `REVIEW`. A decline is `FAILED` with a `failure_code`.
 
 - **One live or successful attempt.** The unique index `payment_attempts_one_live_authorize` allows one authorize or sale per payment in `PENDING`, `ACTION_REQUIRED`, `UNKNOWN` or `SUCCEEDED`, so two tries can't both charge. A new attempt while one is live gets 409 with `Retry-After`.
 - **Every attempt is checked.** Each passes admission and the fraud check, because retries on one payment are also how card testing works. A replay of a request isn't a new attempt, so it skips the check ([D33](decisions.md#d33)). A block is a `FAILED` attempt with `fraud_blocked`, with no PSP call, and it counts toward the cap.
@@ -131,8 +131,9 @@ Each row is one allowed transition. Anything not listed is forbidden.
 | `PSP_PENDING` | `PROCESSING` | PSP accepted; result comes later | PSP response or callback | None | `Proposed` |
 | `PROCESSING` | `CAPTURED` | Payment finalized | Callback or reconciler | Debit `psp_receivable`, credit `merchant_payable` | `Proposed` |
 | `PROCESSING` | `AWAITING_METHOD` | Payment failed later; attempt `FAILED` | Callback or reconciler | None | `Proposed` |
-| `AUTHORIZED` | `VOIDED` | Void request | Merchant | Release hold | `Proposed` |
-| `AUTHORIZED` | `EXPIRED` | Window ends | Timer job | Release hold | `Proposed` |
+| `AUTHORIZED` | `VOIDED` | PSP confirms a void | PSP response, callback or reconciler | Release the hold | `Committed` |
+| `AUTHORIZED` | `EXPIRED` | Authorization window ends with no live capture or void | Timer job | Release the hold | `Committed` |
+| `REVIEW` | `AWAITING_METHOD` | PSP confirms the void of a late-approved attempt | PSP response, callback or reconciler | None; no hold was posted | `Committed` |
 | `CAPTURED` | `SETTLED` | All settlement lines matched | Reconciler | None; lines post their own entries | `Proposed` |
 | `SETTLED` | `PAID_OUT` | Payout sent | Payout service | Pay merchant from settled | `Proposed` |
 | `CAPTURED` or `SETTLED` | `DISPUTED` | Chargeback notice | PSP | Hold disputed amount | `Proposed` |
@@ -161,7 +162,7 @@ An "authorization hold" is a logical ledger entry, `auth_hold` against `auth_hol
 
 ### Idempotency
 
-- Every create, new-attempt, cancel, capture and refund request carries an `Idempotency-Key`, as would `Proposed` void requests.
+- Every create, new-attempt, cancel, capture, void and refund request carries an `Idempotency-Key`.
 - A retry with the same key of a finished operation returns the stored result and does not repeat the transition. A retry of an unresolved operation renders the current state, which is never staler than the stored 202 ([D31](decisions.md#d31)).
 - The same key with a different method, route or body is rejected with 422.
 - The same key while the first request is running returns 409 with `Retry-After`.
@@ -173,7 +174,7 @@ An "authorization hold" is a logical ledger entry, `auth_hold` against `auth_hol
 
 Each PSP event is recorded once in `psp_events`. A conditional update that finds the payment already in a later or final state does nothing. The event is logged, and an alert is raised if it contradicts stored state, such as "declined" on a `CAPTURED` payment.
 
-**A late approval on a `FAILED` attempt is the dangerous case,** because the customer may now be charged by two attempts. The attempt moves to `REVIEW` and an alert fires, with no ledger entry until a person resolves it. If the payment is in `AWAITING_METHOD`, it also moves to `REVIEW`, which blocks new attempts. Otherwise its state doesn't change, and the person reverses the extra charge at the PSP.
+**A late approval on a `FAILED` attempt is the dangerous case,** because the customer may now be charged by two attempts. The attempt moves to `REVIEW` and an alert fires, with no ledger entry. If the payment is in `AWAITING_METHOD`, it also moves to `REVIEW`, which blocks new attempts. Otherwise its state doesn't change. The reconciler then voids the late attempt where the PSP allows, under its own key ([D37](decisions.md#d37)), and the payment returns to `AWAITING_METHOD` if it had moved. A late-approved sale can't be voided, so a person reverses it at the PSP.
 
 ### Amounts and currency
 
@@ -181,13 +182,13 @@ Every PSP answer is checked. On an authorize or capture mismatch the payment mov
 
 ### Final states
 
-`CANCELED`, `REFUNDED`, and the `Proposed` `VOIDED`, `EXPIRED` and `CHARGED_BACK` accept no further transitions. A canceled payment can't be retried, so another try means a new payment.
+`CANCELED`, `REFUNDED`, `VOIDED`, `EXPIRED` and the `Proposed` `CHARGED_BACK` accept no further transitions. A canceled payment can't be retried, so another try means a new payment.
 
 ## Refund rules
 
 Total refunded and pending must never exceed the captured amount, and state changes only after the PSP confirms ([D6](decisions.md#d6)). Refund states are `PENDING`, `UNKNOWN`, `SUCCEEDED`, `FAILED` and `REVIEW`.
 
-**1. Reserve.** In one transaction, in this [lock order](deadlock-handling.md#prevention): take the per-account [advisory lock](architecture.md#ledger) and check the available balance, reserve the amount as below, insert the `refunds` row as `PENDING`, and insert a ledger reservation entry. If the balance is too low or the update returns 0 rows, roll back and reject.
+**1. Reserve.** In one transaction, in this [lock order](deadlock-handling.md#prevention): reserve the amount as below, insert the `refunds` row as `PENDING`, and insert a ledger reservation entry. If the update returns 0 rows, roll back and reject. v1 has no per-account lock ([D38](decisions.md#d38)).
 
 ```sql
 update payments
@@ -216,7 +217,7 @@ update payments
 
 **Or release.** On a PSP decline, subtract the amount from `refund_pending_minor`, conditionally move the refund to `FAILED`, post a reversing entry for the reservation, and insert the outbox event. Roll back if the refund moved no row.
 
-**On a timeout,** the refund becomes `UNKNOWN`, the amount stays reserved, and the reconciler confirms or releases it. It releases only with proof that the refund can't succeed ([D27](decisions.md#d27)), for example after a crash before the call. The per-account lock in step 1 may be deferred ([D38](decisions.md#d38), `Proposed`).
+**On a timeout,** the refund becomes `UNKNOWN`, the amount stays reserved, and the reconciler confirms or releases it. It releases only with proof that the refund can't succeed ([D27](decisions.md#d27)), for example after a crash before the call.
 
 **On an amount or currency mismatch,** the refund moves to `REVIEW` and the payment state does not change. The amount stays reserved until a person confirms or releases it.
 
@@ -264,7 +265,7 @@ A PSP timeout does not tell us whether the customer was charged.
 | Auto-capture | One PSP sale call where supported ([D29](decisions.md#d29)), otherwise capture right after authorization | Digital goods, instant services | `Committed` |
 | Partial capture | Capture less than authorized; the remainder is released | Partial shipment | `Proposed` |
 
-The capture amount must not exceed the authorized amount. Capture and refund requests at the same moment are serialized by conditional updates: one wins and the other re-reads.
+The capture amount must not exceed the authorized amount. Capture and refund requests at the same moment are serialized by conditional updates: one wins and the other re-reads. A capture and a void can't both be live, because they share one unique index ([D37](decisions.md#d37)).
 
 ## Timers
 
@@ -278,7 +279,7 @@ Timer jobs use the same conditional update, so a job and a manual capture cannot
 | Idempotency key expiry | Keys resolved at least 24 hours ago | Delete in batches; never a key with no `resolved_at` | `Committed` |
 | Unknown age limit | `UNKNOWN` | Alert and escalate to manual review | `Committed` |
 | Unresolved operation | Capture attempts and refunds, through `payment_attempts_unresolved` and `refunds_unresolved` | Inquire; alert and escalate past the age limit | `Committed` |
-| Authorization window (for example 7 days, depending on card scheme) | `AUTHORIZED` | Move to `EXPIRED` and release the hold | `Proposed` |
+| Authorization window (per PSP and method, set conservatively, for example 7 days) | `AUTHORIZED` with no live capture or void, found through `payments_authorized` | Move to `EXPIRED` and release the hold | `Committed` |
 | Dispute response deadline | `DISPUTED` | Alert so evidence is submitted in time | `Proposed` |
 
 ## Worked examples
@@ -335,12 +336,12 @@ An outbox event is written in the same transaction as every state change, and th
 | `payment.refunded` | `PARTIALLY_REFUNDED`, `REFUNDED` | `Committed` |
 | `payment.capture_failed` | A capture attempt ends `FAILED` | `Committed` |
 | `payment.refund_failed` | A refund ends `FAILED` | `Committed` |
-| `payment.voided`, `payment.expired` | `VOIDED`, `EXPIRED` | `Proposed` |
+| `payment.voided`, `payment.expired` | `VOIDED`, `EXPIRED` | `Committed` |
+| `payment.void_failed` | A void attempt ends `FAILED` | `Committed` |
 | `payment.disputed` | `DISPUTED` | `Proposed` |
 
 ## Proposed rules
 
-- **Void and expiry:** capture after `VOIDED` or `EXPIRED` is rejected ([E8](failure-scenarios.md#edge-cases)).
 - **Dispute after a full refund:** reject or defend, showing the refunded amount in evidence.
 - **Payouts:** query the PSP before retrying a payout.
 

@@ -13,7 +13,7 @@ All values are starting points. L1 and O3 replace them with measured values.
 1. Edge: per-merchant token-bucket rate limit.
 2. Gateway and API: global concurrency limiter with no queue.
 3. Per instance: an in-flight cap, starting at 500 and tuned by L1 and L3.
-4. Downstream: per-PSP rate limiter and per-dependency bulkheads, with separate limits for requests, PSP calls, database work and callbacks, and a recovery quota inside each PSP's limit ([D34](decisions.md#d34)).
+4. Downstream: a rate limiter per PSP account and per-dependency bulkheads, with separate limits for requests, PSP calls, database work and callbacks, and a recovery quota inside each PSP's limit ([D34](decisions.md#d34)).
 
 Over the limit, the system rejects immediately with 429 or 503 and `Retry-After`. Waiting in an unbounded queue is never allowed.
 
@@ -146,7 +146,8 @@ Check each library's license and .NET 10 support before adopting it (gate S6).
 
 - **Credentials:** API keys are stored hashed, scoped (read, write, refund), optionally IP-restricted, and rolled with a grace period. Unusual usage raises alerts.
 - **Tenant isolation:** `merchant_id` is on every tenant-owned table and in every query through a shared repository layer. PostgreSQL row-level security is a backstop (`SET LOCAL app.merchant_id` in each transaction, which works with transaction pooling).
-- **Card data:** card numbers live only in the vault, and the payment database stores tokens. This limits PCI scope to the vault and hosted checkout fields.
+- **Card data:** PSP-hosted fields collect card numbers, which never reach our systems. The payment database stores only PSP tokens ([D39](decisions.md#d39)). A PCI assessor confirms the scope before live card traffic.
+- **PSP credentials:** each merchant's credentials and callback secrets live in external secrets, referenced from `psp_accounts`, and are never logged or stored in the payment database ([D35](decisions.md#d35)).
 - **Logging:** redaction middleware, structured logs only, and tests that scan output for card-number patterns.
 - **Replay protection:** signed webhooks carry a timestamp and are rejected outside a window. Requests are also protected by idempotency keys.
 - **Dashboard access:** MFA, RBAC, step-up authentication for key rolling and payouts, and an append-only audit log.

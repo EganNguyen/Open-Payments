@@ -12,18 +12,14 @@
 
 **Scope of this plan:** Tasks 1-17 are detailed, up to the first recorded ramp steps. The [roadmap](#roadmap-after-task-17) covers everything after that. It is enough to size and order the work, and each stage gets a detailed plan when it starts.
 
-**Status:** Tasks 1 and 2 are done. The [design review](../specs/2026-11-05-implementation-and-benchmark-design.md#what-the-review-found) changed the tasks below. Tasks 3-5 are ready to start. Tasks 6, 12, 14 and 16 are blocked as shown next.
+**Status:** Tasks 1 and 2 are done. The [design review](../specs/2026-11-05-implementation-and-benchmark-design.md#what-the-review-found) and the owner's acceptance of D35, D37, D38 and D39 changed the tasks below. Tasks 3-5 are ready to start.
 
 ## Owner decisions needed
 
-The [spec](../specs/2026-11-05-implementation-and-benchmark-design.md#owner-decisions) has the reasons and recommendations. Where a task depends on one, the task says which way each answer goes.
+The [spec](../specs/2026-11-05-implementation-and-benchmark-design.md#owner-decisions) has the reasons and recommendations.
 
 | Decision | Blocks |
 |---|---|
-| [D35](../../decisions.md#d35): does the platform hold funds? | First migration in Task 6, Task 12 |
-| [D37](../../decisions.md#d37): void and authorization expiry? | Task 12 |
-| [D38](../../decisions.md#d38): defer the refund lock? | Task 16 |
-| [D39](../../decisions.md#d39): hosted card fields, no vault? | Task 14 |
 | Where recorded benchmarks run | Task 6's answers, Task 17 |
 | [D36](../../decisions.md#d36): peak or average? | L2 and G6, in the roadmap |
 | Which PSP sandbox | Stage 2 |
@@ -38,9 +34,9 @@ Task 1 resolved these. The arithmetic is ours and unmeasured, so each figure is 
 | 2 | A pool of about 100 connections at 20k tx/s allows only 5 ms per transaction by Little's Law, including the synchronous commit | The pool may saturate before the database does. PgBouncer is single-threaded, so one process may also limit | Spike varies pool size, PgBouncer process count and statement pipelining |
 | 3 | Gates require CK1-CK6 at every ramp step, but steps 0-7 have no broker and Phase 1 has no reconciler | CK4 and CK5 can't pass at those steps as written | Define which checks apply at each stage, below |
 | 4 | Phase 1 exit includes all of C31, but E10, E19, E20 and E22-E24 need Phase 2 parts, and E14 and E15 need Phase 3 events. E8 needs void, which is `Proposed` | Phase 1 can never exit | Split C31 by phase |
-| 5 | L1-L6 exit in Phase 4, but fraud checks, the vault and test mode are in Phase 5. Edge gateway and vault appear in no phase by name | The headline number would come from a path missing a 50 ms synchronous step and a shared dependency | Build minimal synchronous fraud, vault and edge in Stage 4. Re-run L5 after Stage 5 as the sign-off number |
+| 5 | L1-L6 exit in Phase 4, but fraud checks and test mode are in Phase 5, and the edge gateway appears in no phase by name | The headline number would come from a path missing a 50 ms synchronous step | Build minimal synchronous fraud and the edge in Stage 4. Re-run L5 after Stage 5 as the sign-off number |
 | 6 | The one-live-attempt unique indexes must include the partition key if `payment_attempts` is partitioned, but `settlement_lines` has a foreign key on `attempt_id` alone | The table can't be partitioned on anything but `payment_id`, and then `attempt_id` is no longer unique by itself | Candidate: partition by `payment_id`, primary key `(payment_id, attempt_id)`, carry `payment_id` on referencing rows. Decided in Task 6 |
-| 7 | At the example mix, refunds run at about 830/s. The per-account advisory lock is held through a synchronous commit | At 2 ms held, one merchant tops out near 500 refunds/s, so a skewed mix may hit this first | Spike variant V8, and a skewed merchant mix in every run |
+| 7 | At the example mix, refunds run at about 830/s. The per-account advisory lock is held through a synchronous commit | At 2 ms held, one merchant tops out near 500 refunds/s, so a skewed mix may hit this first | Lock deferred ([D38](../../decisions.md#d38)). V8 confirms, and every run uses a skewed merchant mix |
 | 8 | API keys and merchants have no table, and `Merchant profiles` is `Open` | Authentication and D20 can't be built | Minimal `api_keys` table in Task 1. Full merchant platform stays out of scope |
 
 **Which checks apply when:**
@@ -223,7 +219,7 @@ Expected: error "zero payments".
   - `tx-sale`: A (idempotency, payment, attempt), then B (payment, attempt, idempotency, ledger transaction, 2-4 entries, outbox), per D29.
   - `tx-auth-capture`: A, B (with a hold), capture A, capture B (a hold-release ledger transaction with 2 entries, and a money ledger transaction with 2-4 entries, per D21).
   - `tx-decline`: A, then B moving the payment back with no ledger rows.
-  - `tx-refund`: reserve, ledger reservation, then confirm. A variable switches the advisory lock and balance read on, for V8.
+  - `tx-refund`: reserve, ledger reservation, then confirm, with no advisory lock (D38).
   - `tx-callback`: insert into `psp_events`, then a conditional update that finds nothing to do, in one transaction.
   - `tx-outbox-mark` and `tx-outbox-marker`: read a batch with `SKIP LOCKED` and mark each row, or read past a stored position and update one row. Log capture (V9's third option) is measured by the size of WAL decoded per event, using `pg_logical_slot_get_binary_changes`.
 - [ ] **Step 5: Write `seed.sql`,** with parameters for merchant count (1, 100, 10,000), an 80/20 skew and prefill size. Target for Linux runs: 100M payments with matching children. Benchmarking an empty database would flatter every number.
@@ -278,7 +274,7 @@ Expected: FAIL on missing `sustained_rate`.
 | V5 | Schema B | Partition choice |
 | V6 | Pipelined statements (`\startpipeline`) | Round trips per transaction |
 | V7 | Batched idempotency-key deletes running throughout | D19 expiry |
-| V8 | Refund mix with 1, 100 and 10,000 merchants, lock on and off | D38, problem 7 |
+| V8 | Refund mix with 1, 100 and 10,000 merchants | Confirms D38, problem 7 |
 | V9 | Outbox publishing: mark rows, progress marker, log capture | Publisher design |
 | V10 | Callbacks at one per operation, per transaction and batched | Capacity model |
 | V11 | `tx-auth-capture` mix in place of `tx-sale` | D29, required rate |
@@ -294,7 +290,7 @@ Expected: PASS, then a `summary.md` headed "Local: comparative only, does not an
 
 ### Task 6: Run the spike and decide
 
-Needs the owner's choice of machines. Step 5 also needs D35 and D37. Machines: primary and two standbys on NVMe with WAL on its own volume in three zones, plus a separate generator. Start with 16-32 vCPU, record what was used, and shut them down after.
+Needs the owner's choice of machines. Machines: primary and two standbys on NVMe with WAL on its own volume in three zones, plus a separate generator. Start with 16-32 vCPU, record what was used, and shut them down after.
 
 **Files:**
 - Create: `benchmarks/spike/<run-id>/*`, `benchmarks/spike/REPORT.md`, `db/migrations/0001_initial.sql`, `scripts/migrate.sh`
@@ -366,7 +362,8 @@ Expected: PASS.
 - Produces, over HTTP:
   - `POST /authorize`, `/capture`, `/refund` with an `Idempotency-Key` header, returning `{outcome, psp_reference, amount_minor, currency, failure_code?, action?}`.
   - `GET /inquire/{key}`, returning `{status: approved|declined|action_required|unknown_attempt|evicted, ...}`.
-  - `POST /sale` and `POST /cancel-by-reference/{key}`, the latter confirmed by callback.
+  - `POST /sale`, `POST /void` and `POST /cancel-by-reference/{key}`, the last confirmed by callback.
+  - Every route takes an `X-Mock-Account` header, and limits, retention and revocation are per account (D35).
   - `PUT /admin/config` with `{latency_ms, jitter_ms, decline_rate, error_rate, approve_then_hang_rate, late_landing_rate, rate_limit_per_s, action_rate, mismatch_rate, recovery_mode, key_retention_s, lookup_lag_s, callback_rate, callback_delay_ms, callback_url, seed}`.
   - `GET /admin/stats`. An effect log at `$EFFECTS_DIR/effects.csv` with columns `key,op,amount_minor,currency,at`.
 
@@ -387,6 +384,9 @@ Expected: PASS.
 [Fact] public Task Replay_after_retention_creates_a_second_effect();          // the danger C45 guards against
 [Fact] public Task Cancel_by_reference_blocks_a_late_landing_and_calls_back();
 [Fact] public Task Callbacks_are_sent_at_the_configured_rate_and_redelivered_on_failure();
+[Fact] public Task Void_after_capture_is_refused_and_records_no_effect();
+[Fact] public Task Rate_limit_applies_per_account();
+[Fact] public Task Revoked_account_returns_auth_failure_with_no_effect();
 ```
 
 `evicted` must differ from `unknown_attempt`. The reconciler treats `unknown_attempt` as "never charged" and fails the attempt, so an evicted key reported that way would corrupt a soak test.
@@ -533,9 +533,7 @@ public static TransitionResult Decide(PaymentSnapshot current, PaymentCommand co
 // TransitionResult is Accepted(NewState, AttemptChange?, RefundChange?, LedgerLine[], OutboxEvent[]),
 // Rejected(ReasonCode) or NoOp(ReasonCode).
 ```
-  `PaymentCommand` cases include the attempt, sale, fraud-block, PSP-answer, recovery-answer (`ProvenNotCharged` and `Inconclusive` among them), timeout, capture, refund-reserve, refund-confirm, refund-release, cancel and manual-resolution commands. Add void and expiry if D37 is accepted. All IDs and times are command fields, and event and ledger IDs are derived purely (D32).
-
-Blocked on D35 and D37. D35 sets what the accounts mean, and D37 adds states and commands.
+  `PaymentCommand` cases include the attempt, sale, fraud-block, PSP-answer, recovery-answer (`ProvenNotCharged` and `Inconclusive` among them), timeout, capture, refund-reserve, refund-confirm, refund-release, void, void-answer, expiry, cancel and manual-resolution commands. All IDs and times are command fields, and event and ledger IDs are derived purely (D32).
 
 - [ ] **Step 1: Write failing tests (U2, U3)**
 
@@ -556,6 +554,11 @@ public void U2_only_listed_transitions_are_accepted(PaymentState s, PaymentComma
 [Fact] public void D32_same_input_gives_same_event_and_ledger_ids();
 [Fact] public void D32_event_seq_rises_by_one_only_when_an_event_is_written();
 [Fact] public void D33_fraud_block_fails_attempt_with_no_psp_step();
+[Fact] public void D37_void_releases_hold_and_ends_voided();
+[Fact] public void D37_expiry_releases_hold_and_ends_expired();
+[Fact] public void D37_expiry_is_refused_while_capture_is_live();
+[Fact] public void D37_late_approval_requests_a_void_except_for_a_sale();
+[Fact] public void CK7_invariant_auth_hold_is_zero_in_every_final_state();
 [Property] public bool U3_every_transaction_balances_per_currency(PaymentCommand c);
 [Fact] public void Decide_project_references_no_io(); // assembly-reference test
 [Theory, MemberData(nameof(GoldenFiles))] public void Golden_cases_match(string file);
@@ -640,7 +643,7 @@ Expected: PASS.
 - Consumes: `IPspAdapter` exactly as in [PSP integration](../../architecture.md#psp-integration), the store from Task 13, the mock from Task 8, metric names from Task 10.
 - Produces: `PaymentFlow.RunAttemptAsync(BeginAttempt, CancellationToken requestToken) -> ApiAnswer`, and the routes for create, attempts, status and cancel.
 
-Blocked on D39, which decides what `method.ref` is. Phase 1 uses a mock token either way, so if D39 is the only open decision, proceed with a mock token and leave the vault call out.
+`method.ref` is a PSP token (D39), and there is no vault call. The adapter acts for the merchant's `psp_accounts` row (D35), which Phase 1 seeds directly.
 
 - [ ] **Step 1: Write failing acceptance tests**
 
@@ -681,14 +684,14 @@ Expected: PASS.
 
 - [ ] **Step 5: Commit** with message `feat: add create and attempt flow`.
 
-### Task 15: Capture and sale
+### Task 15: Capture, sale and void
 
 **Files:**
 - Modify: `src/OpenPayments.Api/PaymentFlow.cs`, `Endpoints/Payments.cs`
 - Test: `tests/OpenPayments.Acceptance.Tests/CaptureTests.cs`
 
 **Interfaces:**
-- Produces: `PaymentFlow.RunCaptureAsync(CaptureRequest, CancellationToken) -> ApiAnswer`, also called by the authorize path under `capture_mode = auto`.
+- Produces: `PaymentFlow.RunCaptureAsync(CaptureRequest, CancellationToken) -> ApiAnswer`, also called by the authorize path under two-call `capture_mode = auto`, and `PaymentFlow.RunVoidAsync(VoidRequest, CancellationToken) -> ApiAnswer`.
 
 - [ ] **Step 1: Write failing tests**
 
@@ -704,6 +707,11 @@ Expected: PASS.
 [Fact] public Task Auto_capture_success_counts_one_completed_payment();
 [Fact] public Task Two_call_capture_failure_leaves_authorized_and_reports_it();
 [Fact] public Task E8_capture_from_non_authorized_rejected();
+[Fact] public Task Void_moves_to_voided_and_clears_hold_with_own_psp_key();
+[Fact] public Task C50_capture_and_void_at_once_one_psp_effect();
+[Fact] public Task Declined_void_stays_authorized_and_allows_capture();
+[Fact] public Task Void_timeout_202_stays_authorized_attempt_unknown();
+[Fact] public Task E8_capture_after_voided_rejected();
 ```
 
 - [ ] **Step 2: Run to verify they fail**
@@ -739,9 +747,7 @@ Expected: PASS.
 [Fact] public Task E13_capture_and_refund_same_moment_serialize();
 [Fact] public Task Refund_timeout_stays_reserved_as_unknown();
 [Fact] public Task Refund_uses_the_shared_key_store();                         // D31
-// Only if D38 is declined:
-[Fact] public Task Refund_low_balance_rejected_under_advisory_lock();
-[Fact] public Task Create_path_never_takes_advisory_lock();                    // pg_locks sampled
+[Fact] public Task D38_no_refund_path_takes_an_advisory_lock();                // pg_locks sampled
 [Fact] public Task S3_hot_queries_use_expected_indexes();                      // EXPLAIN on a seeded table
 [Fact] public Task S3_each_endpoint_within_query_count();
 ```
@@ -753,7 +759,7 @@ Add `C31a` as one test per edge case in E1-E9, E11-E13, E16-E18, E21 and E25-E29
 Run: `dotnet test --filter "RefundTests|C31a|HotQueryPlanTests"`
 Expected: FAIL.
 
-- [ ] **Step 3: Implement** in lock order: `payments`, `refunds`, ledger, outbox. If D38 is declined, take the advisory lock first.
+- [ ] **Step 3: Implement** in lock order: `payments`, `refunds`, ledger, outbox.
 - [ ] **Step 4: Run the whole Phase 1 gate** with run IDs recorded.
 
 Run: `dotnet test && dotnet list package --vulnerable && dotnet build -warnaserror`
@@ -787,10 +793,10 @@ Write a detailed plan with superpowers:writing-plans at the start of each stage,
 
 | Stage | Build | Benchmark run | Exit | Needs |
 |---|---|---|---|---|
-| **2: PSP and recovery** | Real adapter with its declared recovery mode, resilience with a recovery quota, atomic callback receiver with parking, reconciler and timers, settlement ingestion, review tooling, one 3D Secure flow; freeze the API contract after C39 | Repeat steps 0-5 with timeouts, late landings and callbacks. **G2** against the sandbox and in writing | Phase 2 list in [Verification](../../verification.md#build-phases), plus C31b | PSP choice, D35 |
+| **2: PSP and recovery** | Real adapter with its declared recovery mode, resilience per PSP account with a recovery quota, callback routes per account, atomic callback receiver with parking, reconciler and timers including expiry and automatic late voids, settlement ingestion per account, review tooling, one 3D Secure flow; freeze the API contract after C39 | Repeat steps 0-5 with timeouts, late landings and callbacks. **G2** per account, against the sandbox and in writing | Phase 2 list in [Verification](../../verification.md#build-phases), plus C31b | PSP choice |
 | **3: Async** | Outbox publisher by the method V9 chose, with one publisher per payment and gap parking, Redpanda, ledger projector, webhook dispatcher, inbox dedupe | Steps 6-8. First non-preview runs: **CK4 and CK6 full**. Outbox age and consumer lag | Phase 3 list, with the ordering race in C17, plus C31c | Stage 2 |
-| **4: Hardening** | Kubernetes, HA with Patroni or managed, separate limits per kind of waiting, reserved capacity, dark-launched limiters, minimal synchronous fraud, edge gateway, client-side access, and the vault unless D39 removes it; cells only if D26 requires them | Steps 9-11, **L1, L5, L6**, then L2, L3, L4; **G1, G3, G4, G5, G6** closed on the full system; S2 allocation budgets | Phase 4 list | Rented cluster, D36 |
-| **5: Security and operations** | Full fraud rules and decision records, test mode isolation, audit log, RBAC, runbooks and drills | **L5 again as the sign-off number**; C42 | Phase 5 list | Isolation decision, D20 |
+| **4: Hardening** | Kubernetes, HA with Patroni or managed, separate limits per kind of waiting, reserved capacity, dark-launched limiters, minimal synchronous fraud, edge gateway, client-side access; cells only if D26 requires them | Steps 9-11, **L1, L5, L6**, then L2, L3, L4; **G1, G3, G4, G5, G6** closed on the full system; S2 allocation budgets | Phase 4 list | Rented cluster, D36 |
+| **5: Security and operations** | Full fraud rules and decision records, test mode isolation, audit log, RBAC, runbooks and drills | **L5 again as the sign-off number**; C42 | Phase 5 list | Isolation mechanism; a PCI assessor before live cards |
 | **Sign-off** | [Final report](../../scaling-playbook.md#final-report) | All of the above, with CK1-CK10 | All 108 and 25 rows ticked, each with a recorded run | Real PSP results |
 
 **Benchmark checkpoints in order:**

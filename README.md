@@ -8,7 +8,7 @@ Status: Draft · Last updated: 2026-11-05
 
 ## What it is
 
-Open Payments lets a business (a "merchant") charge a customer's card, refund it, and see what happened, much like Stripe does.
+Open Payments lets a business (a "merchant") charge a customer's card through its own PSP account, refund it, and see what happened. It never holds the merchant's funds or card numbers.
 
 | Goal | Target |
 |---|---|
@@ -59,7 +59,7 @@ Read them in this order if you are new.
 | [Payment lifecycle](docs/payment-lifecycle.md) | States, transitions, refund rules, merchant events | You work on payments or refunds |
 | [Engineering standards](docs/engineering-standards.md) | Load control, .NET, database, Kubernetes, security, observability | You write or operate code |
 | [Deadlock handling](docs/deadlock-handling.md) | Risks, prevention, retry behavior, proposed automation | Before writing database transaction code |
-| [Failure scenarios](docs/failure-scenarios.md) | 49 failures, 29 edge cases, 7 runbooks, drills | You plan for things going wrong |
+| [Failure scenarios](docs/failure-scenarios.md) | 51 failures, 29 edge cases, 7 runbooks, drills | You plan for things going wrong |
 | [Scaling playbook](docs/scaling-playbook.md) | Ramp plan, sizing, decision gates, results log | You plan benchmarks |
 | [Verification](docs/verification.md) | Test IDs, 108 production problems, 25 readiness items, build phases | You need to prove a claim or plan a build phase |
 | [API contract](api/openapi.yaml) | Draft routes and fields, frozen only after C39 ([draft guides](docs/integration-guides-draft.md)) | You call or build the API |

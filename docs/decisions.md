@@ -74,7 +74,7 @@ All values are starting points until measured. Other docs state the resulting ru
 
 ### D9
 
-**Serialize balance checks per account.** Status: `Committed`.
+**Serialize balance checks per account.** Status: `Committed`, deferred by [D38](#d38) until fees or payouts exist.
 
 - **Decision:** Take a per-account advisory transaction lock on refund and payout balance checks only, never on the create-payment path.
 - **Why:** Two concurrent transactions could both read enough balance and both insert a reservation.
@@ -86,7 +86,7 @@ All values are starting points until measured. Other docs state the resulting ru
 
 - **Decision:** Fraud decision and PSP adapters run per cell. The vault stays shared to keep PCI scope small.
 - **Why:** "Cells share nothing on the payment path" conflicted with shared synchronous services.
-- **Consequence:** Vault availability is a stated cross-cell risk.
+- **Consequence:** Vault availability is a stated cross-cell risk. [D39](#d39) defers the vault, so this applies only if one is built later.
 
 ### D11
 
@@ -211,7 +211,7 @@ All values are starting points until measured. Other docs state the resulting ru
 
 **Correct the derived load and the phase gates.** Status: `Committed`.
 
-- **Decision:** Count the real two-transaction flow in the derived load. Split C31 by phase. State which correctness checks apply at each stage. Add minimal synchronous fraud, the vault and the edge gateway to Phase 4, and run L5 again after Phase 5 as the sign-off number.
+- **Decision:** Count the real two-transaction flow in the derived load. Split C31 by phase. State which correctness checks apply at each stage. Add minimal synchronous fraud and the edge gateway to Phase 4, and run L5 again after Phase 5 as the sign-off number.
 - **Why:** Phase 1 required edge cases that depend on later phases, gates required checks with no broker or reconciler to satisfy them, and the headline number would have come from a path missing a synchronous step.
 - **Consequence:** Runs before Phase 3 are previews and prove nothing on the checklist. The estimated write load about doubles, which the database spike must test. [D29](#d29) and [D30](#d30) refine the numbers.
 
@@ -283,11 +283,16 @@ D25 and D26 are reserved for the spike's answers: partitioning and retention, an
 
 ### D35
 
-**What v1 does with money.** Status: `Proposed`, owner decision.
+**Merchants connect their own PSP accounts, and v1 never holds funds.** Status: `Committed`, owner decision 2026-11-05.
 
-- **Options:** (a) Merchants connect their own PSP accounts, and Open Payments never holds funds. (b) The platform holds funds and pays merchants out, as a payment facilitator does.
-- **Recommendation:** (a). Holding funds brings licensing, banking and payouts, which are out of scope. It also sets the PSP limit: Stripe's [default of 100 requests/s](https://docs.stripe.com/rate-limits) applies per account, so one platform account can't reach the target by default, while many merchant accounts might. [Hyperswitch](https://hyperswitch.io/blog/building-hyperswitch-the-world-s-first-open-source-payments-platform) is an open-source example of connecting merchants' own processors.
-- **Consequence if accepted:** Per-merchant PSP credentials become a requirement. `merchant_payable` and `settlement_bank` in [D21](#d21) become records of what the PSP owes the merchant, rather than our liabilities. Legal advice is still needed.
+- **Decision:** Each merchant has one or more `psp_accounts`. Money moves between the customer, the merchant's PSP account and the merchant's bank. Open Payments never holds it. Rejected: holding funds and paying merchants out, as a payment facilitator does.
+- **Why:** Holding funds brings licensing, banking and payouts, which are out of scope. It also sets the PSP limit: Stripe's [default of 100 requests/s](https://docs.stripe.com/rate-limits) applies per account, so one platform account can't reach the target by default, while many merchant accounts might. [Hyperswitch](https://hyperswitch.io/blog/building-hyperswitch-the-world-s-first-open-source-payments-platform) is an open-source example of connecting merchants' own processors.
+- **Consequence:**
+  - Rate limits, callback secrets and settlement files are per PSP account, and credentials live in external secrets, never in the payment database.
+  - The ledger is a record of what the merchant's PSP owes the merchant. `merchant_payable` and `settlement_bank` in [D21](#d21) are the merchant's position, not our liabilities.
+  - One merchant's traffic is bound by its own account's limit, so G2 becomes a question per account.
+  - A revoked credential fails that merchant only, which test C51 covers.
+  - Legal advice is still needed, because this reduces regulatory exposure but doesn't remove it.
 
 ### D36
 
@@ -299,27 +304,27 @@ D25 and D26 are reserved for the spike's answers: partitioning and retention, an
 
 ### D37
 
-**Build void and authorization expiry in v1.** Status: `Proposed`, owner decision.
+**Build void and authorization expiry in v1.** Status: `Committed`, owner decision 2026-11-05.
 
-- **Recommendation:** Move `VOIDED` and `EXPIRED` to `Committed`, and void a late-approved attempt automatically where the PSP allows.
-- **Why:** Without them an `AUTHORIZED` payment has no exit but capture. The merchant can't release a customer's funds, the `auth_hold` clearing account can't clear ([D21](#d21)), and CK7 would page on every uncaptured payment. A late approval (C38) also needs a person to reverse it, when a void would fix it automatically. Adyen's [authorizations usually last 28 days](https://docs.adyen.com/account/payments-lifecycle), so expiry is a real case.
-- **Consequence if accepted:** A new adapter call, two new states in the contract, and more tests. If declined, CK7 must exclude `auth_hold`, and stuck holds become a manual process.
+- **Decision:** `VOIDED` and `EXPIRED` are `Committed`. A void is its own attempt row and PSP key. One live or successful capture or void is allowed per payment, so the two can't race. A late-approved attempt is voided automatically where the PSP allows, through a void row that names its target attempt.
+- **Why:** Without them an `AUTHORIZED` payment has no exit but capture. The merchant can't release a customer's funds, the `auth_hold` clearing account can't clear ([D21](#d21)), and CK7 would page on every uncaptured payment. A late approval (C38) also needs a person to reverse it, when a void can fix it automatically. Adyen's [authorizations usually last 28 days](https://docs.adyen.com/account/payments-lifecycle), so expiry is a real case.
+- **Consequence:** A new adapter call, two new states in the contract, a per-PSP authorization window, and test C50. A late-approved sale can't be voided, because it is already captured, so it stays with a person. Late voids use a separate unique index, so one can't block the payment's own capture.
 
 ### D38
 
-**Defer the per-account refund lock until balances can actually go negative.** Status: `Proposed`, owner decision. Would amend [D9](#d9).
+**Defer the per-account refund lock until balances can actually go negative.** Status: `Committed`, owner decision 2026-11-05. Amends [D9](#d9).
 
-- **Recommendation:** Remove the advisory lock and balance check from v1, and bring them back with fees or payouts.
-- **Why:** With no payouts and no retained fees, refunds on each payment can't exceed its capture (CK3), so the sum can't go negative. The lock guards nothing yet, while it may cap one merchant at a few hundred refunds/s and add a lock to the deadlock order.
-- **Consequence if accepted:** C35 and the balance part of U3 wait for that later work, and row 87 of the checklist can't be ticked until then, so sign-off needs an exception recorded. If fees are added with a retained-fee refund policy, this must be revisited first, because a full refund could then take a balance below zero.
+- **Decision:** v1 has no advisory lock and no balance check on refunds. The conditional update on the payment remains the limit. Both come back before any fees or payouts ship.
+- **Why:** With no payouts and no retained fees, refunds on each payment can't exceed its capture (CK3), so the sum can't go negative. [D35](#d35) makes this firmer, because the platform pays no one out. The lock guards nothing yet, while it may cap one merchant at a few hundred refunds/s and add a lock to the deadlock order.
+- **Consequence:** C35 and the balance part of U3 wait for that later work, and checklist row 87 is proven in v1 by U3 and C6. **Adding fees or payouts without restoring this is a defect,** because a full refund with a retained fee could then take a balance below zero.
 
 ### D39
 
-**Use PSP-hosted card fields in v1, and defer our own vault.** Status: `Proposed`, owner decision. Would amend [D10](#d10).
+**Use PSP-hosted card fields in v1, and defer our own vault.** Status: `Committed`, owner decision 2026-11-05, pending an assessor's confirmation. Amends [D10](#d10).
 
-- **Recommendation:** Card data never reaches our systems. `method_ref` is a PSP token, and browsers talk to the API with a limited client secret.
-- **Why:** [Hosted fields can keep merchants in the lightest assessment](https://www.securitymetrics.com/blog/ultimate-cheat-sheet-making-online-pci-compliance-work-you), while handling card data brings the full one. The vault is also the one shared dependency on the payment path. Vendor sources only, so confirm with a PCI assessor.
-- **Consequence if accepted:** PSP tokens don't move between PSPs, so failover (C13) only works for methods the second PSP can charge. Phase 4 drops the vault. A client-secret flow must be designed either way, because the docs let customers start attempts while the API has only secret merchant keys.
+- **Decision:** Card data never reaches our systems. `method_ref` is a PSP token. Browsers talk to the API with a limited client secret, designed in Stage 4. The vault is deferred, leaving eight deployables.
+- **Why:** [Hosted fields can keep merchants in the lightest assessment](https://www.securitymetrics.com/blog/ultimate-cheat-sheet-making-online-pci-compliance-work-you), while handling card data brings the full one. The vault was also the one shared dependency on the payment path. These are vendor sources only, so **a PCI assessor must confirm the scope before any live card traffic.** This doesn't block building.
+- **Consequence:** PSP tokens don't move between PSPs, so failover (C13) only works for methods the second PSP can charge, and needs the merchant to hold a second account. Phase 4 drops the vault. A client-secret flow still needs designing, because the docs let customers start attempts while the API has only secret merchant keys.
 
 ## Assumptions and limits
 

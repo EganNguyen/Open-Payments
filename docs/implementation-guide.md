@@ -199,11 +199,13 @@ The routes are defined in `api/openapi.yaml`, and these codes follow the plan's 
 | Merchant over its rate limit | 429 with `Retry-After` |
 | In-flight cap reached, pool wait timed out or `55P03` | 503 with `Retry-After` |
 | `40001` or `40P01` after two retries, or retry budget spent | 503 with `Retry-After` |
+| Void requested while a capture is live, or the reverse | Current status, or 409 with `Retry-After` |
+| Merchant's PSP credential rejected | Fails fast with a stable code, with no `UNKNOWN` |
 | Conditional update changed no rows | Re-read and answer from current state. Never overwrite |
 
 ### Lock order
 
-Always: advisory lock, then `payments`, then `refunds` and other child rows, then ledger and outbox ([Prevention](deadlock-handling.md#prevention)). The create-payment path never takes the advisory lock, and a test samples `pg_locks` to prove it.
+Always: `payments`, then `refunds` and other child rows, then ledger and outbox ([Prevention](deadlock-handling.md#prevention)). v1 has no per-account lock ([D38](decisions.md#d38)), and adding fees or payouts must bring it back first.
 
 ### Adding a state transition
 

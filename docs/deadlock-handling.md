@@ -13,7 +13,7 @@ The [ledger](architecture.md#ledger) is append-only and updates no balance colum
 - **The same payment row.** A capture, a refund and a reconciler or callback update can all touch one `payments` row, plus `refunds` and ledger inserts, in different statement orders.
 - **Batch jobs.** The reconciler, projector and outbox cleanup can update many rows without a stable `ORDER BY`.
 - **Foreign keys.** `payment_attempts` and `refunds` reference `payments`. A foreign-key check takes a key-share lock on the parent, which does not conflict with an update that leaves the key unchanged. The risk is low, but check the deadlock log rather than assume.
-- **Balance and reservation locks.** The [advisory lock](decisions.md#d9) on refund checks adds a lock to the order. Take it first, every time.
+- **Balance and reservation locks.** Not in v1 ([D38](decisions.md#d38)). If fees or payouts bring back the [advisory lock](decisions.md#d9), take it first, every time.
 
 ## How a deadlock forms
 
@@ -39,7 +39,7 @@ It needs all four conditions: exclusive locks, holding one lock while waiting fo
 
 ## Prevention
 
-1. **Use one lock order.** Take the advisory lock first, then update `payments`, then write `refunds` and other child rows, then ledger and outbox rows. Batch jobs use a stable `ORDER BY`:
+1. **Use one lock order.** Update `payments`, then write `refunds` and other child rows, then ledger and outbox rows. Batch jobs use a stable `ORDER BY`:
 
    ```sql
    select id from payments

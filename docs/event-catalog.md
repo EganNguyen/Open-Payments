@@ -34,6 +34,9 @@ Delivery is at-least-once, so a consumer can see an event twice. A lower `sequen
 | `payment.canceled` | `reason`: `merchant` or `window_ended` |
 | `payment.captured` | `attempt_id`, `captured_minor`, `currency` |
 | `payment.capture_failed` | `attempt_id`, `failure_code` |
+| `payment.voided` | `attempt_id` |
+| `payment.void_failed` | `attempt_id`, `failure_code` |
+| `payment.expired` | `authorized_until` |
 | `payment.refunded` | `refund_id`, `amount_minor`, `refunded_minor`, `currency` |
 | `payment.refund_failed` | `refund_id`, `failure_code` |
 

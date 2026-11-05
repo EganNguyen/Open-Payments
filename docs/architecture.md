@@ -76,11 +76,7 @@ flowchart TB
     end
   end
 
-  subgraph B4[4. Shared across cells]
-    Vault[Vault and tokenization]
-  end
-
-  subgraph B5[5. Outside world]
+  subgraph B5[4. Outside world]
     PSP[(PSPs and banks)]
     Ends[Merchant webhook endpoints]
   end
@@ -92,7 +88,7 @@ flowchart TB
   API -->|charge| PSPA --> PSP
   PSP -->|callback| API
   API --> Mod --> DB
-  API -. card data stays here .-> Vault
+  Shop -. card fields hosted by the PSP .-> PSP
   DB -->|outbox| Pub --> Broker
   Broker --> Proj
   Broker --> Hooks --> Ends
@@ -100,7 +96,7 @@ flowchart TB
   Rec -->|apply the answer| Mod
 ```
 
-The [service catalog](service-catalog.md) lists each component's job, kind, deployment boundary, ownership and failure effect, plus [who calls whom](service-catalog.md#dependencies). The vault, cell router, edge gateway and six cell workers and services are the nine deployables; the payment-transition module and PSP adapters are libraries.
+The [service catalog](service-catalog.md) lists each component's job, kind, deployment boundary, ownership and failure effect, plus [who calls whom](service-catalog.md#dependencies). The cell router, edge gateway and six cell workers and services are the eight deployables; the payment-transition module and PSP adapters are libraries. The vault is deferred ([D39](decisions.md#d39)).
 
 Not on the diagram: observability, the Kubernetes platform, Redis, and the mock PSP with its load harness, which is built first. Settlement and payouts are not designed.
 
@@ -109,7 +105,8 @@ Not on the diagram: observability, the Kubernetes platform, Redis, and the mock 
 1. **There is one write path.** The payment-transition module is the only code that writes money state ([D2](decisions.md#d2)). It is a pure `Decide` function plus a thin database shell ([D22](decisions.md#d22)).
 2. **One short transaction.** State change, ledger entries and outbox event commit together, with no PSP, HTTP or broker call inside.
 3. **Async never blocks sync.** Workers read committed data and can lag or fail without touching a payment. The reconciler and timer jobs are the exceptions that write, and only through the module. Timer jobs run in the reconciler process.
-4. **Card data stays in the vault.** Everything else sees a token.
+4. **Card data never reaches us.** PSP-hosted fields collect it, and we see a PSP token ([D39](decisions.md#d39)).
+5. **We never hold funds.** Money moves through the merchant's own PSP account ([D35](decisions.md#d35)).
 
 **Why not more microservices?** Splitting payment and ledger would turn one database transaction into a network call and a saga, adding failure cases and latency on the hot path. The parts that benefit from independence are already separate, and [When to split a service](service-catalog.md#when-to-split-a-service) sets the rule for any more.
 
@@ -119,7 +116,7 @@ Not on the diagram: observability, the Kubernetes platform, Redis, and the mock 
 - **Build one cell first** ([D14](decisions.md#d14)). Split only if gate [G1](scaling-playbook.md#decision-gates) requires it.
 - Tenant-owned tables carry `merchant_id` from day one, so moving a merchant between cells needs no schema change. Moving its data is a separate job, and the routing update is only the last step ([Stripe research](stripe-research.md#5-moving-data-is-the-hard-part)).
 - Test-mode requests are isolated from live data ([D20](decisions.md#d20)). The router considers the API key's mode as well as the merchant. The isolation mechanism is `Open`.
-- The vault is the one shared payment-path dependency, kept shared to limit PCI scope. Its availability is a stated cross-cell risk ([D10](decisions.md#d10)).
+- The edge gateway and cell router are the only shared parts of the payment path, now the vault is deferred ([D39](decisions.md#d39)).
 - The control plane (routing table, merchant config) is cached in each cell and can be stale without stopping payments.
 - Each cell spans 3 availability zones. Active-active across regions is out of scope.
 - A very large merchant can have its own cell, which bounds its blast radius and hot-account effects.
@@ -147,7 +144,9 @@ Not on the diagram: observability, the Kubernetes platform, Redis, and the mock 
 | Requires action | `ACTION_REQUIRED` | `ACTION_REQUIRED` | The action the customer must take ([Customer action](payment-lifecycle.md#customer-action)) |
 | Timeout | `UNKNOWN` | `UNKNOWN` | `202 Accepted` with the payment ID; the result comes by webhook or polling |
 
-**Capture.** Insert a capture attempt with its own key. The unique index `payment_attempts_one_live_capture` allows one live or successful capture per payment, so a second request with a different idempotency key never reaches the PSP and gets the current status, or 409 with `Retry-After` while the first is running. Call the PSP, and move the payment to `CAPTURED` only after it confirms. A declined attempt is marked `FAILED`, which allows a new capture. On a timeout, the API answers `202 Accepted`, the payment stays `AUTHORIZED`, the attempt is marked `UNKNOWN`, and the reconciler resolves it ([D6](decisions.md#d6)).
+**Void.** Works like capture, with its own attempt row and key. The PSP confirms, then the payment moves to `VOIDED` and the hold is released. A decline leaves it `AUTHORIZED`, and a timeout answers 202 with the attempt unresolved ([D37](decisions.md#d37)).
+
+**Capture.** Insert a capture attempt with its own key. The unique index `payment_attempts_one_live_capture` allows one live or successful capture or void per payment, so a second request with a different idempotency key never reaches the PSP and gets the current status, or 409 with `Retry-After` while the first is running. Call the PSP, and move the payment to `CAPTURED` only after it confirms. A declined attempt is marked `FAILED`, which allows a new capture. On a timeout, the API answers `202 Accepted`, the payment stays `AUTHORIZED`, the attempt is marked `UNKNOWN`, and the reconciler resolves it ([D6](decisions.md#d6)).
 
 **Refund.** Reserve, call the PSP, then confirm or release. On a timeout, the API answers `202 Accepted` with the refund ID and status. Merchants get final capture and refund results by [webhook](payment-lifecycle.md#merchant-events) or polling. The SQL is in [Refund rules](payment-lifecycle.md#refund-rules).
 
@@ -180,6 +179,7 @@ create table payments (
   attempt_count        int not null default 0,
   event_seq            int not null default 0, -- rises by one per outbox event (D32)
   expires_at           timestamptz not null, -- payment window for AWAITING_METHOD
+  authorized_until     timestamptz, -- set when AUTHORIZED, from the PSP's authorization window (D37)
   version              int not null default 0,
   created_at           timestamptz not null default now(),
   updated_at           timestamptz not null default now(),
@@ -190,18 +190,33 @@ create index payments_unresolved on payments (updated_at)
   where state in ('PSP_PENDING','UNKNOWN');
 create index payments_awaiting on payments (expires_at)
   where state = 'AWAITING_METHOD';
+create index payments_authorized on payments (authorized_until)
+  where state = 'AUTHORIZED';
 
--- one row per authorize, sale or capture, each with its own key (D5, D29); void is Proposed
+-- one merchant's connection to a PSP (D35); credentials stay in external secrets
+create table psp_accounts (
+  id             uuid primary key,
+  merchant_id    uuid not null,
+  psp            text not null,
+  mode           text not null check (mode in ('live','test')),
+  credential_ref text not null,
+  rate_limit_per_s int not null,
+  disabled_at    timestamptz
+);
+
+-- one row per authorize, sale, capture or void, each with its own key (D5, D29, D37)
 -- refunds have their own row and key in the refunds table
 create table payment_attempts (
   attempt_id    uuid primary key,
   payment_id    uuid not null references payments(id),
   merchant_id   uuid not null,
-  operation     text not null check (operation in ('authorize','sale','capture')),
+  operation     text not null check (operation in ('authorize','sale','capture','void')),
   psp           text not null,
+  psp_account_id uuid not null references psp_accounts(id),
+  target_attempt_id uuid references payment_attempts(attempt_id), -- set when voiding a late approval
   state         text not null,
   failure_code  text,
-  -- how to pay: a reference and typed details, never card data; null on capture
+  -- how to pay: a PSP token and typed details, never card data; null on capture and void
   method_ref    text,
   method_type   text,
   method_details jsonb,
@@ -209,7 +224,7 @@ create table payment_attempts (
   action_expires_at timestamptz,
   psp_reference text,
   created_at    timestamptz not null default now(),
-  check (operation = 'capture' or (method_ref is not null and method_type is not null))
+  check (operation in ('capture','void') or (method_ref is not null and method_type is not null))
 );
 create index payment_attempts_unresolved on payment_attempts (created_at)
   where state in ('PENDING','UNKNOWN');
@@ -221,9 +236,14 @@ create index payment_attempts_psp_reference on payment_attempts (psp, psp_refere
 create unique index payment_attempts_one_live_authorize on payment_attempts (payment_id)
   where operation in ('authorize','sale')
     and state in ('PENDING','ACTION_REQUIRED','UNKNOWN','SUCCEEDED');
--- one live or successful capture per payment
+-- one live or successful capture or void per payment, so the two can't race (D37)
 create unique index payment_attempts_one_live_capture on payment_attempts (payment_id)
-  where operation = 'capture' and state in ('PENDING','UNKNOWN','SUCCEEDED');
+  where operation in ('capture','void') and target_attempt_id is null
+    and state in ('PENDING','UNKNOWN','SUCCEEDED');
+-- one live or successful void of a late-approved attempt; never blocks the payment's capture
+create unique index payment_attempts_one_late_void on payment_attempts (target_attempt_id)
+  where operation = 'void' and target_attempt_id is not null
+    and state in ('PENDING','UNKNOWN','SUCCEEDED');
 
 -- hash-partitioned by merchant_id so the unique key includes the partition key
 create table idempotency_keys (
@@ -257,12 +277,12 @@ create table outbox (
 ) partition by range (created_at);
 
 create table psp_events (
-  psp          text not null,
+  psp_account_id uuid not null,
   psp_event_id text not null,
   payload      jsonb not null,
   received_at  timestamptz not null default now(),
   processed_at timestamptz, -- null means parked, to be retried (D30)
-  primary key (psp, psp_event_id)
+  primary key (psp_account_id, psp_event_id)
 );
 
 create table refunds (
@@ -272,6 +292,7 @@ create table refunds (
   amount_minor    bigint not null check (amount_minor > 0),
   state           text not null,
   psp             text not null,
+  psp_account_id  uuid not null references psp_accounts(id),
   psp_reference   text,
   created_at      timestamptz not null default now()
 );
@@ -283,6 +304,7 @@ create index refunds_psp_reference on refunds (psp, psp_reference)
 -- one row per settlement file line (D18); re-ingesting a file changes nothing
 create table settlement_lines (
   psp           text not null,
+  psp_account_id uuid not null references psp_accounts(id),
   file_id       text not null,
   line_no       int not null,
   kind          text not null,
@@ -294,7 +316,7 @@ create table settlement_lines (
   attempt_id    uuid references payment_attempts(attempt_id),
   refund_id     uuid references refunds(id),
   received_at   timestamptz not null default now(),
-  primary key (psp, file_id, line_no),
+  primary key (psp_account_id, file_id, line_no),
   check (attempt_id is null or refund_id is null)
 );
 -- one matched capture or refund line per operation, so a repeated line can't post twice
@@ -367,12 +389,12 @@ create table ledger_entries (
 ) partition by hash (txn_id);
 ```
 
-**Fund flows** ([D21](decisions.md#d21)). Clearing accounts return to zero when a flow finishes, so a nonzero balance past its allowed age means something is missing.
+**Fund flows** ([D21](decisions.md#d21)). Clearing accounts return to zero when a flow finishes, so a nonzero balance past its allowed age means something is missing. Open Payments holds no funds ([D35](decisions.md#d35)), so these record the merchant's position with its own PSP.
 
 | Event | Debit | Credit | Money | Clears when |
 |---|---|---|---|---|
-| Authorize | `auth_hold` | `auth_hold_contra` | Logical | Capture releases it |
-| Capture: release the hold | `auth_hold_contra` | `auth_hold` | Logical | Clears the hold |
+| Authorize | `auth_hold` | `auth_hold_contra` | Logical | Capture, void or expiry releases it |
+| Capture, void or expiry: release the hold | `auth_hold_contra` | `auth_hold` | Logical | Clears the hold |
 | Capture: record the money | `psp_receivable` | `merchant_payable` | Real | Settlement line matches |
 | Settlement of a capture | `settlement_bank` | `psp_receivable` | Real | Clears the receivable |
 | Refund reserved | `merchant_payable` | `refund_reserved` | Real | Confirm or release |
@@ -382,7 +404,7 @@ create table ledger_entries (
 
 **Balance invariant.** The application inserts all entries of a transaction in one statement, and a deferred constraint trigger checks that debits equal credits per `txn_id` and currency. Its cost is measured in L1. If too high, a continuous audit query that pages on any imbalance replaces it, and property tests (U3) remain the main guard.
 
-**Negative balance.** Refund and payout checks take a per-account advisory transaction lock, read the available balance from the latest snapshot plus recent entries, and insert a reservation entry in the same transaction ([D9](decisions.md#d9)). The create-payment path never takes this lock. Payout reservation rules belong to the payout design, which is `Open`.
+**Negative balance.** Can't happen in v1: with no payouts and no retained fees, the per-payment refund limit is enough ([D38](decisions.md#d38)). Fees or payouts must restore the per-account check in [D9](decisions.md#d9) before they ship.
 
 ## PSP integration
 
@@ -394,6 +416,7 @@ public interface IPspAdapter
     Task<PspResult> SaleAsync(AttemptId attempt, Money amount, PaymentMethodRef method, CancellationToken ct); // authorize and capture in one call
     Task<PspResult> CompleteActionAsync(AttemptId attempt, CancellationToken ct); // after the customer acts
     Task<PspResult> CaptureAsync(AttemptId attempt, Money amount, CancellationToken ct);
+    Task<PspResult> VoidAsync(AttemptId attempt, AttemptId authorized, CancellationToken ct); // D37
     Task<PspResult> RefundAsync(RefundId refund, Money amount, CancellationToken ct);
     Task<PspInquiry> RecoverAsync(AttemptId attempt, CancellationToken ct); // through the adapter's recovery mode
     Task<PspInquiry> RecoverRefundAsync(RefundId refund, CancellationToken ct);
@@ -423,11 +446,12 @@ Provider facts change, so recheck them at adapter time, and record results in th
 
 - **Idempotency:** each `attempt_id` and `refund_id` is the PSP idempotency key for one operation, reused for any retry of that operation. Authorize and capture have different keys ([D5](decisions.md#d5)).
 - **Deadline:** each call has an explicit deadline from the request budget (initially 2.5 s, configurable per PSP).
-- **Resilience:** timeout, then circuit breaker (opens on a high failure ratio over a sampling window, then half-open probes), then a client-side token-bucket limiter sized to the PSP contract. The breaker is per PSP, never global.
+- **Accounts:** an adapter instance acts for one merchant's `psp_accounts` row and its credentials ([D35](decisions.md#d35)).
+- **Resilience:** timeout, then circuit breaker (opens on a high failure ratio over a sampling window, then half-open probes), then a client-side token-bucket limiter per PSP account. A breaker per PSP catches an outage, and one per account catches that account's own failures, so a revoked credential fails one merchant fast and never opens the PSP's breaker. Nothing is global.
 - **Retries:** automatic only before the request was sent (connection failures) or with the same idempotency key. Never a blind retry of a charge.
-- **Failover:** when a PSP breaker is open, new payments route to a secondary PSP if the merchant allows it. In-flight attempts stay with the failed PSP and are resolved by inquiry.
+- **Failover:** when a PSP breaker is open, new payments route to a secondary PSP only if the merchant has an account there and the method can be charged on it, since PSP tokens don't move ([D39](decisions.md#d39)). In-flight attempts stay with the failed PSP and are resolved by recovery.
 - **Provider changes:** adapters are versioned and covered by recorded-fixture contract tests (U5).
-- **Callbacks:** the callback receiver in the Payments API verifies the signature, inserts into `psp_events` (`ON CONFLICT DO NOTHING`) and applies the event through the payment-transition module, in one transaction. An event that can't apply yet is parked and retried. Duplicate callbacks are no-ops ([D30](decisions.md#d30)).
+- **Callbacks:** each PSP account has its own callback URL and signing secret. The callback receiver in the Payments API verifies the signature, inserts into `psp_events` (`ON CONFLICT DO NOTHING`) and applies the event through the payment-transition module, in one transaction. An event that can't apply yet is parked and retried. Duplicate callbacks are no-ops ([D30](decisions.md#d30)).
 - **Reconciler:**
   - Every few seconds it selects payments, attempts and refunds that are unresolved past the attempt timeout, calls `RecoverAsync` or `RecoverRefundAsync` within its own PSP quota ([D34](decisions.md#d34)), and applies the answer.
   - It ingests each PSP settlement file line by line, matches lines to operations, and writes any discrepancy to a table that pages on non-zero ([Settlement lines](payment-lifecycle.md#settlement-lines), [D18](decisions.md#d18)).
@@ -451,8 +475,7 @@ Provider facts change, so recheck them at adapter time, and record results in th
 
 | Area | Feature | Status |
 |---|---|---|
-| Payments | Create with an idempotency key; authorize then full capture; one-call sale; status query | `Committed` |
-| Payments | Void and authorization expiry | `Proposed`, owner decision [D37](decisions.md#d37) |
+| Payments | Create with an idempotency key; authorize then full capture; one-call sale; void; authorization expiry; status query | `Committed` |
 | Payments | Partial capture | `Proposed` |
 | Refunds | Full and partial refunds, refund idempotency, total never above captured | `Committed` |
 | Money correctness | Append-only double-entry ledger, derived balances, reconciliation, continuous audit | `Committed` |
@@ -460,12 +483,14 @@ Provider facts change, so recheck them at adapter time, and record results in th
 | Reliability | Deadlock automation layers | `Proposed` |
 | Reliability | Multiple cells | `Open` until G1 |
 | Events | Transactional outbox; signed merchant webhooks with dead-letter queue | `Committed` |
-| Security and risk | Vault, tenant isolation, secrets rotation, fast fraud rules with fallback | `Committed` |
-| Operations | Metrics, logs, traces, alerts; runbooks and drills for 49 failure scenarios | `Committed` (none rehearsed) |
+| Security and risk | PSP-hosted card fields, merchant PSP credentials, tenant isolation, secrets rotation, fast fraud rules with fallback | `Committed` |
+| Security and risk | Our own vault | Deferred ([D39](decisions.md#d39)) |
+| Payments | Client-side API access | `Committed`; client secret design `Open` until Stage 4 |
+| Operations | Metrics, logs, traces, alerts; runbooks and drills for 51 failure scenarios | `Committed` (none rehearsed) |
 | Merchant experience | Dashboard and checkout screens | `Proposed`: prototype outside this repo |
 | Payments | Retry on the same payment, customer-action state, cancel | `Committed` ([D16](decisions.md#d16), [D17](decisions.md#d17)) |
 | Payments | Merchant test mode | `Committed` ([D20](decisions.md#d20)); isolation mechanism `Open` |
 | Payments | Delayed-result methods (`PROCESSING`), wider payment methods | `Proposed` |
 | Money correctness | Settlement file ingestion | `Committed` ([D18](decisions.md#d18)); fee and adjustment lines `Open` |
 | Future | Rest of settlement, payouts, disputes | `Proposed` in the [lifecycle](payment-lifecycle.md#proposed-rules); not designed |
-| Future | Marketplace features, billing, advanced fraud, formal PCI assessment | `Open` |
+| Future | Marketplace features, billing, fees, advanced fraud, formal PCI assessment | `Open` |

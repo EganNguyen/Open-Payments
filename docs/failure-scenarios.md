@@ -49,6 +49,8 @@ Columns: **Detect** is the signal that shows it. **Automatic** is what the syste
 | FS-46 | Crash during callback handling, or a callback arrives before transaction B | Parked event count and age | Insert and apply share one transaction; an early event parks and retries ([D30](decisions.md#d30)) | Worker clears parked events; alert past the limit | C46, CK5 |
 | FS-47 | PSP slowdown creates thousands of `UNKNOWN` attempts | `UNKNOWN` count; recovery quota use | Recovery stays inside its own quota; live traffic keeps its share ([D34](decisions.md#d34)) | Backlog drains with a rate cap after the PSP recovers | C47, C23 |
 | FS-48 | Callback flood from a PSP | Callback rate; rejected callbacks | Callbacks have their own concurrency limit; the PSP's retries deliver what was rejected | Raise the limit if sustained; reconcile anything late | C48 |
+| FS-50 | Capture and void race, a void times out, or an authorization lapses | Live-operation count; hold age; `payment.void_failed` | One unique index allows one live capture or void. A timeout stays unresolved with no state change. Expiry waits for any live capture ([D37](decisions.md#d37)) | Reconciler resolves; a capture on a lapsed authorization is declined by the PSP, and the attempt is `FAILED` | C50, CK7 |
+| FS-51 | A merchant's PSP credential is revoked or expires | Authentication errors per PSP account; account breaker state | That merchant fails fast with a stable code, and the PSP-wide breaker stays closed ([D35](decisions.md#d35)) | Merchant reconnects the account; alert and tell the merchant | C51 |
 
 ### Application and platform
 
@@ -199,9 +201,9 @@ Short, ordered steps. Each runbook is rehearsed in a [drill](#drills) before it 
 
 | Order | Drill | Tests | Notes |
 |---|---|---|---|
-| 1 | In a test environment, break one thing at a time under 1k TPS | C3, C4, C5, C6, C15, C36, C37, C38, C41, C43, C44, C45, C46 | Money-correctness faults first |
-| 2 | PSP and dependency faults under 5k TPS | C9, C12, C13, C14, C16, C23, C32, C39, C40, C47, C48 | Use the mock PSP in slow, error and down modes |
-| 3 | Data faults under 5k TPS | C1, C2, C7, C22, C29, C34, C35, C49 | Database slow, pool exhausted, failover, disk, lock races, read flood |
+| 1 | In a test environment, break one thing at a time under 1k TPS | C3, C4, C5, C6, C15, C36, C37, C38, C41, C43, C44, C45, C46, C50 | Money-correctness faults first |
+| 2 | PSP and dependency faults under 5k TPS | C9, C12, C13, C14, C16, C23, C32, C39, C40, C47, C48, C51 | Use the mock PSP in slow, error and down modes |
+| 3 | Data faults under 5k TPS | C1, C2, C7, C22, C29, C34, C49 | Database slow, pool exhausted, failover, disk, lock races, read flood |
 | 4 | Messaging faults | C8, C17, C18, C26, C27 | Broker down, poison, webhook endpoints failing |
 | 5 | Platform faults | C10, C11, C19, C20, C24, C25, C28, C30, and C33 only if cells are adopted | Node, zone, release, cache, clock, restart, routing |
 | 6 | Security and recovery | C21, C42, O5, O6, F1 | Rotation, restore, leak response |

@@ -12,7 +12,7 @@ This doc keeps three things apart:
 2. **[Capability map](#capability-map):** a proposed map of what a full payment platform needs. It's our own inference from business capabilities, and it is **not Stripe's internal architecture**.
 3. **[Public Stripe reference](#public-stripe-reference):** only what Stripe has published, with sources.
 
-A capability is not a service. The map has 44 capabilities, but only 9 deployable services exist in the design. Nothing is built yet.
+A capability is not a service. The map has 44 capabilities, but only 8 deployable services exist in the design. Nothing is built yet.
 
 | Kind | Meaning |
 |---|---|
@@ -25,7 +25,7 @@ A capability is not a service. The map has 44 capabilities, but only 9 deployabl
 
 ## Open Payments today
 
-Nine deployables, two libraries and four infrastructure parts. How they fit together is in [Components and boundaries](architecture.md#components-and-boundaries).
+Eight deployables, two libraries and four infrastructure parts. Our own vault is deferred ([D39](decisions.md#d39)). How they fit together is in [Components and boundaries](architecture.md#components-and-boundaries).
 
 | Component | Kind | Boundary | Job | Owns | Customer waits? | If it is down |
 |---|---|---|---|---|---|---|
@@ -37,14 +37,13 @@ Nine deployables, two libraries and four infrastructure parts. How they fit toge
 | Ledger projector | Deployable | Cell | Builds balances and snapshots from entries; rebuildable read model | balance snapshots | No | Balances lag; payments unaffected |
 | Webhook dispatcher | Deployable | Cell | Signed delivery, retries with backoff, dead-letter queue, per-endpoint isolation | delivery log | No | Notifications are late, never lost |
 | Reconciler | Deployable | Cell | Resolves unknown and stuck operations, runs timer jobs, ingests and matches PSP settlement files | discrepancy records | No | Unresolved work stays unresolved longer |
-| Vault and tokenization | Deployable; may be deferred ([D39](decisions.md#d39), `Proposed`) | Shared | Stores card data encrypted, issues tokens; own network segment and PCI scope | encrypted card data | Yes | Card payments cannot start |
 | Payment-transition module | Library | Linked into the Payments API and reconciler | State machine, atomic refund limit, ledger and outbox writes; the only code that writes money state | payments, attempts, refunds, ledger, outbox | Yes | Fails with its host process |
 | PSP adapters | Library | Linked into the Payments API and reconciler | One adapter per PSP behind one interface; deadline, breaker, rate limit, recovery mode, failover where allowed. A separate bulkhead per PSP | adapter metadata | Yes | Payment becomes `UNKNOWN` or fails fast |
 | PostgreSQL | Infrastructure | Cell | Stores all money state, with synchronous standbys | all financial data | Yes | Standby takes over; committed payments are kept |
 | PgBouncer | Infrastructure | Cell | Pools database connections | nothing | Yes | Writes stop until it is replaced |
 | Kafka or Redpanda | Infrastructure | Cell | Carries events to workers | event log | No | Events wait in the outbox |
 | Redis | Infrastructure | Cell | Fraud counters and fast non-authoritative checks | counters | Only for fraud checks | Rate limits fall back to in-process; idempotency unaffected |
-| PSPs and banks | External | Outside | Move the card money | their records | Yes | Outside our control, hence `UNKNOWN` |
+| PSPs and banks | External | Outside | Move the card money through each merchant's own account ([D35](decisions.md#d35)), and host the card fields | their records, card data | Yes | Outside our control, hence `UNKNOWN` |
 | Merchant webhook endpoints | External | Outside | Receive notifications | their records | No | Retry, then dead-letter |
 
 Observability and the Kubernetes platform support all of these. The mock PSP and load harness are test tools, built first.
@@ -57,7 +56,6 @@ Observability and the Kubernetes platform support all of these. The mock PSP and
 | Cell router | Payments API | Sync | Forward the request | Payments in that cell stop |
 | Payments API | Fraud decision | Sync | Check within about 50 ms | Fallback by risk tier |
 | Fraud decision | Redis | Sync | Velocity counters | In-process limits, per the fallback policy |
-| Payments API | Vault | Sync | Tokenize; use card data by token | Card payments cannot start |
 | Payments API | PSP adapters (in-process) | Sync, then PSP over the network | Authorize, capture, refund | `UNKNOWN`, or fast failure |
 | Payments API, reconciler | Payment-transition module (in-process) | Sync | Write state, ledger and outbox in one transaction | Operation fails; nothing partial commits |
 | Payment-transition module | PostgreSQL through PgBouncer | Sync | Commit money state | Fast failure; standby takes over |
@@ -101,8 +99,8 @@ Our own proposal, not Stripe's internal architecture. **Money** means the capabi
 | 2 | Authorization | `Committed` | Module | Payments API | Yes | Build |
 | 3 | Capture | `Committed` | Module | Payments API | Yes | Build |
 | 4 | Refund | `Committed` | Module | Payments API | Yes | Build |
-| 5 | Void | `Proposed` | Module | Payments API | Yes | Build |
-| 6 | Payment methods | `Committed` | Module | Payments API and vault, cards only; wallets and bank methods are `Open` | No | Build |
+| 5 | Void | `Committed` | Module | Payments API | Yes | Build |
+| 6 | Payment methods | `Committed` | Module | Payments API with PSP tokens, cards only; wallets and bank methods are `Open` | No | Build |
 | 7 | PSP connectors | `Committed` | Library | PSP adapters | No | Build |
 | 8 | Payment routing | `Committed` | Library | PSP adapters, failover only; routing strategy is `Open` | No | Build |
 | 9 | Payment recovery | `Committed` | Module | Reconciler | Yes | Build |
@@ -159,7 +157,7 @@ Our own proposal, not Stripe's internal architecture. **Money** means the capabi
 | 40 | Analytics | `Open` | Planned | To decide; consumes events | No | To decide |
 | 41 | Configuration | `Committed` | Module | Control plane cached in each cell; its owner is `Open` | No | Build |
 | 42 | Secrets | `Committed` | Infrastructure | External secrets with rotation | No | Buy |
-| 43 | Vault and tokenization | `Committed` | Deployable | Vault, shared to limit PCI scope | No | To decide |
+| 43 | Vault and tokenization | Deferred ([D39](decisions.md#d39)) | Planned | PSP-hosted fields and tokens in v1 | No | Buy from the PSP |
 | 44 | Cell routing | `Committed` | Deployable | Cell router | No | Build |
 
 ## Public Stripe reference

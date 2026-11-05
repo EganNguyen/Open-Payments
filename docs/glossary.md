@@ -38,4 +38,4 @@ Status: Draft · Last updated: 2026-11-05
 | **outbox publisher** | The worker moving committed outbox events to the broker | "relay" |
 | **PSP** | Payment service provider: the company or bank connection that moves card money | "bank", when the PSP is meant |
 | **`Committed` / `Proposed` / `Open`** | Part of the design / suggested but not adopted / not yet decided | Any other status label |
-| **`READY` / `MEASURE-FIRST` / `NEEDS-OWNER`** | How far an area can be built: its questions are resolved / it needs a measurement first / it needs an owner decision first. Used only in the [readiness table](superpowers/specs/2026-11-05-implementation-and-benchmark-design.md#design-readiness) | A claim that something works |
+| **`READY` / `MEASURE-FIRST` / `NEEDS-OWNER` / `DESIGN-NEEDED`** | How far an area can be built: its questions are resolved / it needs a measurement first / it needs an owner decision first / it is in scope but not designed yet. Used only in the [readiness table](superpowers/specs/2026-11-05-implementation-and-benchmark-design.md#design-readiness) | A claim that something works |

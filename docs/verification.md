@@ -89,14 +89,14 @@ CK7-CK10 are separate code from the payment-transition module ([D23](decisions.m
 | C28 | Full outage, then restart of all services | Staged ramp and capped backlog drain; no second outage; CK pass before recovery is declared |
 | C29 | Replica lag of 30 s | Reads that must be fresh go to the primary; no stale payment status after create |
 | C30 | One merchant sends 50% of all traffic | Per-merchant limits protect others; other merchants keep their SLO |
-| C31 | Edge-case suite for payment handling ([E1-E29](failure-scenarios.md#edge-cases)), split by phase: C31a (E1-E9, E11-E13, E16-E18, E21, E25-E29), C31b (E10, E19, E20, E22-E24), C31c (E14, E15). Until void and expiry are built, E8 covers capture from a non-`AUTHORIZED` state | Each case returns its defined result; no state or ledger corruption |
+| C31 | Edge-case suite for payment handling ([E1-E29](failure-scenarios.md#edge-cases)), split by phase: C31a (E1-E9, E11-E13, E16-E18, E21, E25-E29), C31b (E10, E19, E20, E22-E24), C31c (E14, E15) | Each case returns its defined result; no state or ledger corruption |
 | C32 | PSP returns an amount or currency that differs from ours | Payment moves to `REVIEW`; no ledger entry for the disputed amount; alert fires |
 | C33 | Cell router or its config store unavailable (only if cells are adopted) | Routers keep the last mapping; mapping changes frozen; traffic keeps flowing |
 | C34 | Capture, refund and reconciler race on one payment, with lock order forced to collide | `40P01` is raised and counted in `pg_stat_database.deadlocks`; retried at most twice; `55P03` returns 503; exactly one effect per operation; CK1 and CK3 pass |
-| C35 | Concurrent refunds across different payments against a low merchant balance | Advisory lock serializes the checks; balance never goes negative; create-payment latency unaffected |
+| C35 | Deferred with [D38](decisions.md#d38), and required before fees or payouts ship. Concurrent refunds across different payments against a low merchant balance | Advisory lock serializes the checks; balance never goes negative; create-payment latency unaffected |
 | C36 | Two concurrent capture requests with different idempotency keys | One PSP capture; the other gets the current status or 409; CK2 passes |
 | C37 | Decline, then two concurrent new attempts on the same payment | One PSP authorize; the other gets the current status or 409; one payment for the order; CK2 passes |
-| C38 | PSP approves an attempt already marked `FAILED`, both before and after another attempt succeeds | Attempt moves to `REVIEW`, alert fires, no ledger entry for it; no new attempt can start from `AWAITING_METHOD` |
+| C38 | PSP approves an attempt already marked `FAILED`, both before and after another attempt succeeds | Attempt moves to `REVIEW`, alert fires, no ledger entry for it; no new attempt can start from `AWAITING_METHOD`. Where the PSP allows, the reconciler voids it, and that void doesn't block the payment's own capture ([D37](decisions.md#d37)) |
 | C39 | One real 3D Secure flow on a PSP sandbox: finished, failed and abandoned, plus a callback racing the action window | Correct state each time; abandoned reaches `AWAITING_METHOD` through `UNKNOWN` and inquiry; one effect at the PSP. Required before the API contract is frozen ([D17](decisions.md#d17)) |
 | C40 | Settlement file with duplicate lines, unmatched lines, wrong amounts and a missing line, ingested twice | Each line ends in the defined state; discrepancies page; ledger entries post once; a killed ingest resumes safely |
 | C41 | Key expiry job runs while payments are `UNKNOWN` past 24 hours, then the client retries | Key is kept, the stored answer returns, and there is no second charge; resolved keys expire |
@@ -108,6 +108,8 @@ CK7-CK10 are separate code from the payment-transition module ([D23](decisions.m
 | C47 | PSP slows until thousands of attempts are `UNKNOWN`, then recovers | Recovery stays inside its own quota; live payments keep theirs; backlog drains with a rate cap; CK2 and CK5 pass ([D34](decisions.md#d34)) |
 | C48 | Callback flood at several times the normal rate | Callbacks are limited with their own permits and the PSP's retries deliver the rest; create-payment keeps its SLO; no event is lost |
 | C49 | Status-query flood | Create-payment keeps its SLO; reads shed first ([Stripe research](stripe-research.md#8-separate-rate-limits-from-load-shedding)) |
+| C50 | Capture and void at the same moment; void times out; authorization window passes during a live capture; capture after `VOIDED` or `EXPIRED` | One PSP effect; the loser gets the current status or 409; a timeout stays unresolved with no state change; expiry waits for the live capture; `auth_hold` clears in every final state ([D37](decisions.md#d37)) |
+| C51 | One merchant's PSP credential is revoked during load | That merchant's attempts fail fast with a stable code and no `UNKNOWN`; its account breaker opens and the PSP's doesn't; other merchants keep their SLO; an alert fires ([D35](decisions.md#d35)) |
 
 ## Unit and property tests
 
@@ -281,7 +283,7 @@ The **Design response** column links to the mechanism, and **Proof** lists tests
 | 84 | Concurrent refunds | [Refund rules](payment-lifecycle.md#refund-rules): conditional update and `CHECK` constraint | C6, CK3 | ☐ |
 | 85 | Incorrect decimal arithmetic | [Data model](architecture.md#data-model): integer minor units, no floating point | U1 | ☐ |
 | 86 | Currency precision errors | [Data model](architecture.md#data-model): currency exponent and rounding rule table | U1 | ☐ |
-| 87 | Negative merchant balance | [Ledger](architecture.md#ledger): advisory lock and reservation entry with the balance check | U3, C6, C35 | ☐ |
+| 87 | Negative merchant balance | [Ledger](architecture.md#ledger): can't occur in v1 ([D38](decisions.md#d38)); per-payment limit with a reservation entry. C35 returns with fees or payouts | U3, C6 | ☐ |
 | 88 | Payment succeeds but ledger fails | [Ledger](architecture.md#ledger): same transaction; cannot occur by construction | C15, C4 | ☐ |
 | 89 | Refund succeeds but response times out | [Refund rules](payment-lifecycle.md#refund-rules), [PSP integration](architecture.md#psp-integration): refund idempotency key; PSP refund key; inquiry | C3, C6 | ☐ |
 | 90 | Historical ledger mutation | [Ledger](architecture.md#ledger): append-only, update/delete revoked, reversing entries | O4, U3, CK1 | ☐ |
@@ -310,7 +312,7 @@ The **Design response** column links to the mechanism, and **Proof** lists tests
 | 103 | Account takeover | [Security](engineering-standards.md#security-and-fraud): MFA and step-up for key roll and payouts | O4 | ☐ |
 | 104 | Replay attacks | [Security](engineering-standards.md#security-and-fraud): signed requests and webhooks with timestamp; idempotency | U7, U4 | ☐ |
 | 105 | Cross-merchant access | [Security](engineering-standards.md#security-and-fraud): `merchant_id` on every tenant-owned table, row-level security backstop | U6 | ☐ |
-| 106 | Sensitive information in logs | [Security](engineering-standards.md#security-and-fraud): redaction; card data only in vault | U8 | ☐ |
+| 106 | Sensitive information in logs | [Security](engineering-standards.md#security-and-fraud): redaction; card data never reaches us ([D39](decisions.md#d39)) | U8 | ☐ |
 | 107 | Unauthorized financial operations | [Security](engineering-standards.md#security-and-fraud): scoped keys, RBAC, append-only audit log | O4, U6 | ☐ |
 | 108 | Fraud service unavailable | [Security](engineering-standards.md#security-and-fraud): explicit fallback policy per risk tier | C14 | ☐ |
 
@@ -342,7 +344,7 @@ The **Design response** column links to the mechanism, and **Proof** lists tests
 | 22 | Circuit breakers and bulkheads | [PSP integration](architecture.md#psp-integration) | C13 | ☐ |
 | 23 | Canary deployments | [Kubernetes](engineering-standards.md#kubernetes-and-operations) | C19 | ☐ |
 | 24 | Security and PCI DSS controls | [Security](engineering-standards.md#security-and-fraud) | O4, U6, U8 | ☐ |
-| 25 | 5,000 TPS load and failure testing | [Verification](#how-verification-works) | L1-L6, C1-C49 (C33 only if cells are adopted) | ☐ |
+| 25 | 5,000 TPS load and failure testing | [Verification](#how-verification-works) | L1-L6, C1-C51 (C33 only if cells are adopted; C35 only with fees or payouts) | ☐ |
 
 ## Progress
 
@@ -352,7 +354,7 @@ Update these counts as rows are ticked.
 |---|---|---|
 | Production problems | 108 | 0 |
 | Production readiness items | 25 | 0 |
-| [Failure scenarios](failure-scenarios.md#failure-catalogue) (FS-01 to FS-49) | 49 | 0 |
+| [Failure scenarios](failure-scenarios.md#failure-catalogue) (FS-01 to FS-51) | 51 | 0 |
 | [Edge cases](failure-scenarios.md#edge-cases) (E1 to E29) | 29 | 0 |
 | [Runbooks](failure-scenarios.md#runbooks) (R1 to R7) | 7 | 0 (none rehearsed) |
 
@@ -364,9 +366,9 @@ A scenario is verified only when its proof test has passed with a recorded run, 
 |---|---|---|
 | 0 | Mock PSP, k6 load scripts, automated CK1-CK10 checks, dashboards | CK checks run automatically after every test |
 | 1 | Payments core, idempotency, ledger, refunds, outbox table (written in the same transaction from the start), canonical log line | U1-U4, C5, C6, C31a, C43, S1, S3, S5, S6 |
-| 2 | PSP adapter, reconciler, callbacks, settlement ingestion | C3, C4, C9, C12, C13, C15, C16, C23, C26, C31b, C32, C34, C35, C36, C37, C38, C39, C40, C41, C44, C45, C46, C47, U5 |
+| 2 | PSP adapter, reconciler, callbacks, settlement ingestion | C3, C4, C9, C12, C13, C15, C16, C23, C26, C31b, C32, C34, C36, C37, C38, C39, C40, C41, C44, C45, C46, C47, C50, C51, U5 |
 | 3 | Outbox publisher, broker, consumers, webhooks | C8, C17, C18, C27, C31c, U5, CK6 |
-| 4 | Hardening: limits, HA, deployment, minimal synchronous fraud, vault and edge gateway, and cells only if gate G1 requires them | L1-L6, C1, C2, C7, C10, C11, C19-C22, C24, C25, C28-C30, C33 (cells only), C48, C49, S2, S4, O3 |
+| 4 | Hardening: limits, HA, deployment, minimal synchronous fraud, edge gateway, client-side access, and cells only if gate G1 requires them | L1-L6, C1, C2, C7, C10, C11, C19-C22, C24, C25, C28-C30, C33 (cells only), C48, C49, S2, S4, O3 |
 | 5 | Security, full fraud rules, operations, test mode isolation | U6-U8, F1, C14, C42, O1, O2, O4, O5, O6, then L5 again on the complete path |
 
-**Sign-off:** all 108 and all 25 checklist rows are ticked, each with a recorded run, and the L5 run after Phase 5 is the number reported ([D24](decisions.md#d24)).
+**Sign-off:** all 108 and all 25 checklist rows are ticked, each with a recorded run, and the L5 run after Phase 5 is the number reported ([D24](decisions.md#d24)). Live card traffic also needs a PCI assessor's confirmation of scope ([D39](decisions.md#d39)).

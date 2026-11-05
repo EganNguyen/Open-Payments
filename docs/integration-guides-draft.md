@@ -8,10 +8,14 @@ Only cards are in version 1. The others are here to find out whether adding them
 
 ## Card
 
-Authorize now, capture later:
+The customer enters the card in the PSP's hosted fields, and your page gets a PSP token ([D39](decisions.md#d39)). The charge runs through your own PSP account ([D35](decisions.md#d35)). Authorize now, capture later:
 
-1. `POST /v1/payments` with the amount, `method` and `capture_mode: manual`. Answer: 200, `AUTHORIZED`.
-2. `POST /v1/payments/{id}/capture` when the goods ship. Answer: 200, `CAPTURED`.
+1. `POST /v1/payments` with the amount, `method.ref` set to the token and `capture_mode: manual`. Answer: 200, `AUTHORIZED`.
+2. `POST /v1/payments/{id}/capture` when the goods ship. Answer: 200, `CAPTURED`. To release the funds instead, use `POST /v1/payments/{id}/void`.
+
+Uncaptured authorizations move to `EXPIRED` when their window ends. Capturing after that is rejected.
+
+Charging at once uses `capture_mode: auto`: one PSP call where supported, ending in `CAPTURED`.
 
 If the card is declined, the answer is 402 with `failure_code`, and the payment returns to `AWAITING_METHOD`. Send another card to `POST /v1/payments/{id}/attempts` under a new key. There is still one payment for the order.
 
