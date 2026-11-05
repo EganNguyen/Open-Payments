@@ -1,0 +1,28 @@
+{
+  "Name": "sale-approval",
+  "Initial": {
+    "State": "PspPending",
+    "Operation": "Sale",
+    "AttemptState": "Pending",
+    "AttemptCount": 1,
+    "EventSeq": 0,
+    "CapturedMinor": 0,
+    "RefundedMinor": 0,
+    "RefundPendingMinor": 0,
+    "RefundState": null,
+    "RefundAmount": 0
+  },
+  "Command": {
+    "Kind": "PspAnswer",
+    "Operation": "Sale",
+    "Outcome": "Approved",
+    "AnswerAmount": null,
+    "FailureCode": null,
+    "ActionType": null,
+    "Approved": false,
+    "TimedOut": false
+  },
+  "ExpectedState": "Captured",
+  "ExpectedLedger": ["psp_receivable:D:100", "merchant_payable:C:100"],
+  "ExpectedEvents": ["payment.captured"]
+}

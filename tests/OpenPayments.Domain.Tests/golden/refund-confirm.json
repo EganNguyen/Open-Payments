@@ -1,0 +1,28 @@
+{
+  "Name": "refund-confirm",
+  "Initial": {
+    "State": "Captured",
+    "Operation": "Sale",
+    "AttemptState": "Succeeded",
+    "AttemptCount": 1,
+    "EventSeq": 1,
+    "CapturedMinor": 100,
+    "RefundedMinor": 0,
+    "RefundPendingMinor": 30,
+    "RefundState": "Pending",
+    "RefundAmount": 30
+  },
+  "Command": {
+    "Kind": "RefundConfirm",
+    "Operation": "Authorize",
+    "Outcome": "Approved",
+    "AnswerAmount": null,
+    "FailureCode": null,
+    "ActionType": null,
+    "Approved": false,
+    "TimedOut": false
+  },
+  "ExpectedState": "PartiallyRefunded",
+  "ExpectedLedger": ["refund_reserved:D:30", "psp_refund_payable:C:30"],
+  "ExpectedEvents": ["payment.refunded"]
+}

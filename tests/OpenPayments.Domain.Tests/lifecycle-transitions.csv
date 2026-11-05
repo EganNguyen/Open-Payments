@@ -1,0 +1,33 @@
+From,To,Trigger
+*,AWAITING_METHOD,Create request with no method
+*,PSP_PENDING,Create request with a method
+AWAITING_METHOD,PSP_PENDING,New attempt recorded
+AWAITING_METHOD,CANCELED,Cancel request or payment window ends
+PSP_PENDING,AUTHORIZED,PSP approved
+PSP_PENDING,CAPTURED,PSP approved a sale
+ACTION_REQUIRED,CAPTURED,PSP reports a sale approved
+UNKNOWN,CAPTURED,Inquiry says a sale approved
+PSP_PENDING,AWAITING_METHOD,PSP declined or proof it cannot succeed
+PSP_PENDING,ACTION_REQUIRED,PSP requires customer action
+PSP_PENDING,UNKNOWN,Timeout or stale attempt
+PSP_PENDING,REVIEW,Amount or currency mismatch
+UNKNOWN,REVIEW,Amount or currency mismatch
+ACTION_REQUIRED,PSP_PENDING,Customer finished
+ACTION_REQUIRED,AUTHORIZED,PSP reports approved
+ACTION_REQUIRED,AWAITING_METHOD,Action failed
+ACTION_REQUIRED,UNKNOWN,Action window ends
+UNKNOWN,AUTHORIZED,Inquiry says approved
+UNKNOWN,AWAITING_METHOD,Declined or proven not charged
+UNKNOWN,ACTION_REQUIRED,Inquiry says customer must act
+AWAITING_METHOD,REVIEW,Late approval on a failed attempt
+AUTHORIZED,CAPTURED,PSP confirms capture
+AUTHORIZED,REVIEW,Capture amount mismatch
+REVIEW,AUTHORIZED,Manual resolution
+REVIEW,AWAITING_METHOD,Manual resolution
+REVIEW,CAPTURED,Manual resolution
+CAPTURED,PARTIALLY_REFUNDED,PSP confirms a partial refund
+CAPTURED,REFUNDED,PSP confirms a full refund
+PARTIALLY_REFUNDED,REFUNDED,PSP confirms the remainder
+AUTHORIZED,VOIDED,PSP confirms a void
+AUTHORIZED,EXPIRED,Authorization window ends
+REVIEW,AWAITING_METHOD,PSP confirms the void of a late approval

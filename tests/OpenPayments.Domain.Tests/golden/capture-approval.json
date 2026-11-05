@@ -1,0 +1,28 @@
+{
+  "Name": "capture-approval",
+  "Initial": {
+    "State": "Authorized",
+    "Operation": "Authorize",
+    "AttemptState": "Succeeded",
+    "AttemptCount": 1,
+    "EventSeq": 1,
+    "CapturedMinor": 0,
+    "RefundedMinor": 0,
+    "RefundPendingMinor": 0,
+    "RefundState": null,
+    "RefundAmount": 0
+  },
+  "Command": {
+    "Kind": "CaptureAnswer",
+    "Operation": "Authorize",
+    "Outcome": "Approved",
+    "AnswerAmount": null,
+    "FailureCode": null,
+    "ActionType": null,
+    "Approved": true,
+    "TimedOut": false
+  },
+  "ExpectedState": "Captured",
+  "ExpectedLedger": ["auth_hold:C:100", "auth_hold_contra:D:100", "psp_receivable:D:100", "merchant_payable:C:100"],
+  "ExpectedEvents": ["payment.captured"]
+}

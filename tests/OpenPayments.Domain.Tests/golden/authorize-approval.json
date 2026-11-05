@@ -1,0 +1,28 @@
+{
+  "Name": "authorize-approval",
+  "Initial": {
+    "State": "PspPending",
+    "Operation": "Authorize",
+    "AttemptState": "Pending",
+    "AttemptCount": 1,
+    "EventSeq": 0,
+    "CapturedMinor": 0,
+    "RefundedMinor": 0,
+    "RefundPendingMinor": 0,
+    "RefundState": null,
+    "RefundAmount": 0
+  },
+  "Command": {
+    "Kind": "PspAnswer",
+    "Operation": "Authorize",
+    "Outcome": "Approved",
+    "AnswerAmount": null,
+    "FailureCode": null,
+    "ActionType": null,
+    "Approved": false,
+    "TimedOut": false
+  },
+  "ExpectedState": "Authorized",
+  "ExpectedLedger": ["auth_hold:D:100", "auth_hold_contra:C:100"],
+  "ExpectedEvents": ["payment.authorized"]
+}
