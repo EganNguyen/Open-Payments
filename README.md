@@ -62,6 +62,7 @@ Read them in this order if you are new.
 | [Failure scenarios](docs/failure-scenarios.md) | 42 failures, 24 edge cases, 7 runbooks, drills | You plan for things going wrong |
 | [Scaling playbook](docs/scaling-playbook.md) | Ramp plan, sizing, decision gates, results log | You plan benchmarks |
 | [Verification](docs/verification.md) | Test IDs, 108 production problems, 25 readiness items, build phases | You need to prove a claim or plan a build phase |
+| [Implementation guide](docs/implementation-guide.md) | How to build and benchmark it, with links to the spec and plan | You start building or run a benchmark |
 | [Decisions](docs/decisions.md) | Why key choices were made, assumptions, open questions | You question a choice |
 | [Stripe research](docs/stripe-research.md) | What Stripe has published, proposed design changes, what not to copy | Before accepting the design or starting Phase 0 |
 | [Glossary](docs/glossary.md) | Terms and standard names | Any time |
