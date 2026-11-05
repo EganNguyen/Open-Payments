@@ -13,6 +13,7 @@
   },
   "environments": {
     "local": {"rates": [100], "prefill": 200000, "refundable": 10000, "clients": 32, "threads": 4},
+    "macbook": {"rates": [1000, 2000, 3000, 4000], "prefill": 5000000, "clients": 256, "threads": 6},
     "linux": {"rates": [2000, 4000, 6000, 8000, 10000, 12000, 14000, 16000], "prefill": 100000000, "clients": 256, "threads": 16}
   },
   "variants": [

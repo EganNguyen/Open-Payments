@@ -46,3 +46,6 @@ Each run writes `benchmarks/spike/<run-id>/`: `summary.md`, `result.json`, and a
 | Run | Environment | Purpose | Reading |
 |---|---|---|---|
 | [20261105-131705-local](20261105-131705-local/summary.md) | Laptop, 100 scripts/s, 30 s per row | Prove the runner | All 20 variants ran, no failures, verification passed. **Not a capacity result.** Two p99 spikes to watch on Linux: V6 (287 ms) and V8-m10000 (173 ms). Too little data here to explain either |
+| [20261105-134749-macbook](20261105-134749-macbook/summary.md) | MacBook, baseline only, 5M prefill, on battery, 60 s per rate | Find the limit | Kept up to about 2,000 sales/s (4,000 commits/s), with p99 under 100 ms only at 1,000/s or below. **Preview, not a G1 answer.** While saturated at 3,000/s, a short sample showed the pool full (100 servers active, 147 clients waiting) with most backends in `ClientRead`, then `WALWrite` and `SyncRep`. So round trips holding pool slots look like the first limit, but Docker's port forwarding may exaggerate this. Next: compare V4 and V6. The `fdatasync` time of 61 µs suggests this disk may not be flushing to real storage |
+
+An earlier macbook attempt failed during loading, with a non-round payment count and leftover rows. The cause wasn't found. The runner now stops if the count is wrong, and the rerun was clean.

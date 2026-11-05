@@ -27,6 +27,7 @@ ENVIRONMENT = os.environ.get("SPIKE_ENV", "local")
 MEASURE = int(os.environ.get("MEASURE_SECONDS", "600"))
 WARMUP = int(os.environ.get("WARMUP_SECONDS", "120"))
 ONLY = [v for v in os.environ.get("ONLY", "").split(",") if v]
+RATES = [int(r) for r in os.environ.get("RATES", "").split(",") if r]  # overrides the matrix's rates
 CPU_COMMAND = os.environ.get("SPIKE_CPU_COMMAND")  # on Linux: prints the primary's CPU percent
 
 
@@ -43,7 +44,9 @@ def sql_file(path, *variables):
     args = ["psql", ADMIN, "-Xq", "-v", "ON_ERROR_STOP=1"]
     for v in variables:
         args += ["-v", v]
-    subprocess.run(args + ["-f", str(HERE / path)], check=True, capture_output=True, text=True, env=admin_env())
+    result = subprocess.run(args + ["-f", str(HERE / path)], capture_output=True, text=True, env=admin_env())
+    if result.returncode != 0:
+        raise RuntimeError(f"{path} failed: {result.stderr.strip()[-800:]}")
 
 
 def reset(settings):
@@ -55,6 +58,11 @@ def reset(settings):
         batch = min(remaining, 1_000_000)
         sql_file("seed-batch.sql", f"merchants={settings['merchants']}", f"batch={batch}")
         remaining -= batch
+        expected = settings["prefill"] - remaining
+        actual = int(sql("select count(*) from payments"))
+        print(f"    prefilled {actual} of {settings['prefill']}", flush=True)
+        if actual != expected:
+            raise RuntimeError(f"expected {expected} payments, found {actual}: something else is writing to this database")
     sql_file("seed-finish.sql", f"refundable={settings['refundable']}")
 
 
@@ -168,6 +176,8 @@ def main():
     raw.mkdir(parents=True)
     rows, loaded = [], None
     tokens = report.required_commits(**matrix["required"])
+    power = subprocess.run(["pmset", "-g", "batt"], capture_output=True, text=True).stdout
+    (out / "environment.txt").write_text(f"environment: {ENVIRONMENT}\nmeasure: {MEASURE}s, warm-up: {WARMUP}s\n{power}")
 
     for variant in matrix["variants"]:
         if ONLY and variant["name"] not in ONLY:
@@ -191,7 +201,7 @@ def main():
             reader = SlotReader()
             reader.start()
         try:
-            for rate in matrix["environments"][ENVIRONMENT]["rates"]:
+            for rate in RATES or matrix["environments"][ENVIRONMENT]["rates"]:
                 row = measure(variant["name"], settings, rate, raw)
                 rows.append(row)
                 print(f"  rate {rate}: {row['achieved_tps']}/s p99 {row['latency_p99_ms']} ms valid={row['valid']} verify={row['verify_passed']}", flush=True)
