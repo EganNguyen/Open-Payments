@@ -51,7 +51,7 @@ Stage 1 is the spike, test tools, payment core and first ramp steps. The rules a
 | ☑ | Task 5: [spike runner](../../benchmarks/spike/README.md), proven by a local dry run | Done, `7ceb0dd` |
 | ☑ | Task 6, as far as the owner chose: [MacBook spike](../benchmarks/spike/macbook-2026-11-05/summary.md), with database-only runs stopped on 2026-11-05 to benchmark the full platform once built. [D25](../decisions.md#d25) and [D26](../decisions.md#d26) approved, and `db/migrations/0001_initial.sql` passes `scripts/check-migration.sh` | Done |
 | ☑ | G1 stays open, and closes on Linux before Stage 4 ([D26](../decisions.md#d26)) | Accepted by the owner, 2026-11-05 |
-| ☐ | Install .NET 10 | Owner, before Task 7 |
+| ☑ | .NET 10 installed, SDK 10.0.403 | Owner, 2026-11-05 |
 | ☑ | Signed below, naming the build's starting commit | Owner, 2026-11-05 |
 
 ## Open, not blocking this gate
