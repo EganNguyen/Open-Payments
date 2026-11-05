@@ -36,7 +36,7 @@ Work can't pass these points without an answer. The recommendations are in the [
 | `psql`, `pgbench` | Task 3 | Installed through `libpq` |
 | Python 3 with pytest | Task 5 | Python present, pytest missing |
 | .NET 10 SDK | Task 7 | Missing |
-| k6 | Task 8 | Missing |
+| k6 | Task 8 | Installed |
 | `kubectl` and a cluster | Stage 4 | `kubectl` installed, no cluster chosen |
 
 Pin the SDK with `global.json` in Task 7. .NET 10 is the [chosen version](decisions.md#d11), so install that channel, not simply the newest SDK:
