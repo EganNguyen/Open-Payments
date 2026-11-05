@@ -18,7 +18,7 @@ Stack: C# / .NET 10, ASP.NET Core, PostgreSQL, Kafka-compatible broker, Kubernet
 | Durability | RPO 0 for committed payments; RTO ≤ 60 s for database failover |
 | Recovery | Automatic for loss of one node or one availability zone |
 
-**What is counted.** Three rates are measured separately: *admitted* req/s (passed admission control), *rejected* req/s (shed with 429 or 503), and *completed payments/s* (reached a final committed state).
+**What is counted.** Three rates are measured separately: *admitted* req/s (passed admission control), *rejected* req/s (shed with 429 or 503), and *completed payments/s* (payments whose create request got a final committed answer: authorized, or captured under auto-capture, or declined. A payment in `UNKNOWN` is not counted until resolved).
 
 **Two latency measures.** *Platform overhead* excludes PSP wait time and carries the target above. *End to end* is recorded against the mock PSP at a fixed latency, and becomes a gate only once a target is chosen against the real PSP.
 
@@ -117,13 +117,13 @@ flowchart TB
 | Outside | PSPs and banks | Move the card money | their records | Yes | Outside our control, hence `UNKNOWN` |
 | Outside | Merchant webhook endpoints | Receive notifications | their records | No | Retry, then dead-letter |
 
-Not on the diagram: observability, the Kubernetes platform, Redis, and the mock PSP with its load harness, which is built first. Settlement and payouts are `Open`.
+Not on the diagram: observability, the Kubernetes platform, Redis, and the mock PSP with its load harness, which is built first. Settlement and payouts are not designed.
 
 **Boundary rules:**
 
 1. **There is one write path.** The payment-transition module is the only code that writes money state ([D2](decisions.md#d2)).
 2. **One short transaction.** State change, ledger entries and outbox event commit together, with no PSP, HTTP or broker call inside.
-3. **Async never blocks sync.** Workers read committed data and can lag or fail without touching a payment. The reconciler is the exception that writes, and it does so only through the module.
+3. **Async never blocks sync.** Workers read committed data and can lag or fail without touching a payment. The reconciler and timer jobs are the exceptions that write, and only through the module. Timer jobs run in the reconciler process.
 4. **Card data stays in the vault.** Everything else sees a token.
 
 **Why not more microservices?** Splitting payment and ledger would turn one database transaction into a network call and a saga, adding failure cases and latency on the hot path. The parts that benefit from independence are already separate.
@@ -150,17 +150,17 @@ Not on the diagram: observability, the Kubernetes platform, Redis, and the mock 
 5. **Transaction B** (short). Conditionally move the payment to its new state, insert the ledger entries and insert the outbox event. Commit.
 6. **Respond.** On a PSP timeout the state is `UNKNOWN` and the API answers `202 Accepted` with the payment ID. The merchant gets the result by webhook or polling.
 
-**Capture.** Record a capture attempt with its own key, call the PSP, and move the payment to `CAPTURED` only after the PSP confirms. On a timeout, the payment stays `AUTHORIZED`, the attempt is marked unknown, and the reconciler resolves it ([D6](decisions.md#d6)).
+**Capture.** Insert a capture attempt with its own key. The unique index `payment_attempts_one_live_capture` allows one live or successful capture per payment, so a second request with a different idempotency key never reaches the PSP and gets the current status, or 409 with `Retry-After` while the first is running. Call the PSP, and move the payment to `CAPTURED` only after it confirms. A declined attempt is marked `FAILED`, which allows a new capture. On a timeout, the API answers `202 Accepted`, the payment stays `AUTHORIZED`, the attempt is marked `UNKNOWN`, and the reconciler resolves it ([D6](decisions.md#d6)).
 
-**Refund.** Reserve, call the PSP, then confirm or release. The SQL is in [Refund rules](payment-lifecycle.md#refund-rules).
+**Refund.** Reserve, call the PSP, then confirm or release. On a timeout, the API answers `202 Accepted` with the refund ID and status. Merchants get final capture and refund results by [webhook](payment-lifecycle.md#merchant-events) or polling. The SQL is in [Refund rules](payment-lifecycle.md#refund-rules).
 
 ## Crash recovery
 
 | Crash point | What the database holds | Recovery |
 |---|---|---|
 | Before transaction A commits | nothing | Client retries with the same key |
-| After A, before the PSP call | attempt in `PSP_PENDING` | Reconciler inquires by `attempt_id`. The PSP reports "unknown attempt", so the payment is declined or retried safely |
-| After the PSP call, before B | attempt in `PSP_PENDING` | Reconciler inquires by `attempt_id` and applies the PSP's real answer |
+| After A, before the PSP call | payment in `PSP_PENDING`, attempt `PENDING` | Reconciler inquires by `attempt_id`. The PSP reports "unknown attempt", so the payment is declined or retried safely |
+| After the PSP call, before B | payment in `PSP_PENDING`, attempt `PENDING` | Reconciler inquires by `attempt_id` and applies the PSP's real answer |
 | After B commits, before the response | final state and outbox event | Client retries; the idempotency record returns the stored result |
 
 ## Data model
@@ -188,12 +188,13 @@ create index payments_merchant_created on payments (merchant_id, created_at desc
 create index payments_unresolved on payments (updated_at)
   where state in ('PSP_PENDING','UNKNOWN');
 
--- one row per PSP operation, each with its own key (D5)
+-- one row per authorize or capture, each with its own key (D5); void is Proposed
+-- refunds have their own row and key in the refunds table
 create table payment_attempts (
   attempt_id    uuid primary key,
   payment_id    uuid not null references payments(id),
   merchant_id   uuid not null,
-  operation     text not null check (operation in ('authorize','capture','void')),
+  operation     text not null check (operation in ('authorize','capture')),
   psp           text not null,
   state         text not null,
   psp_reference text,
@@ -201,6 +202,9 @@ create table payment_attempts (
 );
 create index payment_attempts_unresolved on payment_attempts (created_at)
   where state in ('PENDING','UNKNOWN');
+-- one live or successful capture per payment
+create unique index payment_attempts_one_live_capture on payment_attempts (payment_id)
+  where operation = 'capture' and state in ('PENDING','UNKNOWN','SUCCEEDED');
 
 -- hash-partitioned by merchant_id so the unique key includes the partition key
 create table idempotency_keys (
@@ -246,6 +250,8 @@ create table refunds (
   created_at      timestamptz not null default now(),
   unique (merchant_id, idempotency_key)
 );
+create index refunds_unresolved on refunds (created_at)
+  where state in ('PENDING','UNKNOWN');
 ```
 
 `Open`: `accounts`, inbox, currency, balance snapshot, delivery log and discrepancy tables are named in this doc but not yet specified.
@@ -295,6 +301,7 @@ public interface IPspAdapter
     Task<PspResult> CaptureAsync(AttemptId attempt, Money amount, CancellationToken ct);
     Task<PspResult> RefundAsync(RefundId refund, Money amount, CancellationToken ct);
     Task<PspInquiry> InquireAsync(AttemptId attempt, CancellationToken ct); // status by our idempotency key
+    Task<PspInquiry> InquireRefundAsync(RefundId refund, CancellationToken ct);
 }
 ```
 
@@ -306,7 +313,7 @@ public interface IPspAdapter
 - **Provider changes:** adapters are versioned and covered by recorded-fixture contract tests (U5).
 - **Callbacks:** the callback receiver in the Payments API verifies the signature, inserts into `psp_events` (`ON CONFLICT DO NOTHING`) and applies the event through the payment-transition module. Duplicate callbacks are no-ops.
 - **Reconciler:**
-  - Every few seconds it selects payments, attempts and refunds that are unresolved past a threshold, calls `InquireAsync` or its refund equivalent, and applies the answer.
+  - Every few seconds it selects payments, attempts and refunds that are unresolved past a threshold, calls `InquireAsync` or `InquireRefundAsync`, and applies the answer.
   - Daily, it compares the PSP settlement file with ledger totals and writes any discrepancy to a table that pages on non-zero.
 
 ## Events and webhooks
@@ -338,6 +345,6 @@ public interface IPspAdapter
 | Events | Transactional outbox; signed merchant webhooks with dead-letter queue | `Committed` |
 | Security and risk | Vault, tenant isolation, secrets rotation, fast fraud rules with fallback | `Committed` |
 | Operations | Metrics, logs, traces, alerts; runbooks and drills for 42 failure scenarios | `Committed` (none rehearsed) |
-| Merchant experience | Dashboard and checkout screens | Prototype only, outside this repo |
+| Merchant experience | Dashboard and checkout screens | `Proposed`: prototype outside this repo |
 | Future | Settlement, payouts, disputes | `Proposed` in the [lifecycle](payment-lifecycle.md#proposed-rules); not designed |
 | Future | Marketplace features, billing, advanced fraud, formal PCI assessment | `Open` |

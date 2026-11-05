@@ -27,7 +27,7 @@ Status: Draft · Last updated: 2026-11-05
 
 | Use | Meaning | Not |
 |---|---|---|
-| **completed payments/s** | Payments reaching a final committed state. This is the 5,000 goal. | "5,000 requests" |
+| **completed payments/s** | Payments whose create request got a final committed answer: authorized, or captured under auto-capture, or declined. A payment in `UNKNOWN` is not counted until resolved. This is the 5,000 goal. | "5,000 requests" |
 | **req/s** | HTTP load offered to the system | Goal throughput |
 | **TPS** | Only as shorthand for completed payments/s | HTTP load |
 | **Payments API** | The service running the payment path | "Payment service" |

@@ -30,7 +30,7 @@ All values are starting points until measured. Other docs state the resulting ru
 
 - **Decision:** Ramp steps 9 and 10 and the final report are gated on 5,000 completed payments/s. Offered req/s is derived from the workload mix.
 - **Why:** The goal is completed payments, but the old final gate was 5,000 req/s, of which only 60% were payments in the example mix.
-- **Consequence:** With the example mix, the target needs about 8,300 req/s, so capacity estimates rise.
+- **Consequence:** With the example mix and auto-capture, the target needs about 8,300 req/s, or about 16,700 with separate capture requests, so capacity estimates rise. "Completed" is [defined](glossary.md#standard-names) as a final committed answer to the create request.
 
 ### D4
 
@@ -44,8 +44,8 @@ All values are starting points until measured. Other docs state the resulting ru
 
 **One PSP idempotency key per operation.** Status: `Committed`.
 
-- **Decision:** Each PSP operation is its own `payment_attempts` row, with an `operation` column and its own key.
-- **Why:** Sharing one key across authorize and capture could make a PSP reject the capture or treat it as a repeat.
+- **Decision:** Each authorize and capture is its own `payment_attempts` row, with an `operation` column and its own key. Each refund has its own `refunds` row and key. A unique index allows one live or successful capture per payment.
+- **Why:** Sharing one key across authorize and capture could make a PSP reject the capture or treat it as a repeat. Separate keys alone would let two capture requests both reach the PSP, so the index keeps that from happening; test C36 covers it.
 - **Consequence:** A small schema and adapter-signature change.
 
 ### D6
@@ -54,7 +54,7 @@ All values are starting points until measured. Other docs state the resulting ru
 
 - **Decision:** Unresolved operations are tracked on the attempt or refund row and resolved by the reconciler. Refunds reserve first through `refund_pending_minor`, with the limit `refunded + pending + amount <= captured`, then call the PSP, then confirm or release.
 - **Why:** Capture and refund timeouts had no defined handling, and the refund's order of database update and PSP call was undefined.
-- **Consequence:** Refund SQL and tests C3 and C6 change. A refund shows as pending until confirmed.
+- **Consequence:** Refund SQL and tests C3 and C6 change. A refund shows as pending until confirmed. Merchants get `payment.capture_failed` and `payment.refund_failed`, and detection covers attempts and refunds as well as payments.
 
 ### D7
 
@@ -117,7 +117,7 @@ All values are starting points until measured. Other docs state the resulting ru
 
 - **Decision:** `REVIEW` is a non-final state, entered on an amount or currency mismatch and left through manual resolution.
 - **Why:** Failure handling put payments "in a review state" that the state machine did not have.
-- **Consequence:** FS-07 and C32 use this state. Review tooling stays `Open`.
+- **Consequence:** FS-07 and C32 use this state. A refund mismatch moves the refund row, not the payment, to `REVIEW`. Review tooling stays `Open`.
 
 ### D13
 

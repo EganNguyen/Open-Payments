@@ -11,11 +11,11 @@ Status: Draft · Last updated: 2026-11-05
 These rules decide what the system protects first. Every scenario below is a case of one of them.
 
 1. **Money is never lost or doubled.** If the system is unsure, it says "unknown" and finds out later. It never guesses.
-2. **Save intent before acting.** The attempt is written to the database before the bank is called ([Payment flow](architecture.md#payment-flow)), so a crash always leaves something the reconciler can find.
+2. **Save intent before acting.** The attempt is written to the database before the PSP is called ([Payment flow](architecture.md#payment-flow)), so a crash always leaves something the reconciler can find.
 3. **Say "busy" quickly.** An overloaded service rejects extra work at once (429 or 503 with `Retry-After`). It does not queue it without limit.
-4. **Every wait has a limit.** Every call to a bank, database, broker or other service has a deadline.
+4. **Every wait has a limit.** Every call to a PSP, database, broker or other service has a deadline.
 5. **Every retry is safe.** Retries use the same idempotency key, and consumers ignore events they have already handled.
-6. **Failure stays small.** A slow merchant, bank or consumer must not slow everyone else (bulkheads, per-merchant limits, separate queues).
+6. **Failure stays small.** A slow merchant, PSP or consumer must not slow everyone else (bulkheads, per-merchant limits, separate queues).
 7. **Recovery is gradual.** After an outage, load and backlogs return in steps, not all at once.
 
 **Order of protection when resources run short (`Proposed`, owner to confirm):**
@@ -36,7 +36,7 @@ Columns: **Detect** is the signal that shows it. **Automatic** is what the syste
 
 | ID | Failure | Detect | Automatic | Recovery | Proof |
 |---|---|---|---|---|---|
-| FS-01 | PSP approves, but our call times out | PSP timeout counter; payments in `UNKNOWN` | Payment becomes `UNKNOWN`; API answers 202; no retry with a new attempt | Reconciler asks the PSP by `attempt_id` and applies the real answer; webhook goes out | C3, CK2, CK5 |
+| FS-01 | PSP approves, but our call times out | PSP timeout counter; payments in `UNKNOWN` | On authorize the payment becomes `UNKNOWN`; on capture or refund its state is unchanged and the operation stays unresolved. API answers 202; no retry with a new attempt | Reconciler asks the PSP by `attempt_id` and applies the real answer; webhook goes out | C3, CK2, CK5 |
 | FS-02 | PSP responds slowly (for example 2 s instead of 200 ms) | PSP latency p99; in-flight count rising | In-flight work rises (about 10,000 at 5k TPS and 2 s). Limiter sheds extra requests; deadline turns slow calls into `UNKNOWN`; breaker may open | Wait for the PSP, or fail over; reconciler clears `UNKNOWN`; raise instance count only if memory allows | C23, L6 |
 | FS-03 | PSP is down | Error rate; breaker state open | Breaker opens; fail over to a second PSP where the contract allows, otherwise fast "unavailable" | Breaker half-opens with a few probe calls and closes when they succeed; reconcile payments that were in flight | C13 |
 | FS-04 | PSP rate-limits us (429) | 429 count from PSP | Client-side limiter and backoff with jitter; no new attempt IDs | Lower send rate; ask the PSP for a higher limit | C12 |
@@ -67,7 +67,7 @@ Columns: **Detect** is the signal that shows it. **Automatic** is what the syste
 |---|---|---|---|---|---|
 | FS-20 | Database is much slower | Query latency; pool wait | Statement timeouts; limiter sheds; no retry storm | Find the cause (locks, vacuum, plan change); scale or fix | C1 |
 | FS-21 | Connection pool exhausted | Pool wait time; pool use | Bounded wait, then fast failure; connection budget prevents the autoscaler from making it worse | Fix the leak or reduce replicas; no restart needed | C2 |
-| FS-22 | Primary fails | Health checks; failed writes | Automatic promotion of the synchronous standby; committed payments are present (RPO 0) | Applications reconnect; check CK1-CK6; rebuild a new standby | C7 |
+| FS-22 | Primary fails | Health checks; failed writes | Automatic promotion of a synchronous standby; committed payments are present (RPO 0) | Applications reconnect; check CK1-CK6; rebuild a new standby | C7 |
 | FS-23 | Replica lag causes a stale read | Replica lag metric | Reads that must be fresh (payment status right after create) go to the primary | Fix lag cause; route all reads to the primary if needed | C29 |
 | FS-24 | Disk fills (database, broker, logs) | Alerts at 70% and 85% | Alerts only; no automatic delete of data | Expand volume, drop old partitions, or archive per runbook | C22 |
 | FS-25 | Migration locks a table or breaks the app | `lock_timeout` errors; error spike | `lock_timeout` aborts the migration; expand/contract keeps old code working | Revert the migration step; retry off-peak | S4 |
@@ -91,7 +91,7 @@ Columns: **Detect** is the signal that shows it. **Automatic** is what the syste
 | FS-32 | Same idempotency key sent many times at once | Duplicate-key counter | One payment and one charge; all callers get the same stored response | None needed | C5, U4 |
 | FS-33 | Concurrent refunds above the captured amount | Rejected-refund counter | Atomic conditional update on the refunded and pending total | None needed | C6, CK3 |
 | FS-34 | Ledger imbalance found | Continuous audit query; CK1 | Alert at once; the database never edits or deletes entries | Stop-the-line runbook R5: find the transaction, post a reversing entry, write a postmortem | CK1, U3 |
-| FS-35 | Payments stuck in `PSP_PENDING` or `UNKNOWN` too long | CK5 and age alert | Reconciler retries inquiry with backoff | Escalate to manual review after the threshold; ask the PSP for its record | CK5, C3 |
+| FS-35 | Payments, capture attempts or refunds unresolved too long | CK5 and age alert | Reconciler retries inquiry with backoff | Escalate to manual review after the threshold; ask the PSP for its record | CK5, C3 |
 | FS-36 | Reconciler is down, slow, or two run at the same time | Reconciler heartbeat; oldest unresolved age | Lease or advisory lock allows one active worker per batch; work is idempotent | Restart; backlog drains with a rate cap | C26 |
 
 ### Security and operations
@@ -152,7 +152,7 @@ Short, ordered steps. Each runbook is rehearsed in a [drill](#drills) before it 
 3. After recovery, let publishers drain at the capped rate; watch consumer lag.
 4. Confirm CK4 and CK6.
 
-**R4. Many payments stuck in `UNKNOWN` (FS-35)**
+**R4. Many payments or operations stuck unresolved (FS-35)**
 1. Check whether the PSP inquiry works (a manual call by `attempt_id`).
 2. Check the reconciler is running and its rate is not capped too low.
 3. Past the threshold, move the remainder to the manual review queue.
@@ -180,8 +180,8 @@ Short, ordered steps. Each runbook is rehearsed in a [drill](#drills) before it 
 
 | Order | Drill | Tests | Notes |
 |---|---|---|---|
-| 1 | In a test environment, break one thing at a time under 1k TPS | C3, C4, C5, C6, C15 | Money-correctness faults first |
-| 2 | Bank and dependency faults under 5k TPS | C9, C12, C13, C14, C16, C23, C32 | Use the mock PSP in slow, error and down modes |
+| 1 | In a test environment, break one thing at a time under 1k TPS | C3, C4, C5, C6, C15, C36 | Money-correctness faults first |
+| 2 | PSP and dependency faults under 5k TPS | C9, C12, C13, C14, C16, C23, C32 | Use the mock PSP in slow, error and down modes |
 | 3 | Data faults under 5k TPS | C1, C2, C7, C22, C29, C34, C35 | Database slow, pool exhausted, failover, disk, lock races |
 | 4 | Messaging faults | C8, C17, C18, C26, C27 | Broker down, poison, webhook endpoints failing |
 | 5 | Platform faults | C10, C11, C19, C20, C24, C25, C28, C30, and C33 only if cells are adopted | Node, zone, release, cache, clock, restart, routing |

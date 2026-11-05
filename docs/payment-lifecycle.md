@@ -109,7 +109,7 @@ update payments
    set state = 'CAPTURED', captured_minor = $amount,
        version = version + 1, updated_at = now()
  where id = $payment_id and merchant_id = $merchant_id
-   and state = 'AUTHORIZED' and $amount <= amount_minor;
+   and state = 'AUTHORIZED' and $amount = amount_minor; -- full capture; partial capture is Proposed
 ```
 
 Zero rows updated means someone else already moved the payment. The caller re-reads and decides; it never overwrites.
@@ -120,7 +120,7 @@ In one short transaction: conditionally update the state, insert the ledger entr
 
 ### Idempotency
 
-- Every create, capture, void and refund request carries an `Idempotency-Key`.
+- Every create, capture and refund request carries an `Idempotency-Key`, as would `Proposed` void requests.
 - A retry with the same key returns the stored result and does not repeat the transition.
 - The same key with a different body is rejected with 422.
 - The same key while the first request is running returns 409 with `Retry-After`.
@@ -132,7 +132,7 @@ Each PSP event is recorded once in `psp_events`. A conditional update that finds
 
 ### Amounts and currency
 
-Every PSP answer is checked. On a mismatch the payment moves to `REVIEW`, and no ledger entry is written for the disputed amount ([D12](decisions.md#d12)).
+Every PSP answer is checked. On an authorize or capture mismatch the payment moves to `REVIEW`, and no ledger entry is written for the disputed amount ([D12](decisions.md#d12)). A refund mismatch moves the [refund](#refund-rules) to `REVIEW` instead.
 
 ### Final states
 
@@ -140,9 +140,9 @@ Every PSP answer is checked. On a mismatch the payment moves to `REVIEW`, and no
 
 ## Refund rules
 
-Total refunded and pending must never exceed the captured amount, and state changes only after the PSP confirms ([D6](decisions.md#d6)).
+Total refunded and pending must never exceed the captured amount, and state changes only after the PSP confirms ([D6](decisions.md#d6)). Refund states are `PENDING`, `UNKNOWN`, `SUCCEEDED`, `FAILED` and `REVIEW`.
 
-**1. Reserve.** In one transaction, insert the `refunds` row with state `PENDING`, take the [balance check lock](architecture.md#ledger), and reserve the amount:
+**1. Reserve.** In one transaction, in this [lock order](deadlock-handling.md#prevention): take the per-account [advisory lock](architecture.md#ledger) and check the available balance, reserve the amount as below, insert the `refunds` row as `PENDING`, and insert a ledger reservation entry. If the balance is too low or the update returns 0 rows, roll back and reject.
 
 ```sql
 update payments
@@ -152,12 +152,11 @@ update payments
    and state in ('CAPTURED','PARTIALLY_REFUNDED')
    and refunded_minor + refund_pending_minor + $amount <= captured_minor
 returning refund_pending_minor;
--- 0 rows returned: reject; the limit would be exceeded.
 ```
 
 **2. Call the PSP** with `refund_id` as the idempotency key, outside any transaction.
 
-**3. Confirm.** On approval, in one transaction, conditionally move the refund from `PENDING` or `UNKNOWN` to `SUCCEEDED`. If that moved a row, also write the ledger reversal and outbox event, and:
+**3. Confirm.** On approval, in one transaction, run the update below, then conditionally move the refund from `PENDING` or `UNKNOWN` to `SUCCEEDED`. If that moves no row, another worker got there first, so roll back. Otherwise post the ledger entries that reverse the reservation and record the refund, then the outbox event.
 
 ```sql
 update payments
@@ -170,9 +169,11 @@ update payments
    and refund_pending_minor >= $amount;
 ```
 
-**Or release.** On a PSP decline, conditionally move the refund to `FAILED` and subtract the amount from `refund_pending_minor`.
+**Or release.** On a PSP decline, subtract the amount from `refund_pending_minor`, conditionally move the refund to `FAILED`, post a reversing entry for the reservation, and insert the outbox event. Roll back if the refund moved no row.
 
-**On a timeout,** the refund becomes `UNKNOWN`, the amount stays reserved, and the reconciler confirms or releases it.
+**On a timeout,** the refund becomes `UNKNOWN`, the amount stays reserved, and the reconciler confirms or releases it. If the PSP reports no such refund, for example after a crash before the call, the reconciler releases it.
+
+**On an amount or currency mismatch,** the refund moves to `REVIEW` and the payment state does not change. The amount stays reserved until a person confirms or releases it.
 
 ## The Unknown state
 
@@ -181,8 +182,9 @@ A PSP timeout does not tell us whether the customer was charged.
 - The API returns `202 Accepted` with the payment ID. The merchant learns the result by webhook or polling.
 - The reconciler asks the PSP for the attempt's status and applies the answer.
 - Never retry a charge without the same PSP idempotency key, or the customer can be charged twice.
-- If the PSP reports an unknown attempt, the payment is declined or retried safely.
-- A payment stuck in `PSP_PENDING` or `UNKNOWN` beyond a time limit raises an alert.
+- If the PSP reports an unknown attempt, an authorize is declined or retried safely, and a capture attempt is marked `FAILED` so a new capture can be requested.
+- Capture attempts and refunds stay unresolved on their own rows, and the payment state does not change until they resolve.
+- A payment, capture attempt or refund unresolved beyond a time limit raises an alert. A stuck refund also blocks its reserved amount.
 
 ## Capture modes
 
@@ -202,6 +204,7 @@ Timer jobs use the same conditional update, so a job and a manual capture cannot
 |---|---|---|---|
 | Attempt timeout | `PSP_PENDING` | Move to `UNKNOWN`, then inquire. These payments are found through the partial index `payments_unresolved` | `Committed` |
 | Unknown age limit | `UNKNOWN` | Alert and escalate to manual review | `Committed` |
+| Unresolved operation | Capture attempts and refunds, through `payment_attempts_unresolved` and `refunds_unresolved` | Inquire; alert and escalate past the age limit | `Committed` |
 | Authorization window (for example 7 days, depending on card scheme) | `AUTHORIZED` | Move to `EXPIRED` and release the hold | `Proposed` |
 | Dispute response deadline | `DISPUTED` | Alert so evidence is submitted in time | `Proposed` |
 
@@ -214,9 +217,9 @@ Timer jobs use the same conditional update, so a job and a manual capture cannot
 | 1 | Merchant creates a payment of 100.00; API records the attempt and calls the PSP | `PSP_PENDING` | none |
 | 2 | PSP approves | `AUTHORIZED` | hold 100.00 |
 | 3 | Merchant captures 100.00; PSP confirms | `CAPTURED` | customer funds to merchant payable, 100.00 |
-| 4 | Merchant refunds 30.00; reserved while the PSP is called | `CAPTURED` | reservation 30.00, `refund_pending_minor = 30.00` |
-| 5 | PSP confirms the refund | `PARTIALLY_REFUNDED` | reverse 30.00, `refunded_minor = 30.00` |
-| 6 | Merchant refunds 70.00; PSP confirms | `REFUNDED` | reverse 70.00, `refunded_minor = 100.00` |
+| 4 | Merchant refunds 30.00; reserved while the PSP is called | `CAPTURED` | reservation entry 30.00, `refund_pending_minor = 30.00` |
+| 5 | PSP confirms the refund | `PARTIALLY_REFUNDED` | reservation reversed, refund recorded, `refunded_minor = 30.00`, `refund_pending_minor = 0` |
+| 6 | Merchant refunds 70.00; reserved, then the PSP confirms | `REFUNDED` | same steps, `refunded_minor = 100.00` |
 
 **Timeout, then recovery:**
 
@@ -237,6 +240,8 @@ An outbox event is written in the same transaction as every state change, and th
 | `payment.declined` | `DECLINED` | `Committed` |
 | `payment.captured` | `CAPTURED` | `Committed` |
 | `payment.refunded` | `PARTIALLY_REFUNDED`, `REFUNDED` | `Committed` |
+| `payment.capture_failed` | A capture attempt ends `FAILED` | `Committed` |
+| `payment.refund_failed` | A refund ends `FAILED` | `Committed` |
 | `payment.voided`, `payment.expired` | `VOIDED`, `EXPIRED` | `Proposed` |
 | `payment.disputed` | `DISPUTED` | `Proposed` |
 
@@ -244,6 +249,7 @@ An outbox event is written in the same transaction as every state change, and th
 
 - **Void and expiry:** capture after `VOIDED` or `EXPIRED` is rejected ([E8](failure-scenarios.md#edge-cases)).
 - **Dispute after a full refund:** reject or defend, showing the refunded amount in evidence.
+- **Payouts:** query the PSP before retrying a payout.
 
 Other unusual cases are [edge cases](failure-scenarios.md#edge-cases) E6, E7, E8 and E10, and [failures](failure-scenarios.md#failure-catalogue) FS-07, FS-09 and FS-32.
 

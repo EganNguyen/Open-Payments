@@ -39,7 +39,7 @@ It needs all four conditions: exclusive locks, holding one lock while waiting fo
 
 ## Prevention
 
-1. **Use one lock order.** Take the advisory lock first, then update `payments`, then insert child rows. Batch jobs use a stable `ORDER BY`:
+1. **Use one lock order.** Take the advisory lock first, then update `payments`, then write `refunds` and other child rows, then ledger and outbox rows. Batch jobs use a stable `ORDER BY`:
 
    ```sql
    select id from payments
@@ -52,6 +52,7 @@ It needs all four conditions: exclusive locks, holding one lock while waiting fo
 3. **Lock fewer rows.** Insert ledger entries rather than updating balances, and make sure queries use indexes.
 4. **Use atomic conditional updates** instead of read-then-write. A plain `SELECT` takes no row lock in PostgreSQL, so read-then-update risks a lost update rather than a deadlock. The [transition rules](payment-lifecycle.md#transition-rules) avoid both.
 5. **Split any new hot row.** Use the 64 sub-account pattern, or micro-batch postings to it.
+6. **Optimistic concurrency is an option where contention is low:** a `version` column with compare-and-swap, retried on conflict.
 
 If tests still show deadlocks on a hot row, the fallback is a single writer per account, partitioned by account ID. It serializes work without row locks at the cost of a new component, so it stays `Proposed` until measurements justify it.
 
@@ -84,7 +85,8 @@ public async Task<T> RunAsync<T>(Func<NpgsqlTransaction, Task<T>> work, Cancella
             var capMs = Math.Min(200, 5 * (1 << attempt));
             await Task.Delay(Random.Shared.Next(capMs + 1), ct);
         }
-        // anything else propagates; the API returns 503 with Retry-After
+        // exhausted retries and 55P03 become 503 with Retry-After;
+        // other errors, such as a duplicate-key violation, keep their own handling
     }
 }
 ```
@@ -106,9 +108,9 @@ All `Proposed`. None of it is in the design yet, and each layer needs a decision
 |---|---|---|
 | Retry budget size | Limits retries to a small share of traffic, then fails fast | 10% of requests per 10 s |
 | Circuit breaker, per hot key or route | Rejects writes on the affected path with 503, so the database can drain | Opens above 5% deadlock rate for 10 s; half-open after 15 s at 5% of traffic; closes below 1% |
-| Adaptive concurrency limit | Backs off fast and probes up slowly, breaking the latency feedback loop. Excess is shed | Every 1 s: multiply the limit by 0.7 if deadlocks exceed 1% or p99 is over target, otherwise add 1 |
+| Adaptive concurrency limit | Backs off fast and probes up slowly, breaking the latency feedback loop. Excess is shed | Every 1 s: multiply the limit by 0.7 if deadlocks exceed 1% or p99 is over target, otherwise add 1; stay between MIN and MAX |
 | Hot-key detection | Finds accounts with many lock waits and moves them to the single-writer fallback or sub-accounts | More than 50 lock waits per second; return after 5 min below a lower threshold |
-| Database watchdog | Finds and clears stuck blockers, and collects evidence | Terminate blockers older than 2 s; alert when the same query pair recurs |
+| Database watchdog | Finds and clears stuck blockers, and collects evidence | Terminate blockers older than 2 s; alert when the same query pair recurs. Pool wait above threshold: shed and reduce the limiter |
 
 **Degradation tiers** move automatically and stay at least 60 s in a tier. Shedding follows the [order of protection](failure-scenarios.md#rules-for-every-failure).
 
@@ -119,7 +121,7 @@ All `Proposed`. None of it is in the design yet, and each layer needs a decision
 | 2 High | 1% to 5% | Shed reports and exports, slow webhooks, tighten the retry budget |
 | 3 Critical | Above 5% | Open the breaker on the affected path and shed with 503, including refunds and captures on that path |
 
-**Escalate to a person when:** tier 2 lasts over 10 min, the breaker stays open over 15 min, the retry budget is exhausted for over 5 min, or the watchdog repeatedly kills the same query.
+**Escalate to a person when:** tier 2 lasts over 10 min, the breaker stays open over 15 min, the retry budget is exhausted for over 5 min, or the watchdog repeatedly kills the same query. For the single-writer fallback: Queue lag keeps growing.
 
 **Watchdog query:**
 

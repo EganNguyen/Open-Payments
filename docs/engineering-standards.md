@@ -108,7 +108,7 @@ Check each library's license and .NET 10 support before adopting it (gate S6).
 **Transactions:**
 
 - At most about 5 statements, targeting a few milliseconds. No PSP, HTTP or broker call inside a transaction.
-- API role settings: `lock_timeout` 200 ms, `statement_timeout` 1 s, `idle_in_transaction_session_timeout` 2 s.
+- Application role settings (API, reconciler, timers): `lock_timeout` 200 ms, `statement_timeout` 1 s, `idle_in_transaction_session_timeout` 2 s.
 - Server setting: `deadlock_timeout` 100 ms. It must stay below `lock_timeout` so deadlocks are detected instead of surfacing as lock timeouts ([D1](decisions.md#d1)).
 - Touch rows in a consistent order.
 - On `40001` or `40P01`, retry at most twice with jitter, inside a retry budget. On `55P03`, do not retry: return 503 with `Retry-After`. See [Handling a deadlock](deadlock-handling.md#handling-a-deadlock).
@@ -166,7 +166,7 @@ Thresholds are tuned after L1. OpenTelemetry tracing follows a payment from API 
 | Outbox age (oldest unpublished row) | Database query | Older than 30 s |
 | Consumer lag per group | Kafka exporter | Above threshold and growing |
 | Breaker state, PSP error and timeout rate | Adapter metrics | Breaker open, rate above baseline |
-| Unknown-payment count and age | Business metric | Older than reconciler threshold |
+| Unresolved payment, capture attempt and refund count and age, including oldest `PSP_PENDING` | Business metric | Older than reconciler threshold |
 | Ledger imbalance | Continuous audit query | Any non-zero (pages) |
 | Reconciliation discrepancies | Reconciler | Any non-zero (pages) |
 | Admitted, rejected and completed rates | Gateway and API metrics | Completed diverges from admitted without matching rejections |
@@ -176,4 +176,5 @@ Thresholds are tuned after L1. OpenTelemetry tracing follows a payment from API 
 | Ignored late or duplicate events | Callback receiver | Spike suggesting PSP problems |
 | Conditional-update zero-row count | Payment-transition module | Rising contention or races |
 | Authorization-to-capture ratio | Business metric | Deviation from baseline |
+| Dispute rate (`Proposed`) | Business metric | Merchant and fraud risk |
 | Disk, WAL and replication lag | Infrastructure | 70% and 85% disk, lag above threshold |

@@ -33,7 +33,7 @@ A step that misses the final SLO is a finding to fix, not a threshold to relax.
 
 Do not move to the next row until the current row meets its gates and you have written down the bottleneck you found.
 
-Steps 0-8 are set by offered load. Steps 9 and 10 are gated on 5,000 completed payments/s. With the [example mix](#workload-and-load-generation), where 60% of requests complete a payment, that takes about 8,300 req/s ([D3](decisions.md#d3)). Recalculate this from your real mix.
+Steps 0-8 are set by offered load. Steps 9 and 10 are gated on 5,000 completed payments/s. With the [example mix](#workload-and-load-generation), that takes about 8,300 req/s if the 60% share uses auto-capture, so each of those requests completes a payment ([D3](decisions.md#d3)). If authorize and capture are separate requests, only half that share starts a payment, and the target doubles to about 16,700 req/s. Recalculate this from your real mix.
 
 | Step | Load | Duration | Purpose | What to inspect |
 |---|---|---|---|---|
@@ -97,7 +97,7 @@ export const options = {
       startRate: 1,
       timeUnit: '1s',
       preAllocatedVUs: 200,
-      maxVUs: 5000,
+      maxVUs: 20000, // must exceed req/s × request duration
       stages: [
         { target: 10, duration: '5m' },
         { target: 100, duration: '10m' },
@@ -143,14 +143,14 @@ More instances do not raise database capacity. Benchmark the database alone (ste
 
 **Concurrency (Little's Law):** `L = λ × W`, so concurrent requests equal throughput times average time in the system.
 
-| Average duration at 5,000 req/s | In-flight requests |
+| Average duration at 8,300 req/s | In-flight requests |
 |---|---|
-| 20 ms | 100 |
-| 50 ms | 250 |
-| 100 ms | 500 |
-| 200 ms | 1,000 |
-| 500 ms | 2,500 |
-| 1 s | 5,000 |
+| 20 ms | 166 |
+| 50 ms | 415 |
+| 100 ms | 830 |
+| 200 ms | 1,660 |
+| 500 ms | 4,150 |
+| 1 s | 8,300 |
 
 Divide by the instance count to set the [per-instance in-flight cap](engineering-standards.md#load-control), and check that the cap and timeouts hold. Never solve this with unbounded tasks.
 
@@ -228,7 +228,7 @@ Next step:
 | PSP simulator | Configurable latency, failures and throughput limit |
 | Load test automation | Repeatable full ramp from one command |
 | Observability dashboards | All [metrics](engineering-standards.md#observability) visible |
-| Failure injection | C1-C35 pass; no lost or duplicate successful payments |
+| Failure injection | C1-C36 pass (C33 only if cells are adopted); no lost or duplicate successful payments |
 | Final capacity report | 5,000 completed payments/s sustained for 60 min with gates met |
 
 **Report outline:**

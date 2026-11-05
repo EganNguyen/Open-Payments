@@ -23,10 +23,10 @@ Run after every load and chaos test.
 | ID | Check |
 |---|---|
 | CK1 | Ledger is balanced for every transaction and no ledger row was changed or deleted |
-| CK2 | Every payment has at most one successful charge at the PSP (compared by `attempt_id`) |
-| CK3 | `refunded_minor ≤ captured_minor` for every payment |
+| CK2 | Every payment has at most one successful authorize, one successful capture, and one effect per refund at the PSP (compared by the PSP key of each operation) |
+| CK3 | `refunded_minor + refund_pending_minor ≤ captured_minor` for every payment, and `refund_pending_minor` equals the sum of its unresolved refunds |
 | CK4 | Every outbox row is eventually published, and every event had exactly one effect in each consumer |
-| CK5 | No payment remains in `PSP_PENDING` or `UNKNOWN` past the reconciler threshold |
+| CK5 | No payment, capture attempt or refund remains unresolved past the reconciler threshold |
 | CK6 | No sustained growth in queue depth, outbox age or consumer lag |
 
 ## Load tests
@@ -79,6 +79,7 @@ Run after every load and chaos test.
 | C33 | Cell router or its config store unavailable (only if cells are adopted) | Routers keep the last mapping; mapping changes frozen; traffic keeps flowing |
 | C34 | Capture, refund and reconciler race on one payment, with lock order forced to collide | `40P01` is raised and counted in `pg_stat_database.deadlocks`; retried at most twice; `55P03` returns 503; exactly one effect per operation; CK1 and CK3 pass |
 | C35 | Concurrent refunds across different payments against a low merchant balance | Advisory lock serializes the checks; balance never goes negative; create-payment latency unaffected |
+| C36 | Two concurrent capture requests with different idempotency keys | One PSP capture; the other gets the current status or 409; CK2 passes |
 
 ## Unit and property tests
 
@@ -244,8 +245,8 @@ The **Design response** column links to the mechanism, and **Proof** lists tests
 
 | # | Production problem | Design response | Proof | Verified |
 |---|---|---|---|---|
-| 80 | Duplicate charges | [Payment flow](architecture.md#payment-flow), [Data model](architecture.md#data-model): idempotency key unique constraint plus PSP idempotency | C5, CK2 | ☐ |
-| 81 | Lost payment records | [Payment flow](architecture.md#payment-flow): intent written before PSP call; synchronous replica | C4, C7 | ☐ |
+| 80 | Duplicate charges | [Payment flow](architecture.md#payment-flow), [Data model](architecture.md#data-model): idempotency key unique constraint plus PSP idempotency | C5, C36, CK2 | ☐ |
+| 81 | Lost payment records | [Payment flow](architecture.md#payment-flow): intent written before PSP call; synchronous replication | C4, C7 | ☐ |
 | 82 | Duplicate ledger entries | [Ledger](architecture.md#ledger): `source_event_id` unique; `(txn_id, entry_no)` primary key | C17, U3, CK1 | ☐ |
 | 83 | Unbalanced ledger | [Ledger](architecture.md#ledger): single-statement insert, deferred trigger backstop, audit query | U3, CK1 | ☐ |
 | 84 | Concurrent refunds | [Refund rules](payment-lifecycle.md#refund-rules): conditional update and `CHECK` constraint | C6, CK3 | ☐ |
@@ -263,7 +264,7 @@ The **Design response** column links to the mechanism, and **Proof** lists tests
 | 91 | Container OOMKilled | [Kubernetes](engineering-standards.md#kubernetes-and-operations), [.NET runtime](engineering-standards.md#net-runtime): memory limit above GC hard limit | L2 | ☐ |
 | 92 | CPU throttling | [Kubernetes](engineering-standards.md#kubernetes-and-operations): integer CPU requests equal to limits; throttling metric | L1, O1 | ☐ |
 | 93 | Node failure | [Kubernetes](engineering-standards.md#kubernetes-and-operations): topology spread, PodDisruptionBudgets | C10 | ☐ |
-| 94 | Availability zone failure | [Cells](architecture.md#cells-and-routing), [Kubernetes](engineering-standards.md#kubernetes-and-operations): each cell spans 3 zones; spare cell | C11 | ☐ |
+| 94 | Availability zone failure | [Cells](architecture.md#cells-and-routing), [Kubernetes](engineering-standards.md#kubernetes-and-operations): each cell spans 3 zones, with standbys in different zones; spare cell if cells are adopted | C11 | ☐ |
 | 95 | Autoscaling too slowly | [Kubernetes](engineering-standards.md#kubernetes-and-operations): HPA on in-flight requests plus 40% headroom | L3 | ☐ |
 | 96 | Bad deployment | [Kubernetes](engineering-standards.md#kubernetes-and-operations): canary with automatic rollback | C19 | ☐ |
 | 97 | Incorrect readiness probe | [Kubernetes](engineering-standards.md#kubernetes-and-operations): separate liveness and readiness; readiness reflects dependencies | C20, C7 | ☐ |
@@ -279,7 +280,7 @@ The **Design response** column links to the mechanism, and **Proof** lists tests
 | 102 | Card testing attacks | [Security](engineering-standards.md#security-and-fraud): velocity rules on Redis counters | F1 | ☐ |
 | 103 | Account takeover | [Security](engineering-standards.md#security-and-fraud): MFA and step-up for key roll and payouts | O4 | ☐ |
 | 104 | Replay attacks | [Security](engineering-standards.md#security-and-fraud): signed requests and webhooks with timestamp; idempotency | U7, U4 | ☐ |
-| 105 | Cross-merchant access | [Security](engineering-standards.md#security-and-fraud): `merchant_id` everywhere, row-level security backstop | U6 | ☐ |
+| 105 | Cross-merchant access | [Security](engineering-standards.md#security-and-fraud): `merchant_id` on every tenant-owned table, row-level security backstop | U6 | ☐ |
 | 106 | Sensitive information in logs | [Security](engineering-standards.md#security-and-fraud): redaction; card data only in vault | U8 | ☐ |
 | 107 | Unauthorized financial operations | [Security](engineering-standards.md#security-and-fraud): scoped keys, RBAC, append-only audit log | O4, U6 | ☐ |
 | 108 | Fraud service unavailable | [Security](engineering-standards.md#security-and-fraud): explicit fallback policy per risk tier | C14 | ☐ |
@@ -312,7 +313,7 @@ The **Design response** column links to the mechanism, and **Proof** lists tests
 | 22 | Circuit breakers and bulkheads | [PSP integration](architecture.md#psp-integration) | C13 | ☐ |
 | 23 | Canary deployments | [Kubernetes](engineering-standards.md#kubernetes-and-operations) | C19 | ☐ |
 | 24 | Security and PCI DSS controls | [Security](engineering-standards.md#security-and-fraud) | O4, U6, U8 | ☐ |
-| 25 | 5,000 TPS load and failure testing | [Verification](#how-verification-works) | L1-L6, C1-C35 | ☐ |
+| 25 | 5,000 TPS load and failure testing | [Verification](#how-verification-works) | L1-L6, C1-C36 (C33 only if cells are adopted) | ☐ |
 
 ## Progress
 
@@ -334,7 +335,7 @@ A scenario is verified only when its proof test has passed with a recorded run, 
 |---|---|---|
 | 0 | Mock PSP, k6 load scripts, automated CK1-CK5 checks, dashboards | CK checks run automatically after every test |
 | 1 | Payments core, idempotency, ledger, refunds, outbox table (written in the same transaction from the start) | U1-U4, C5, C6, C31, S1, S3, S5, S6 |
-| 2 | PSP adapter, reconciler, callbacks | C3, C4, C9, C12, C13, C15, C16, C23, C26, C32, C34, C35, U5 |
+| 2 | PSP adapter, reconciler, callbacks | C3, C4, C9, C12, C13, C15, C16, C23, C26, C32, C34, C35, C36, U5 |
 | 3 | Outbox publisher, broker, consumers, webhooks | C8, C17, C18, C27, U5, CK6 |
 | 4 | Hardening: limits, HA, deployment, and cells only if gate G1 requires them | L1-L6, C1, C2, C7, C10, C11, C19-C22, C24, C25, C28-C30, C33 (cells only), S2, S4, O3 |
 | 5 | Security, fraud rules, operations | U6-U8, F1, C14, O1, O2, O4, O5, O6 |
