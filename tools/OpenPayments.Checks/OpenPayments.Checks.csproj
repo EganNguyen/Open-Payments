@@ -1,0 +1,12 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <RootNamespace>OpenPayments.Checks</RootNamespace>
+    <AssemblyName>OpenPayments.Checks</AssemblyName>
+    <OutputType>Exe</OutputType>
+    <IsPackable>false</IsPackable>
+  </PropertyGroup>
+  <ItemGroup>
+    <PackageReference Include="Npgsql" />
+    <EmbeddedResource Include="sql/*.sql" />
+  </ItemGroup>
+</Project>
