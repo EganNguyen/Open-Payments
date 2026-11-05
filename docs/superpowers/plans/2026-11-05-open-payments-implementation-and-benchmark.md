@@ -49,7 +49,7 @@ A run from before Phase 3 can't satisfy L1. It's recorded as a *preview*, and no
 
 ## Global Constraints
 
-- Branch per stage (`impl/spike`, `impl/phase-0`, `impl/phase-1`), never `main`.
+- Commit and push directly to `main`, staging explicit paths.
 - Commit author: `git commit --author="EganNguyen <tuannh2y@gmail.com>"`. Every message ends with `Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>`.
 - Target `net10.0`. Warnings are errors. Analyzer CA2016 is on.
 - Money is `bigint` minor units with a currency. No `double`, `float` or `decimal` for amounts.

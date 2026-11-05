@@ -70,7 +70,7 @@ The full list is in the plan's [Global Constraints](superpowers/plans/2026-11-05
 6. **Never relax a gate to pass.** A missed gate is a finding. Record it and fix the bottleneck.
 7. **Tick a verification row only with a recorded run.** It needs a run ID, commit, configuration and result link.
 
-**Git:** one branch per stage (`impl/spike`, `impl/phase-0`, `impl/phase-1`), never `main`. Author commits as `EganNguyen <tuannh2y@gmail.com>`.
+**Git:** commit and push directly to `main`, staging explicit paths. Author commits as `EganNguyen <tuannh2y@gmail.com>`.
 
 ## Repository layout
 
