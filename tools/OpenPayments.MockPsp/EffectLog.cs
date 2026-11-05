@@ -66,23 +66,44 @@ public sealed class EffectLog : IAsyncDisposable
 
     private async Task WriteLoopAsync()
     {
-        await foreach (var pending in _channel.Reader.ReadAllAsync())
+        var batch = new List<PendingEffect>(1024);
+        await foreach (var first in _channel.Reader.ReadAllAsync())
         {
+            batch.Add(first);
+            while (batch.Count < 1024 && _channel.Reader.TryRead(out var next))
+            {
+                batch.Add(next);
+            }
+
             try
             {
-                _writer.WriteLine(string.Join(
-                    ',',
-                    Escape(pending.Key),
-                    Escape(pending.Op),
-                    pending.AmountMinor.ToString(CultureInfo.InvariantCulture),
-                    Escape(pending.Currency),
-                    DateTimeOffset.UtcNow.ToString("O", CultureInfo.InvariantCulture)));
+                foreach (var pending in batch)
+                {
+                    _writer.WriteLine(string.Join(
+                        ',',
+                        Escape(pending.Key),
+                        Escape(pending.Op),
+                        pending.AmountMinor.ToString(CultureInfo.InvariantCulture),
+                        Escape(pending.Currency),
+                        DateTimeOffset.UtcNow.ToString("O", CultureInfo.InvariantCulture)));
+                }
+
                 await _writer.FlushAsync();
-                pending.Completion.SetResult();
+                foreach (var pending in batch)
+                {
+                    pending.Completion.SetResult();
+                }
             }
             catch (Exception exception)
             {
-                pending.Completion.SetException(exception);
+                foreach (var pending in batch)
+                {
+                    pending.Completion.SetException(exception);
+                }
+            }
+            finally
+            {
+                batch.Clear();
             }
         }
     }
