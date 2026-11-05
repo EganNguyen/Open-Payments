@@ -1,6 +1,6 @@
 # Local Deployment
 
-How Open Payments' database tier runs on the owner's MacBook, and why. The commands are in the [benchmark guide](../benchmarks/benchmark-guide.md), and the evidence is in the [MacBook summary](../benchmarks/spike/macbook-2026-11-05/summary.md).
+How Open Payments' database tier runs on the owner's MacBook, and why. The commands are in the [benchmark guide](../benchmarks/benchmark-guide.md), and the evidence is in the [MacBook summary](../benchmarks/spike/macbook-2026-11-05/summary.md). Production is in [Production deployment](prd-deployment.md).
 
 Status: Database tier deployed and measured · Application tier not built · Last updated: 2026-11-05
 

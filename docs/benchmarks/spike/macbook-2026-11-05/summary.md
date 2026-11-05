@@ -176,7 +176,7 @@ CPU would still have room, so the SSD stays the limit, and app speed barely move
 | Input | Value | Label | How production uses it |
 |---|---|---|---|
 | Commits/s with fast flushes, pool 100 | About 9,750, twice, on one laptop VM | M, not durable here | What software allows when the disk is fast |
-| Software at fast flush, 1,000 scripts/s | p50 11 ms, p99 50 ms | M, not durable here | The production SLO is possible once flushes are fast |
+| Software at fast flush, 1,000 scripts/s | p50 11 ms, p99 50 ms | M, not durable here | The database path alone fits the production SLO once flushes are fast. [The whole platform is tighter](../../../architecture/prd-deployment.md#latency) |
 | Primary CPU | 0.51-0.86 M5 cores per 1,000 commits, rising with load | M | Primary sizing |
 | WAL | 2.0-5.4 KB per commit | M, sale mix | Disk and replication bandwidth |
 | Database size | 2.03 KB per payment | M, mostly prefill | Storage growth |
@@ -218,31 +218,7 @@ Per [Architecture](../../../architecture.md#cells-and-routing), 4 active cells p
 
 #### Expected Kubernetes topology
 
-A planning estimate, ±50%. Each cell spans 3 zones, as [Engineering standards](../../../engineering-standards.md) require.
-
-| Component | Per cell | vCPU each | Memory each | Basis |
-|---|---|---|---|---|
-| Postgres primary | 1 | 32 | 128 GB | X; room for reads, vacuum and unmodeled writes. Memory is A |
-| Postgres standby | 2, other zones | 32 | 128 GB | Must take over as primary |
-| Storage | NVMe, WAL on its own volume | | | Design; flush speed is the assumption above |
-| PgBouncer | 4 processes | 1 | 256 MB | M rate, X to 50% busy |
-| Postgres pool | 100-200 connections | | | X; must be re-tuned on real disks |
-| Payments API with PSP adapters | 8, up to 12 | 4 | 8 GB | A for CPU; in-flight cap 500 per pod with 2.5 s worst-case PSP wait gives 8 |
-| Fraud decision | 3 | 2 | 4 GB | A |
-| Outbox publisher | 2 | 2 | 2 GB | A |
-| Kafka or Redpanda | 3 | 8 | 32 GB | A; replication factor 3 is design |
-| Ledger projector | 3 | 2 | 4 GB | A |
-| Webhook dispatcher | 6 | 2 | 4 GB | A; depends on merchants' endpoints |
-| Reconciler | 2 | 2 | 4 GB | A |
-| **Cell total** | | **About 190 vCPU** | **About 600 GB** | |
-
-| Whole system | Count | vCPU |
-|---|---|---|
-| Cells, 4 active and 1 spare | 5 | About 950 |
-| Edge gateway and cell router, shared | 12 pods at 4 vCPU | About 48, A |
-| **Total** | | **About 1,000 vCPU and 3 TB of memory** |
-
-**Connection budget:** 12 pods × 20 Npgsql connections = 240 clients per cell, well within PgBouncer's limit. **Scaling:** HPA on in-flight requests and consumer lag, with about 40% standing headroom. Max replicas stay inside the connection budget. API pods won't raise database capacity.
+[Production deployment](../../../architecture/prd-deployment.md) has the topology, replica counts, CPU, memory, connection budget and failure behavior. In short: **about 190 vCPU and 600 GB per cell, and about 1,000 vCPU and 3.1 TB in total,** ±50%.
 
 ### Conclusion
 

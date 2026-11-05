@@ -62,6 +62,7 @@ Read them in this order if you are new.
 | [Failure scenarios](docs/failure-scenarios.md) | 51 failures, 29 edge cases, 7 runbooks, drills | You plan for things going wrong |
 | [Scaling playbook](docs/scaling-playbook.md) | Ramp plan, sizing, decision gates, results log | You plan benchmarks |
 | [Local deployment](docs/architecture/local-deployment.md) | The database tier on the MacBook: topology, resources, what stays fixed | You run it locally |
+| [Production deployment](docs/architecture/prd-deployment.md) | Expected topology, sizing and estimate at 5,000 payments/s, not proven | You plan production |
 | [Benchmark guide](docs/benchmarks/benchmark-guide.md) | Deploy, run, monitor, verify, compare and reset | You run a benchmark |
 | [MacBook summary](docs/benchmarks/spike/macbook-2026-11-05/summary.md) | Results, SLOs, bottlenecks, end-to-end and production capacity expectations | You need what's measured so far |
 | [Verification](docs/verification.md) | Test IDs, 108 production problems, 25 readiness items, build phases | You need to prove a claim or plan a build phase |
