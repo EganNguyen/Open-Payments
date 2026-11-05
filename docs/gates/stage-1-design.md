@@ -46,7 +46,7 @@ Stage 1 is the spike, test tools, payment core and first ramp steps. The rules a
 | ☑ | Task 2: API contract and event catalog drafts | Done, `ae5847d`, updated since |
 | ☑ | Task 3: replicated stack, and [commit behavior observed](../../benchmarks/spike/commit-cancel.md) | Done, `108a626` |
 | ☑ | Task 4: spike schemas and workloads | Done, `511c8d9` |
-| ☑ | Task 5: [spike runner](../../benchmarks/spike/README.md), proven by a local dry run | Done |
+| ☑ | Task 5: [spike runner](../../benchmarks/spike/README.md), proven by a local dry run | Done, `7ceb0dd` |
 | ☐ | Task 6: Linux spike, D25 and D26 recorded, first migration written | Owner's choice of machines |
 | ☐ | Owner's choice of benchmark machines | Owner |
 
