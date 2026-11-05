@@ -1,0 +1,74 @@
+[
+  {
+    "step": 0,
+    "rate": 1,
+    "duration_seconds": 300,
+    "purpose": "Baseline and correctness"
+  },
+  {
+    "step": 1,
+    "rate": 10,
+    "duration_seconds": 300,
+    "purpose": "Correctness under light concurrency"
+  },
+  {
+    "step": 2,
+    "rate": 50,
+    "duration_seconds": 300,
+    "purpose": "First concurrency"
+  },
+  {
+    "step": 3,
+    "rate": 100,
+    "duration_seconds": 600,
+    "purpose": "First capacity test"
+  },
+  {
+    "step": 4,
+    "rate": 250,
+    "duration_seconds": 600,
+    "purpose": "Database validation"
+  },
+  {
+    "step": 5,
+    "rate": 500,
+    "duration_seconds": 600,
+    "purpose": "Application limit and scale-out"
+  },
+  {
+    "step": 6,
+    "rate": 1000,
+    "duration_seconds": 900,
+    "purpose": "Horizontal scaling"
+  },
+  {
+    "step": 7,
+    "rate": 2000,
+    "duration_seconds": 900,
+    "purpose": "Data-layer limits"
+  },
+  {
+    "step": 8,
+    "rate": 3000,
+    "duration_seconds": 900,
+    "purpose": "Asynchronous workloads"
+  },
+  {
+    "step": 9,
+    "rate": 8300,
+    "duration_seconds": 1200,
+    "purpose": "Ramp up to 5,000 completed payments/s (auto-capture mix)"
+  },
+  {
+    "step": 10,
+    "rate": 8300,
+    "duration_seconds": 3600,
+    "purpose": "5,000 completed payments/s sustained (L5)"
+  },
+  {
+    "step": 11,
+    "rate": 16600,
+    "duration_seconds": 900,
+    "purpose": "Offered load rising to twice step 10 (L6)"
+  }
+]
