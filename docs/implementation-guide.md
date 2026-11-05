@@ -74,25 +74,7 @@ The full list is in the plan's [Global Constraints](superpowers/plans/2026-11-05
 
 ## Repository layout
 
-```
-api/openapi.yaml                 Draft contract, frozen only after C39
-db/spike/                        Spike schemas, pgbench workloads, matrix runner
-db/migrations/                   Schema, written from spike results
-deploy/compose/                  Replicated PostgreSQL, PgBouncer, metrics stack
-scripts/                         bootstrap, settings check, migrate
-src/
-  OpenPayments.Domain/           Money, IDs, states, Decide. No I/O at all
-  OpenPayments.Transitions/      TxRunner and PaymentStore. The only money writer
-  OpenPayments.Psp/              IPspAdapter and adapters
-  OpenPayments.Api/              Endpoints, PaymentFlow, auth, limits, metrics
-tools/
-  OpenPayments.MockPsp/          Test PSP with an effect log
-  OpenPayments.Checks/           CK1-CK10. Independent of src/
-tests/                           Domain, integration, acceptance, checks, mock PSP
-benchmarks/                      k6 mix, profiles, run.sh, report, results
-```
-
-The dependency direction is `Api` to `Transitions` and `Psp`, and those to `Domain`. `Domain` depends on nothing, and a test enforces it.
+See [Codebase structure](architecture/codebase-structure.md) for the projects, dependency rules and where new code goes.
 
 ## Working through the milestones
 
