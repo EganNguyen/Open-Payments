@@ -1,6 +1,6 @@
 # Failure Scenarios, Edge Cases and Recovery (Open Payments)
 
-Status: draft v1 · Date: 2026-11-04 · Companion to `payment-system-design.md` and `scaling-playbook.md`
+Status: draft v1 · Date: 2026-11-04 · Companion to `payment-system-design.md`, `scaling-playbook.md`, `payment-lifecycle.md` and `deadlock-handling.md`
 
 ## 0. Purpose and status
 
@@ -76,6 +76,7 @@ Columns: **Detect** is the signal that shows it. **Automatic** is what the syste
 | FS-24 | Disk fills (database, broker, logs) | Alerts at 70% and 85% | Alerts only; no automatic delete of data | Expand volume, drop old partitions, or archive per runbook | C22 |
 | FS-25 | Migration locks a table or breaks the app | `lock_timeout` errors; error spike | `lock_timeout` aborts the migration; expand/contract keeps old code working | Revert the migration step; retry off-peak | S4 |
 | FS-26 | Data loss, corruption or a bad manual change | Continuous ledger audit; restore drill | Point-in-time recovery is available | Restore to a new instance, compare, then promote or repair with reversing entries | O5 |
+| FS-42 | Deadlocks or lock contention on the same rows (for example capture, refund and reconciler updating one payment) | `pg_stat_database.deadlocks`; lock-wait counter; `40P01` and `55P03` error rate; retry budget use | Database aborts one victim; the transaction runner retries at most twice with jitter inside a retry budget; `lock_timeout` 200 ms fails slow waits fast; limiter sheds if retries pile up | Read the deadlock log, find the two statements, fix lock order or split the hot row; see `deadlock-handling.md` | L1, C6 |
 
 ### 2.4 Messaging and webhooks
 
@@ -196,7 +197,7 @@ Rules for every drill: define the expected result first, run CK1-CK6 afterwards,
 
 | Group | Count | Verified |
 |---|---|---|
-| Failure scenarios (FS-01 to FS-41) | 41 | 0 |
+| Failure scenarios (FS-01 to FS-42) | 42 | 0 |
 | Edge cases (E1 to E17) | 17 | 0 |
 | Runbooks (R1 to R7) | 7 | 0 (none rehearsed) |
 

@@ -2,7 +2,7 @@
 
 Status: draft v2 · Date: 2026-11-04 · Stack: C# / .NET 8, ASP.NET Core, PostgreSQL, Kafka-compatible broker, Kubernetes
 
-Companions: `scaling-playbook.md` (ramp plan, decision gates, sizing, results log) · `failure-scenarios.md` (failure catalogue, edge cases, recovery runbooks, drills)
+Companions: `scaling-playbook.md` (ramp plan, decision gates, sizing, results log) · `failure-scenarios.md` (failure catalogue, edge cases, recovery runbooks, drills) · `payment-lifecycle.md` (states, transitions, rules, examples) · `deadlock-handling.md` (lock contention and deadlocks at high TPS) · `dotnet-for-payments.md` (why .NET)
 
 ## 0. How to read this document
 
@@ -110,6 +110,8 @@ The payment path is deliberately short: API, one short transaction, PSP, one sho
 - **Cells are a decision, not an assumption.** Build one cell first. Split into several only if gate G1 in `scaling-playbook.md` shows that one primary cannot sustain the measured write rate at 60% CPU or less with synchronous replication on.
 
 ## 6. Payment lifecycle
+
+The full state, transition and rule tables, worked examples and proposed extra states (void, expiry, settlement, disputes) are in `payment-lifecycle.md`. The diagram below is the version this design commits to.
 
 ```mermaid
 stateDiagram-v2
@@ -406,7 +408,7 @@ Load balancer idle timeouts are set longer than the Kestrel keep-alive so connec
 
 - At most about 5 statements, with a target of a few milliseconds. No PSP call, no HTTP call, and no broker call inside a transaction.
 - Role-level settings on the API role: `lock_timeout` 200 ms, `statement_timeout` 1 s, `idle_in_transaction_session_timeout` 2 s.
-- Rows are always touched in a consistent order. On serialization or deadlock errors (SQLSTATE 40001, 40P01) retry at most twice with jitter, within a retry budget, so retries cannot cause a storm.
+- Rows are always touched in a consistent order. On serialization or deadlock errors (SQLSTATE 40001, 40P01) retry at most twice with jitter, within a retry budget, so retries cannot cause a storm. Causes, scenarios and automated mitigation for deadlocks are in `deadlock-handling.md`.
 
 ### 14.3 Queries
 

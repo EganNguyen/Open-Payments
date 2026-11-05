@@ -1,6 +1,6 @@
 # Scaling Playbook: from 1 to 5,000 requests per second
 
-Companion to `payment-system-design.md` and `failure-scenarios.md` (what can fail and how to recover). The design says what the system is and why it is correct. This playbook says how to prove it scales, step by step, and where to record the evidence. Test IDs (L1, C3, CK2 and so on) refer to section 18 of the design.
+Companion to `payment-system-design.md`, `failure-scenarios.md` (what can fail and how to recover) and `deadlock-handling.md` (lock contention at high TPS). The design says what the system is and why it is correct. This playbook says how to prove it scales, step by step, and where to record the evidence. Test IDs (L1, C3, CK2 and so on) refer to section 18 of the design.
 
 Status: draft v1 · Date: 2026-11-04
 
@@ -190,7 +190,7 @@ More pods mean more database connections. Set the autoscaler's maximum replicas 
 | ThreadPool queue grows | Blocking or thread starvation | Find synchronous blocking | `dotnet-counters`, S1 analyzer output |
 | Database connections exhausted | Connection pool | Check query duration and connection hold time | Pool wait time, PgBouncer stats |
 | Database CPU near 95% | Database capacity | Read execution plans of the top queries | Slow query log, `EXPLAIN` |
-| Lock waits rise | Contention | Shorten transactions, find hot rows | Lock wait metrics |
+| Lock waits rise | Contention | Shorten transactions, find hot rows; read the deadlock log (`deadlock-handling.md`) | Lock wait metrics, `pg_stat_database.deadlocks` |
 | Database I/O or WAL saturated | Storage or commit rate | Check commit latency, WAL volume, batching | Disk and WAL metrics |
 | Kafka consumer lag grows | Consumer capacity | Profile consumers; add workers or partitions | Lag per group, handler time |
 | Outbox age grows | Publisher or broker slow | Check batch size and broker health | Outbox age metric |
