@@ -64,6 +64,7 @@ Read them in this order if you are new.
 | [Verification](docs/verification.md) | Test IDs, 108 production problems, 25 readiness items, build phases | You need to prove a claim or plan a build phase |
 | [API contract](api/openapi.yaml) | Draft routes and fields, frozen only after C39 ([draft guides](docs/integration-guides-draft.md)) | You call or build the API |
 | [Event catalog](docs/event-catalog.md) | Shape and contents of published events | You publish or consume events |
+| [Delivery workflow](docs/delivery-workflow.md) | Design, build and review gates, and who does each | You start any stage or task |
 | [Implementation guide](docs/implementation-guide.md) | How to build and benchmark it, with links to the spec and plan | You start building or run a benchmark |
 | [Decisions](docs/decisions.md) | Why key choices were made, assumptions, open questions | You question a choice |
 | [Stripe research](docs/stripe-research.md) | What Stripe has published, proposed design changes, what not to copy | Before accepting the design or starting Phase 0 |

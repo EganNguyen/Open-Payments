@@ -143,6 +143,10 @@ These remain open. Each has a recommendation.
 | API contract | `MEASURE-FIRST` | Frozen only after a real 3D Secure flow | C39 |
 | Kubernetes and HA | `READY` | Values | C7, C10, C11, C19, C20 |
 
+## Delivery
+
+Each stage passes three [gates](../../delivery-workflow.md): design by Opus, build by DeepSeek, and independent review by Opus in a fresh session. Stage 1's design gate holds orders 1-2 below, and is [recorded here](../../gates/stage-1-design.md). Its build gate holds orders 3-5, followed by its review gate. Orders 6-9 are stages 2-5, each with all three gates.
+
 ## Build order
 
 | Order | Work | Needs | Produces | Why here |
@@ -158,7 +162,7 @@ These remain open. Each has a recommendation.
 | 8 | Hardening with the full synchronous path | Rented cluster, D36 | L1-L6, G1-G6 | |
 | 9 | Security and operations, then L5 again | Assessor before live cards | The sign-off number | |
 
-Order 3 can start on a provisional migration from the baseline schema if machines are slow to arrive, accepting a rework of `0001_initial.sql` once D25 is decided.
+The build doesn't start until the design gate closes, so it waits on the Linux spike. Starting early on a provisional migration would need the owner's explicit approval, accepting a rework of `0001_initial.sql` once D25 is decided.
 
 ## Acceptance criteria
 

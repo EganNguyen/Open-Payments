@@ -1,6 +1,6 @@
 # Open Payments Implementation and Benchmark Plan
 
-> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
+> **For whoever executes this:** Follow [Delivery workflow](../../delivery-workflow.md). Tasks 1-6 belong to the design gate (Opus) and Tasks 7-17 to the build gate (DeepSeek), with an independent review gate after. Builders stop and escalate on any design conflict, and never decide it themselves. Steps use checkbox (`- [ ]`) syntax.
 
 **Goal:** Build Open Payments in C#/.NET 10 and prove by measurement, with correctness checks after every run, whether it sustains 5,000 completed payments/s.
 
@@ -12,7 +12,13 @@
 
 **Scope of this plan:** Tasks 1-17 are detailed, up to the first recorded ramp steps. The [roadmap](#roadmap-after-task-17) covers everything after that. It is enough to size and order the work, and each stage gets a detailed plan when it starts.
 
-**Status:** Tasks 1 and 2 are done. The [design review](../specs/2026-11-05-implementation-and-benchmark-design.md#what-the-review-found) and the owner's acceptance of D35, D37, D38 and D39 changed the tasks below. Tasks 3-5 are ready to start.
+**Status:** Tasks 1 and 2 are done. The [design review](../specs/2026-11-05-implementation-and-benchmark-design.md#what-the-review-found) and the owner's acceptance of D35, D37, D38 and D39 changed the tasks below. Tasks 1-3 are done, and Tasks 4-5 are ready to start.
+
+| Gate | Tasks | Done by | Exit record |
+|---|---|---|---|
+| Design | 1-6 | Opus | [`docs/gates/stage-1-design.md`](../../gates/stage-1-design.md), signed by the owner |
+| Build | 7-17 | DeepSeek | `docs/gates/stage-1-progress.md`, with no open `docs/gates/stage-1-escalations.md` entry |
+| Review | The complete change since `6680a7e`, including Tasks 1-6 | Opus, in a fresh session | `docs/gates/stage-1-review.md`, with no open critical or high finding |
 
 ## Owner decisions needed
 
@@ -53,6 +59,7 @@ A run from before Phase 3 can't satisfy L1. It's recorded as a *preview*, and no
 ## Global Constraints
 
 - Commit and push directly to `main`, staging explicit paths.
+- From Task 7 on, don't change `docs/decisions.md`, the spec, the API contract or a gate's value. Stop and escalate instead ([Build gate](../../delivery-workflow.md#build-gate)). Add a line to `docs/gates/stage-1-progress.md` with each task's commit.
 - Commit author: `git commit --author="EganNguyen <tuannh2y@gmail.com>"`. Every message ends with `Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>`.
 - Target `net10.0`. Warnings are errors. Analyzer CA2016 is on.
 - Money is `bigint` minor units with a currency. No `double`, `float` or `decimal` for amounts.
@@ -82,7 +89,7 @@ Likely to bite and not named by any single doc test. Each has a test in the task
 
 ---
 
-## Milestone A: Design closure
+## Milestone A: Design closure (design gate)
 
 ### Task 1: Record design decisions and correct the docs
 
@@ -163,9 +170,9 @@ Expected: no errors.
 
 ---
 
-## Milestone B: Database spike (gates G1, G3, G4)
+## Milestone B: Database spike (design gate)
 
-This is the README's first step. It needs no C#.
+This is the README's first step. It needs no C#. It answers gates G1, G3 and G4, and its results are design decisions, so it runs before the design gate closes.
 
 ### Task 3: Tooling and replicated database stack
 
@@ -309,10 +316,11 @@ Run: `scripts/migrate.sh && scripts/migrate.sh && psql "$DB_DIRECT_URL" -c "sele
 Expected: both runs exit 0, count 1.
 
 - [ ] **Step 6: Commit** with message `feat: add initial schema from spike results`.
+- [ ] **Step 7: Close the design gate.** Update `docs/gates/stage-1-design.md` with the results and any new decisions made without the owner, and ask the owner to sign it and name the starting commit. Tasks 7-17 don't start until then.
 
 ---
 
-## Milestone C: Phase 0, test tools
+## Milestone C: Phase 0, test tools (build gate)
 
 ### Task 7: Solution skeleton, static gates and money type
 
@@ -518,7 +526,7 @@ Expected: a run directory with `checks.json` showing failures for no data, and n
 
 ---
 
-## Milestone D: Phase 1, payment core
+## Milestone D: Phase 1, payment core (build gate)
 
 ### Task 12: Pure state machine and ledger postings
 
@@ -593,7 +601,7 @@ Task<T> TxRunner.RunAsync<T>(MerchantId m, Func<NpgsqlConnection, NpgsqlTransact
 // ct applies to the work, never to COMMIT. After the 3 s wait limit, a dropped connection,
 // or a "canceling wait" warning, COMMIT throws CommitOutcomeUnknownException.
 // Check how Npgsql's Command Timeout and Cancellation Timeout behave first. If its timeout
-// sends a cancel, enforce the limit outside the driver and close the socket instead.
+// sends a cancel and closing the socket can't avoid it, stop and escalate: D28 depends on this.
 Task<KeyLookup> PaymentStore.ReadKeyAsync(MerchantId m, string key, byte[] requestHash, CancellationToken ct);
 // NotFound | Finished(StoredResponse) | Unresolved(PaymentView) | InFlight | HashMismatch
 Task<BeginResult> PaymentStore.BeginAttemptAsync(BeginAttempt cmd, CancellationToken ct);
@@ -789,12 +797,13 @@ Expected: each `result.md` is valid with gates met and is labelled preview. If a
 - [ ] **Step 3: On Linux, run steps 4 and 5.** Record `C`, then compute `N = ceil(T / (C × U))` with `T` of 8,300, and note the 16,700 case. Compare measured commits per payment with the Task 6 estimate.
 - [ ] **Step 4: Write `BASELINE.md`:** per-request latency breakdown, the first bottleneck at each step, `C`, and whether the 5,000 target still looks reachable on one cell. State plainly anything that doesn't support the goal.
 - [ ] **Step 5: Commit** the results with message `test: record first ramp baseline`.
+- [ ] **Step 6: Hand over to the review gate.** Confirm every task has a progress line and no escalation is open, then tell the owner the build is ready for an [independent review](../../delivery-workflow.md#review-gate) of everything since `6680a7e`.
 
 ---
 
 ## Roadmap after Task 17
 
-Write a detailed plan with superpowers:writing-plans at the start of each stage, and read the latest measurements first. Stop and reassess if a gate says the design doesn't hold.
+Each stage goes through all three [gates](../../delivery-workflow.md), and starts only once the previous stage's review gate has closed. Its design gate writes the detailed plan, after reading the latest measurements. Stop and reassess if a gate says the design doesn't hold.
 
 | Stage | Build | Benchmark run | Exit | Needs |
 |---|---|---|---|---|

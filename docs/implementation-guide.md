@@ -12,10 +12,11 @@ Status: Draft · Last updated: 2026-11-05
 |---|---|---|
 | [Spec](superpowers/specs/2026-11-05-implementation-and-benchmark-design.md) | What counts as done, and when a benchmark can be trusted | Scope arguments, judging a result |
 | [Plan](superpowers/plans/2026-11-05-open-payments-implementation-and-benchmark.md) | Which files, signatures and tests, in which order | The task you are on |
+| [Delivery workflow](delivery-workflow.md) | Who does what, and the design, build and review gates | Before starting any task, and whenever you are unsure whether to decide or escalate |
 | This guide | How to work through it all | Orientation, setup, running things |
 | [Design docs](../README.md#documents) | How the system behaves and why | Any question about behavior |
 
-If they disagree, the design docs win, except where an accepted decision in the plan's Task 1 has changed them. Fix the disagreement rather than working around it.
+If they disagree, the design docs win. Don't work around the disagreement. During a build, [stop and escalate](delivery-workflow.md#build-gate) it.
 
 ## Before you start
 
@@ -67,6 +68,7 @@ The full list is in the plan's [Global Constraints](superpowers/plans/2026-11-05
 5. **Checks stay independent.** `OpenPayments.Checks` never references `Domain` or `Transitions`, and its fixtures use raw SQL.
 6. **Never relax a gate to pass.** A missed gate is a finding. Record it and fix the bottleneck.
 7. **Tick a verification row only with a recorded run.** It needs a run ID, commit, configuration and result link.
+8. **Builders don't decide design.** Escalate a missing or conflicting decision, and go no further on that task.
 
 **Git:** commit and push directly to `main`, staging explicit paths. Author commits as `EganNguyen <tuannh2y@gmail.com>`.
 
@@ -252,7 +254,8 @@ benchmarks/run.sh 3 --env local --stage phase1 --psp-latency 200
 - [ ] The stage's benchmark ran, and its bottleneck and result are recorded.
 - [ ] Verification rows are ticked only where a recorded run proves them, and the [progress counts](verification.md#progress) are updated.
 - [ ] Docs changed by what was learned are corrected, with each fact in its one home.
-- [ ] The next stage's plan is written from these results.
+- [ ] The [review gate](delivery-workflow.md#review-gate) has closed, with no open critical or high finding.
+- [ ] The next stage's [design gate](delivery-workflow.md#design-gate) writes its plan from these results.
 
 ## Common problems
 
