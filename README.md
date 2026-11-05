@@ -33,7 +33,7 @@ Customer pays $24
 4. Ask the PSP to charge the card
 5. Save the result, the accounting entries and a "tell others" note
    in ONE database transaction
-6. Answer the customer: success, declined, or "still checking"
+6. Answer the customer: success, declined (try again), action needed, or "still checking"
 7. Later, in the background: tell the merchant (webhook), update balances
 ```
 
@@ -59,10 +59,11 @@ Read them in this order if you are new.
 | [Payment lifecycle](docs/payment-lifecycle.md) | States, transitions, refund rules, merchant events | You work on payments or refunds |
 | [Engineering standards](docs/engineering-standards.md) | Load control, .NET, database, Kubernetes, security, observability | You write or operate code |
 | [Deadlock handling](docs/deadlock-handling.md) | Risks, prevention, retry behavior, proposed automation | Before writing database transaction code |
-| [Failure scenarios](docs/failure-scenarios.md) | 42 failures, 17 edge cases, 7 runbooks, drills | You plan for things going wrong |
+| [Failure scenarios](docs/failure-scenarios.md) | 42 failures, 24 edge cases, 7 runbooks, drills | You plan for things going wrong |
 | [Scaling playbook](docs/scaling-playbook.md) | Ramp plan, sizing, decision gates, results log | You plan benchmarks |
 | [Verification](docs/verification.md) | Test IDs, 108 production problems, 25 readiness items, build phases | You need to prove a claim or plan a build phase |
 | [Decisions](docs/decisions.md) | Why key choices were made, assumptions, open questions | You question a choice |
+| [Stripe research](docs/stripe-research.md) | What Stripe has published, proposed design changes, what not to copy | Before accepting the design or starting Phase 0 |
 | [Glossary](docs/glossary.md) | Terms and standard names | Any time |
 
 The clickable UX prototype and case study for the merchant dashboard and checkout are kept outside this repo, on a design canvas.
@@ -79,7 +80,7 @@ The clickable UX prototype and case study for the merchant dashboard and checkou
 **Not done:**
 
 - No code, benchmarks or real measurements.
-- Not designed: settlement and payouts, marketplace features, billing, advanced fraud, and the formal PCI assessment.
+- Not designed: payouts and settlement beyond file ingestion, marketplace features, billing, advanced fraud, and the formal PCI assessment.
 
 **Suggested next steps:**
 

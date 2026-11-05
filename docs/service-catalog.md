@@ -30,13 +30,13 @@ Nine deployables, two libraries and four infrastructure parts. How they fit toge
 | Component | Kind | Boundary | Job | Owns | Customer waits? | If it is down |
 |---|---|---|---|---|---|---|
 | Edge gateway | Deployable | Shared | TLS, API key and token authentication, per-merchant rate limits, size and slow-client limits, fast 429 or 503 with `Retry-After` | nothing | Yes | Nothing can enter; scale out |
-| Cell router | Deployable | Shared | Maps merchant to cell from a cached table; no payment logic | merchant-to-cell table | Yes | Uses its last known mapping |
-| Payments API | Deployable | Cell | Create, capture, refund, status query, idempotency, PSP callback receiver | idempotency keys | Yes | Payments stop; other cells keep working |
+| Cell router | Deployable | Shared | Maps merchant and API key mode to a cell from a cached table; no payment logic | merchant-to-cell table | Yes | Uses its last known mapping |
+| Payments API | Deployable | Cell | Create, new attempt, cancel, capture, refund, status query, idempotency, PSP callback receiver | idempotency keys | Yes | Payments stop; other cells keep working |
 | Fraud decision | Deployable | Cell | Rules within about 50 ms, Redis velocity counters, fallback by risk tier, async analytics | rules, counters | Yes, with a time limit | Fallback policy applies |
 | Outbox publisher | Deployable | Cell | Moves committed events to the broker in batches | nothing | No | Events wait in the outbox |
 | Ledger projector | Deployable | Cell | Builds balances and snapshots from entries; rebuildable read model | balance snapshots | No | Balances lag; payments unaffected |
 | Webhook dispatcher | Deployable | Cell | Signed delivery, retries with backoff, dead-letter queue, per-endpoint isolation | delivery log | No | Notifications are late, never lost |
-| Reconciler | Deployable | Cell | Resolves unknown and stuck operations, runs timer jobs, compares PSP settlement files | discrepancy records | No | Unresolved work stays unresolved longer |
+| Reconciler | Deployable | Cell | Resolves unknown and stuck operations, runs timer jobs, ingests and matches PSP settlement files | discrepancy records | No | Unresolved work stays unresolved longer |
 | Vault and tokenization | Deployable | Shared | Stores card data encrypted, issues tokens; own network segment and PCI scope | encrypted card data | Yes | Card payments cannot start |
 | Payment-transition module | Library | Linked into the Payments API and reconciler | State machine, atomic refund limit, ledger and outbox writes; the only code that writes money state | payments, attempts, refunds, ledger, outbox | Yes | Fails with its host process |
 | PSP adapters | Library | Linked into the Payments API and reconciler | One adapter per PSP behind one interface; deadline, breaker, rate limit, status inquiry, failover where allowed. A separate bulkhead per PSP | adapter metadata | Yes | Payment becomes `UNKNOWN` or fails fast |
@@ -116,7 +116,7 @@ Our own proposal, not Stripe's internal architecture. **Money** means the capabi
 | 12 | Financial accounts | `Open` | Module | Payments API; `accounts` table not specified | Yes | Build |
 | 13 | Transfers | `Open` | Planned | Money Movement | Yes | Build |
 | 14 | Payouts | `Open` | Planned | Money Movement | Yes | Build |
-| 15 | Settlement | `Proposed` | Planned | Money Movement | Yes | Build |
+| 15 | Settlement | `Proposed`; file ingestion is `Committed` ([D18](decisions.md#d18)) | Planned; ingestion is in the reconciler | Money Movement | Yes | Build |
 | 16 | Reconciliation | `Committed` | Deployable | Reconciler | Yes | Build |
 | 17 | Fees | `Open` | Module | Payments API, posted in the payment transaction | Yes | Build |
 | 18 | Currency rules | `Committed` | Module | Reference table used by the Payments API; FX is `Open` | No | Build |

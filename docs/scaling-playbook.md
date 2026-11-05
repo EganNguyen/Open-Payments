@@ -228,7 +228,7 @@ Next step:
 | PSP simulator | Configurable latency, failures and throughput limit |
 | Load test automation | Repeatable full ramp from one command |
 | Observability dashboards | All [metrics](engineering-standards.md#observability) visible |
-| Failure injection | C1-C36 pass (C33 only if cells are adopted); no lost or duplicate successful payments |
+| Failure injection | C1-C42 pass (C33 only if cells are adopted); no lost or duplicate successful payments |
 | Final capacity report | 5,000 completed payments/s sustained for 60 min with gates met |
 
 **Report outline:**

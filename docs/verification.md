@@ -74,12 +74,18 @@ Run after every load and chaos test.
 | C28 | Full outage, then restart of all services | Staged ramp and capped backlog drain; no second outage; CK pass before recovery is declared |
 | C29 | Replica lag of 30 s | Reads that must be fresh go to the primary; no stale payment status after create |
 | C30 | One merchant sends 50% of all traffic | Per-merchant limits protect others; other merchants keep their SLO |
-| C31 | Edge-case suite for payment handling ([E1-E17](failure-scenarios.md#edge-cases)) | Each case returns its defined result; no state or ledger corruption |
+| C31 | Edge-case suite for payment handling ([E1-E24](failure-scenarios.md#edge-cases)) | Each case returns its defined result; no state or ledger corruption |
 | C32 | PSP returns an amount or currency that differs from ours | Payment moves to `REVIEW`; no ledger entry for the disputed amount; alert fires |
 | C33 | Cell router or its config store unavailable (only if cells are adopted) | Routers keep the last mapping; mapping changes frozen; traffic keeps flowing |
 | C34 | Capture, refund and reconciler race on one payment, with lock order forced to collide | `40P01` is raised and counted in `pg_stat_database.deadlocks`; retried at most twice; `55P03` returns 503; exactly one effect per operation; CK1 and CK3 pass |
 | C35 | Concurrent refunds across different payments against a low merchant balance | Advisory lock serializes the checks; balance never goes negative; create-payment latency unaffected |
 | C36 | Two concurrent capture requests with different idempotency keys | One PSP capture; the other gets the current status or 409; CK2 passes |
+| C37 | Decline, then two concurrent new attempts on the same payment | One PSP authorize; the other gets the current status or 409; one payment for the order; CK2 passes |
+| C38 | PSP approves an attempt already marked `FAILED`, both before and after another attempt succeeds | Attempt moves to `REVIEW`, alert fires, no ledger entry for it; no new attempt can start from `AWAITING_METHOD` |
+| C39 | One real 3D Secure flow on a PSP sandbox: finished, failed and abandoned, plus a callback racing the action window | Correct state each time; abandoned reaches `AWAITING_METHOD` through `UNKNOWN` and inquiry; one effect at the PSP. Required before the API contract is frozen ([D17](decisions.md#d17)) |
+| C40 | Settlement file with duplicate lines, unmatched lines, wrong amounts and a missing line, ingested twice | Each line ends in the defined state; discrepancies page; ledger entries post once; a killed ingest resumes safely |
+| C41 | Key expiry job runs while payments are `UNKNOWN` past 24 hours, then the client retries | Key is kept, the stored answer returns, and there is no second charge; resolved keys expire |
+| C42 | Test-mode keys used against live data and live keys against test data, with test traffic flooding under load | Isolation holds in both directions; test traffic is shed first; live keeps its SLO ([D20](decisions.md#d20)) |
 
 ## Unit and property tests
 
@@ -102,6 +108,7 @@ Run after every load and chaos test.
 - Replay every request twice, and with a crash in between.
 - Run capture and refund at the same moment; exactly one wins and the ledger balances.
 - Deliver PSP callbacks in all permutations; the final state is the same.
+- Decline, then retry on the same payment, up to the attempt cap; at most one attempt ever succeeds.
 - Force PSP timeouts; the payment reaches a correct final state through the reconciler.
 
 ## Static gates
@@ -245,7 +252,7 @@ The **Design response** column links to the mechanism, and **Proof** lists tests
 
 | # | Production problem | Design response | Proof | Verified |
 |---|---|---|---|---|
-| 80 | Duplicate charges | [Payment flow](architecture.md#payment-flow), [Data model](architecture.md#data-model): idempotency key unique constraint plus PSP idempotency | C5, C36, CK2 | ☐ |
+| 80 | Duplicate charges | [Payment flow](architecture.md#payment-flow), [Data model](architecture.md#data-model): idempotency key unique constraint, one-live-attempt indexes and PSP idempotency | C5, C36, C37, C38, C41, CK2 | ☐ |
 | 81 | Lost payment records | [Payment flow](architecture.md#payment-flow): intent written before PSP call; synchronous replication | C4, C7 | ☐ |
 | 82 | Duplicate ledger entries | [Ledger](architecture.md#ledger): `source_event_id` unique; `(txn_id, entry_no)` primary key | C17, U3, CK1 | ☐ |
 | 83 | Unbalanced ledger | [Ledger](architecture.md#ledger): single-statement insert, deferred trigger backstop, audit query | U3, CK1 | ☐ |
@@ -313,7 +320,7 @@ The **Design response** column links to the mechanism, and **Proof** lists tests
 | 22 | Circuit breakers and bulkheads | [PSP integration](architecture.md#psp-integration) | C13 | ☐ |
 | 23 | Canary deployments | [Kubernetes](engineering-standards.md#kubernetes-and-operations) | C19 | ☐ |
 | 24 | Security and PCI DSS controls | [Security](engineering-standards.md#security-and-fraud) | O4, U6, U8 | ☐ |
-| 25 | 5,000 TPS load and failure testing | [Verification](#how-verification-works) | L1-L6, C1-C36 (C33 only if cells are adopted) | ☐ |
+| 25 | 5,000 TPS load and failure testing | [Verification](#how-verification-works) | L1-L6, C1-C42 (C33 only if cells are adopted) | ☐ |
 
 ## Progress
 
@@ -324,7 +331,7 @@ Update these counts as rows are ticked.
 | Production problems | 108 | 0 |
 | Production readiness items | 25 | 0 |
 | [Failure scenarios](failure-scenarios.md#failure-catalogue) (FS-01 to FS-42) | 42 | 0 |
-| [Edge cases](failure-scenarios.md#edge-cases) (E1 to E17) | 17 | 0 |
+| [Edge cases](failure-scenarios.md#edge-cases) (E1 to E24) | 24 | 0 |
 | [Runbooks](failure-scenarios.md#runbooks) (R1 to R7) | 7 | 0 (none rehearsed) |
 
 A scenario is verified only when its proof test has passed with a recorded run, and its runbook, if any, has been rehearsed.
@@ -335,9 +342,9 @@ A scenario is verified only when its proof test has passed with a recorded run, 
 |---|---|---|
 | 0 | Mock PSP, k6 load scripts, automated CK1-CK5 checks, dashboards | CK checks run automatically after every test |
 | 1 | Payments core, idempotency, ledger, refunds, outbox table (written in the same transaction from the start) | U1-U4, C5, C6, C31, S1, S3, S5, S6 |
-| 2 | PSP adapter, reconciler, callbacks | C3, C4, C9, C12, C13, C15, C16, C23, C26, C32, C34, C35, C36, U5 |
+| 2 | PSP adapter, reconciler, callbacks, settlement ingestion | C3, C4, C9, C12, C13, C15, C16, C23, C26, C32, C34, C35, C36, C37, C38, C39, C40, C41, U5 |
 | 3 | Outbox publisher, broker, consumers, webhooks | C8, C17, C18, C27, U5, CK6 |
 | 4 | Hardening: limits, HA, deployment, and cells only if gate G1 requires them | L1-L6, C1, C2, C7, C10, C11, C19-C22, C24, C25, C28-C30, C33 (cells only), S2, S4, O3 |
-| 5 | Security, fraud rules, operations | U6-U8, F1, C14, O1, O2, O4, O5, O6 |
+| 5 | Security, fraud rules, operations, test mode isolation | U6-U8, F1, C14, C42, O1, O2, O4, O5, O6 |
 
 **Sign-off:** all 108 and all 25 checklist rows are ticked, each with a recorded run.

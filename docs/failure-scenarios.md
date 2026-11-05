@@ -113,7 +113,7 @@ These are not outages. They are unusual but valid situations that must give a de
 | E1 | Same idempotency key, different request body | Reject with 422; do not run |
 | E2 | Same key while the first request is still running | Return 409 with `Retry-After`; do not start a second one |
 | E3 | Client disconnects after transaction A | Processing continues; the result is stored; a retry with the same key returns it |
-| E4 | Key reused after the retention period | Treated as a new request; the retention period is documented to merchants |
+| E4 | Key reused after the retention period | Treated as a new request. Retention is at least 24 hours after the operation resolves, is documented to merchants, and never ends while the operation is unresolved ([D19](decisions.md#d19)) |
 | E5 | Merchant retries with a new key after a timeout | Cannot be detected by key; guidance is to poll the payment ID or use one key per order. Optional: warn on a repeated merchant order reference (`Open`) |
 | E6 | Refund on a payment that is not captured, or is `UNKNOWN` | Reject with a clear error |
 | E7 | Refund larger than the remaining amount | Reject; the atomic reservation protects the total (C6) |
@@ -127,6 +127,13 @@ These are not outages. They are unusual but valid situations that must give a de
 | E15 | Event larger than the size limit or schema mismatch | Rejected at publish; contract tests catch it in CI (U5) |
 | E16 | Card data appears in logs or error messages | Redaction and a log scan (U8) |
 | E17 | Tenant A uses a key against tenant B's data | Rejected by tenant checks (U6) |
+| E18 | New attempt while another is live, or two at once | One proceeds; the unique index gives the other the current status or 409 with `Retry-After` (C37) |
+| E19 | Late approval on an attempt already marked `FAILED` | Attempt moves to `REVIEW` and an alert fires, with no ledger entry. A payment in `AWAITING_METHOD` also moves to `REVIEW` (C38) |
+| E20 | Customer abandons 3D Secure | Action window ends, state becomes `UNKNOWN`, the reconciler inquires, and the payment returns to `AWAITING_METHOD` (C39) |
+| E21 | Retry of a declined request with the same key | Stored decline is returned, with no new PSP call. A new try needs a new key |
+| E22 | Settlement line with no matching operation, or a different amount | Line is `UNMATCHED` or `MISMATCH`; a discrepancy pages; nothing is posted (C40) |
+| E23 | Same settlement file ingested twice | The primary key makes it a no-op; no second ledger entry (C40) |
+| E24 | Key older than 24 hours whose payment is still `UNKNOWN` | Key is kept, so a retry returns the stored answer and can't charge again (C41) |
 
 ## Runbooks
 
@@ -180,12 +187,12 @@ Short, ordered steps. Each runbook is rehearsed in a [drill](#drills) before it 
 
 | Order | Drill | Tests | Notes |
 |---|---|---|---|
-| 1 | In a test environment, break one thing at a time under 1k TPS | C3, C4, C5, C6, C15, C36 | Money-correctness faults first |
-| 2 | PSP and dependency faults under 5k TPS | C9, C12, C13, C14, C16, C23, C32 | Use the mock PSP in slow, error and down modes |
+| 1 | In a test environment, break one thing at a time under 1k TPS | C3, C4, C5, C6, C15, C36, C37, C38, C41 | Money-correctness faults first |
+| 2 | PSP and dependency faults under 5k TPS | C9, C12, C13, C14, C16, C23, C32, C39, C40 | Use the mock PSP in slow, error and down modes |
 | 3 | Data faults under 5k TPS | C1, C2, C7, C22, C29, C34, C35 | Database slow, pool exhausted, failover, disk, lock races |
 | 4 | Messaging faults | C8, C17, C18, C26, C27 | Broker down, poison, webhook endpoints failing |
 | 5 | Platform faults | C10, C11, C19, C20, C24, C25, C28, C30, and C33 only if cells are adopted | Node, zone, release, cache, clock, restart, routing |
-| 6 | Security and recovery | C21, O5, O6, F1 | Rotation, restore, leak response |
+| 6 | Security and recovery | C21, C42, O5, O6, F1 | Rotation, restore, leak response |
 
 Rules for every drill: define the expected result first, run CK1-CK6 afterwards, record the run ID, and file a fix for anything that surprised the team. A drill does not count if it only passed because the fault was not really injected (verify the fault happened).
 

@@ -30,7 +30,7 @@ All values are starting points until measured. Other docs state the resulting ru
 
 - **Decision:** Ramp steps 9 and 10 and the final report are gated on 5,000 completed payments/s. Offered req/s is derived from the workload mix.
 - **Why:** The goal is completed payments, but the old final gate was 5,000 req/s, of which only 60% were payments in the example mix.
-- **Consequence:** With the example mix and auto-capture, the target needs about 8,300 req/s, or about 16,700 with separate capture requests, so capacity estimates rise. "Completed" is [defined](glossary.md#standard-names) as a final committed answer to the create request.
+- **Consequence:** With the example mix and auto-capture, the target needs about 8,300 req/s, or about 16,700 with separate capture requests, so capacity estimates rise. "Completed" is [defined](glossary.md#standard-names) as a final committed answer to an attempt's request, since [D16](#d16).
 
 ### D4
 
@@ -133,7 +133,7 @@ All values are starting points until measured. Other docs state the resulting ru
 
 - **Decision:** Start with one cell. Split only if gate G1 shows one primary cannot sustain the measured write rate at 60% CPU or less with synchronous replication on.
 - **Why:** Cells add routing and operations cost, and need is unmeasured.
-- **Consequence:** `merchant_id` is present from day one, so moving merchants later is a routing change.
+- **Consequence:** `merchant_id` is present from day one, so moving merchants later needs no schema change. Moving the data is still a substantial job ([Stripe research](stripe-research.md#5-moving-data-is-the-hard-part)).
 
 ### D15
 
@@ -142,6 +142,46 @@ All values are starting points until measured. Other docs state the resulting ru
 - **Decision:** Keep the capability map separate from the deployable list. A capability becomes its own deployable only under the [split rule](service-catalog.md#when-to-split-a-service). Start with the nine deployables already designed.
 - **Why:** Throughput doesn't set the service count. Splitting payment operations, idempotency or ledger writes would turn one database transaction into a distributed one, and would add a network hop to the payment path.
 - **Consequence:** A full platform can have 40 or more capabilities without 40 or more services. Future deployables are added only when their capability enters scope. The capability map is our own proposal, not Stripe's internal design.
+
+### D16
+
+**A declined attempt returns the payment for another try.** Status: `Committed`.
+
+- **Decision:** A decline is an attempt outcome, not a final payment state. The payment returns to awaiting a payment method and stays one payment per order. A unique index allows one live or successful authorize per payment.
+- **Why:** With `DECLINED` final, a retry creates a second payment for the same order, which the idempotency key can't catch ([E5](failure-scenarios.md#edge-cases)). See [Stripe research](stripe-research.md#3-cards-are-the-special-case).
+- **Consequence:** `DECLINED` is no longer a payment state. Payments end through the new `CANCELED`, by merchant request or when the window ends. Each attempt passes the fraud check, and attempts per payment are capped, because retries are also how card testing works. [D3](#d3)'s "completed" is now per attempt, so a decline still counts toward the 5,000 goal, and a retried payment counts once per attempt. The merchant event `payment.declined` becomes `payment.attempt_failed`. A late approval on a failed attempt goes to `REVIEW`. See the [lifecycle](payment-lifecycle.md#attempts).
+
+### D17
+
+**Design for customer action now; prove it with one 3D Secure flow.** Status: `Committed`.
+
+- **Decision:** The state machine and adapter gain an "action required" result, and the adapter takes a payment method reference instead of a `CardToken`. One real 3D Secure flow runs against a PSP sandbox before the API contract is frozen. Full production rollout depends on target markets, which are `Open`.
+- **Why:** The docs had no authentication path, and reshaping a public API later is costly. See [Stripe research](stripe-research.md#3-cards-are-the-special-case).
+- **Consequence:** The API contract waits for that flow. Version 1 still ships cards first, but later payment methods add values rather than a new state machine. An action window that ends goes to `UNKNOWN`, never straight to failed, because the customer may have just finished. See [Customer action](payment-lifecycle.md#customer-action).
+
+### D18
+
+**Ingest settlement files in version 1, without payouts.** Status: `Committed`.
+
+- **Decision:** The reconciler ingests PSP settlement lines and posts them through the payment-transition module, matching each to its payment. Payouts stay out of scope.
+- **Why:** Daily totals can't show which payment failed to settle, and clearing checks need these lines to clear the PSP receivable. See [Stripe research](stripe-research.md#1-balanced-is-not-the-same-as-correct).
+- **Consequence:** Parsing and matching work per PSP in Phase 2. Settlement is tracked per line and never changes the payment state, because refunds can still be running. `SETTLED` stays `Proposed`. Unmatched or mismatched lines raise a discrepancy and post nothing. Ledger entries need the `accounts` table, still unspecified. If cells are adopted, a file spanning cells needs a routing rule. See [Settlement lines](payment-lifecycle.md#settlement-lines).
+
+### D19
+
+**Keep idempotency keys for at least 24 hours after their operation resolves.** Status: `Committed`.
+
+- **Decision:** Publish 24 hours as the minimum retention. A key is never expired while its operation is unresolved, such as a payment in `UNKNOWN`.
+- **Why:** [E4](failure-scenarios.md#edge-cases) promised a period but gave no value. Without the unresolved rule, a retry after expiry would look new and could charge twice. Extending retention later is easier than shortening it.
+- **Consequence:** About 432 million rows per day of retention at target rate. How to expire them is measured in the database spike, because time partitions would break the unique key.
+
+### D20
+
+**Merchants get a test mode with separate keys and data.** Status: `Committed`.
+
+- **Decision:** Test API keys reach isolated test data and a simulated PSP, with the same rate limits as live. Test traffic is shed first under load. Live money tables never hold test rows.
+- **Why:** Merchants need a safe place to integrate, and adding test keys later touches authentication and routing. See [Stripe research](stripe-research.md#8-separate-rate-limits-from-load-shedding).
+- **Consequence:** The API contract defines key types, and routing must consider the key's mode as well as the merchant. The isolation mechanism is `Open`; a dedicated test cell is one candidate.
 
 ## Assumptions and limits
 
@@ -153,7 +193,7 @@ All values are starting points until measured. Other docs state the resulting ru
 - **The ledger balance trigger may cost too much.** The fallback is the continuous audit query plus property tests.
 - **Single region.** Surviving a whole-region loss needs a cross-region replica or restore process, with RPO above 0. It is out of scope for the first version, and O5 covers backup restore only.
 - **A mock PSP is not a real PSP.** Run against the real PSP sandbox before sign-off.
-- **Not covered:** settlement and payouts, Connect and KYC, billing, fraud machine learning, and the formal PCI DSS assessment. Keeping card data in the vault reduces PCI scope, but this is not a compliance assessment. Legal and banking work is also outside this design.
+- **Not covered:** payouts and settlement beyond file ingestion ([D18](#d18)), Connect and KYC, billing, fraud machine learning, and the formal PCI DSS assessment. Keeping card data in the vault reduces PCI scope, but this is not a compliance assessment. Legal and banking work is also outside this design.
 - **Database choice.** The SQL is PostgreSQL-specific. SQL Server could meet the same requirements with different syntax and settings.
 
 ## Open questions

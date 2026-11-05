@@ -9,6 +9,7 @@ Status: Draft · Last updated: 2026-11-05
 | Term | Meaning |
 |---|---|
 | **Admission control / backpressure** | When overloaded, the system says "busy" quickly instead of letting requests pile up. |
+| **Attempt** | One try to collect a payment. A payment can have several, but only one can be live or successful. |
 | **Append-only** | Records are never edited or deleted. A mistake is fixed by adding a correcting record. |
 | **Capability** | Something the platform must do. It may be a module, a library or a service, so a capability is not automatically a service. |
 | **Cell** | A complete, independent copy of the stack serving some merchants. More cells add capacity and limit the blast radius of a failure. |
@@ -29,7 +30,7 @@ Status: Draft · Last updated: 2026-11-05
 
 | Use | Meaning | Not |
 |---|---|---|
-| **completed payments/s** | Payments whose create request got a final committed answer: authorized, or captured under auto-capture, or declined. A payment in `UNKNOWN` is not counted until resolved. This is the 5,000 goal. | "5,000 requests" |
+| **completed payments/s** | Attempts whose request got a final committed answer: authorized, or captured under auto-capture, or declined. An attempt in `UNKNOWN` or `ACTION_REQUIRED` is not counted until resolved. A retried payment counts once per attempt. This is the 5,000 goal. | "5,000 requests" |
 | **req/s** | HTTP load offered to the system | Goal throughput |
 | **TPS** | Only as shorthand for completed payments/s | HTTP load |
 | **Payments API** | The service running the payment path | "Payment service" |
