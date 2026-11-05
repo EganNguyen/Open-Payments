@@ -111,7 +111,7 @@ The dependency direction is `Api` to `Transitions` and `Psp`, and those to `Doma
 
 - **Read first:** [Database standards](engineering-standards.md#database) and [Decision gates](scaling-playbook.md#decision-gates).
 - **Do:** model the real transactions in pgbench, one database transaction per pgbench transaction, then run the matrix.
-- **Done when:** `benchmarks/spike/REPORT.md` exists from a Linux run, the owner has decided G1, and `0001_initial.sql` exists.
+- **Done when:** the [MacBook summary](benchmarks/spike/macbook-2026-11-05/summary.md) exists, [D25](decisions.md#d25) and [D26](decisions.md#d26) are recorded, and `0001_initial.sql` passes `scripts/check-migration.sh`. G1 itself closes on Linux before Stage 4.
 - **Watch for:**
   - Running with `pgbench -R`. Without a fixed rate, a slow database reduces its own load.
   - Empty tables. Prefill first, and record the size.

@@ -113,8 +113,8 @@ p50 ≤ 25 ms, p99 ≤ 100 ms and errors below 0.1% at 5,000 payments/s. **This 
 | 1 | Docker port forwarding | Infrastructure | 2,018 to 3,319/s when removed | **Removed** | None; native avoids it |
 | 2 | One PgBouncer process | Software | 0.99 core; 4 processes reached 4,880/s | **Removed** | Size per [production model](#production-capacity-assessment) |
 | 3 | Pool size | Configuration | 3.7× from pool 50 to 400 | **Tuned** for this disk | Re-tune for each disk |
-| 4 | Relation-extension lock on `payments` | Software, schema | Hundreds of lock timeouts; 0-8 with schema C | **Largely fixed,** one run | Repeat; needs D25 approval |
-| 5 | Hot last pages (`BufferContent`) | Software, schema | Up to 88% in Docker; `update payments` and `update payment_attempts` lead | **Fix unmeasured** where it shows: schema C has no fast-flush run | Next iteration |
+| 4 | Relation-extension lock on `payments` | Software, schema | Hundreds of lock timeouts; 0-8 with schema C | **Largely fixed,** one run | Repeat on Linux |
+| 5 | Hot last pages (`BufferContent`) | Software, schema | Up to 88% in Docker; `update payments` and `update payment_attempts` lead | **Fix unmeasured** where it shows: schema C has no fast-flush run | Linux spike |
 | 6 | Non-HOT updates: `state` is in partial-index predicates | Software, schema | Read from the schema; cost not measured | **Open** | Next iteration; could move timers to their own table |
 | 7 | `MultiXactGen` waits, up to 10% | Software, unknown | New with schema C; cause not investigated | **Open** | Next iteration |
 | 8 | Statement round trips | Software | Pipelining +24%, sale only, Docker, one run each | **Open,** not measured with real flushes | Next iteration, needs Npgsql batching |
@@ -290,7 +290,9 @@ Skipped by the owner on 2026-11-05, in favor of benchmarking the full platform o
 - Flush sensitivity on all three nodes
 - Whether schema C helps at fast flush
 
-## Proposed decisions, not approved
+## Decisions
 
-- **D25, partitioning:** adopt schema C, with hash partitions for `payments`, `payment_attempts`, `ledger_transactions` and the outbox. Cost: `attempt_id` and `source_event_id` stop being unique alone, so ledger IDs must derive from the source event ([D32](../../../decisions.md#d32)). **It conflicts with time-based retention by detaching old partitions,** so retention needs another design. That's the owner's call.
-- **D26, G1:** remains **open**. This Mac can't answer it. Plan on one cell for the build, and close G1 on Linux before Stage 4.
+The owner approved both on 2026-11-05.
+
+- **[D25](../../../decisions.md#d25), partitioning:** schema C, with hash partitions for `payments`, `payment_attempts`, `ledger_transactions` and the outbox. `attempt_id` and `source_event_id` aren't unique alone, and most data retires by batched delete rather than by detaching time-based partitions. How long data is kept stays open.
+- **[D26](../../../decisions.md#d26), G1:** remains **open**. This Mac can't answer it. The build targets one cell, and G1 closes on Linux before Stage 4.

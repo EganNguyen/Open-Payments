@@ -177,7 +177,7 @@ Divide by the instance count to set the [per-instance in-flight cap](engineering
 
 ## Decision gates
 
-A gate is a measured question with a recorded answer. Do not go past an unresolved gate.
+G1 is open until a Linux run ([D26](decisions.md#d26)). A gate is a measured question with a recorded answer. Do not go past an unresolved gate.
 
 | Gate | Question | If the answer is no |
 |---|---|---|

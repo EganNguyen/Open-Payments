@@ -300,6 +300,22 @@ docker compose -f deploy/compose/compose.yaml --profile spike down -v
 
 **Between runs:** leaving out `REUSE_DATA` reloads the data, which is the cleanest comparison. After overload runs, leave a minute for WAL flushing to settle.
 
+## The application schema
+
+The spike's scripts use their own schemas and **delete everything in the `public` schema when loading.** The application's schema is `db/migrations/`, so don't share a database between them.
+
+Prove the migrations and money rules on a throwaway database. It's created and deleted for you:
+
+```bash
+DB_ADMIN_URL=postgres://postgres:op_local_only@127.0.0.1:25432/openpayments scripts/check-migration.sh
+```
+
+Apply migrations to an empty database. Each applies once, and an edited one is refused:
+
+```bash
+DB_ADMIN_URL=postgres://postgres:op_local_only@127.0.0.1:25432/openpayments scripts/migrate.sh
+```
+
 ## The full platform
 
 The API, fraud, PSP adapters, broker and workers don't exist yet, so this guide covers only the database tier. After Tasks 7-17, the platform benchmark runs through the [mock PSP and k6 harness](../superpowers/plans/2026-11-05-open-payments-implementation-and-benchmark.md) and replaces the calculated platform numbers in the [summary](spike/macbook-2026-11-05/summary.md#realistic-end-to-end-performance-expectations).

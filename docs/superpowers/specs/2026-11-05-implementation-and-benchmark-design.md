@@ -6,7 +6,7 @@ Status: Reviewed; core decisions accepted · Last updated: 2026-11-05
 
 The system is defined in the [design docs](../../../README.md#documents), and this spec doesn't restate them. The [implementation plan](../plans/2026-11-05-open-payments-implementation-and-benchmark.md) holds the tasks.
 
-**The verdict:** the owner has accepted D35, D37, D38 and D39, so the core design is `READY` to build. The first migration waits on the spike, and the spike's real answers wait on a choice of Linux machines. Throughput claims stay `MEASURE-FIRST`. Nothing has been built or measured, so every number is an estimate or a target.
+**The verdict:** the owner has accepted D35, D37, D38 and D39, so the core design is `READY` to build. The first migration exists ([D25](../../decisions.md#d25)). Throughput claims stay `MEASURE-FIRST`: only the database tier has been measured, on [one MacBook](../../benchmarks/spike/macbook-2026-11-05/summary.md), and G1 closes on Linux before Stage 4 ([D26](../../decisions.md#d26)). Nothing else has been built or measured, so other numbers are estimates or targets.
 
 ## Goal
 
@@ -102,7 +102,7 @@ These remain open. Each has a recommendation.
 | Decision | Recommendation | Blocks | If unanswered |
 |---|---|---|---|
 | [D36](../../decisions.md#d36): is 5,000/s a peak or an average? | Peak, with a stated average | L2, G6 | L2 stays as a full day at peak |
-| Where do recorded benchmarks run? | Rent Linux machines by the hour | Task 6's answers | No G1 answer, so no first migration |
+| Where do recorded benchmarks run? | Rent Linux machines by the hour | Stage 4, per [D26](../../decisions.md#d26) | No G1 answer |
 | Which PSP sandbox, and one PSP or two in v1? | One to start; choose by its recovery mode, sale support and limit | Stage 2 | C39 can't run, so the API can't freeze |
 
 ## Design readiness
@@ -127,9 +127,9 @@ These remain open. Each has a recommendation.
 | Balance trigger cost (G4) | `MEASURE-FIRST` | Trigger against audit query | V2, V12 |
 | Refund limits per payment | `READY` | Nothing | C6, CK3 |
 | Refund balance lock | `READY` | Deferred; restore before fees or payouts | [D38](../../decisions.md#d38), then C35 |
-| One primary's capacity (G1, G3) | `MEASURE-FIRST` | The real commit rate | Spike, then L1 |
+| One primary's capacity (G1, G3) | `MEASURE-FIRST` | The real commit rate, on Linux ([D26](../../decisions.md#d26)) | Linux spike before Stage 4, then L1 |
 | Connection pool and PgBouncer | `MEASURE-FIRST` | Size and process count | V4 |
-| Partitioning and retention (D25, G6) | `MEASURE-FIRST` | Scheme, plus data volume | V5, V7, [D36](../../decisions.md#d36) |
+| Partitioning and retention ([D25](../../decisions.md#d25), G6) | `READY` for partitioning; `MEASURE-FIRST` for data volume | Repeat on Linux; how long data is kept | V7, [D36](../../decisions.md#d36) |
 | Outbox publishing | `MEASURE-FIRST` | Marking rows, marker or log capture | V9 |
 | Event ordering and consumers | `READY` | Nothing | C17 |
 | Webhooks | `READY` | Event shape confirmation | C27, U7 |

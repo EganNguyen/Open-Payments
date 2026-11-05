@@ -10,6 +10,8 @@ Stage 1 is the spike, test tools, payment core and first ramp steps. The rules a
 
 | Item | When |
 |---|---|
+| [D25](../decisions.md#d25): hash-partition the hot tables, with most data retiring by batched delete | 2026-11-05 |
+| [D26](../decisions.md#d26): G1 stays open for Linux, and the build continues on one cell | 2026-11-05 |
 | [D21-D24](../decisions.md#d21): accounts and fund flows, pure `Decide`, added checks and log line, corrected gates | 2026-11-05 |
 | [D35](../decisions.md#d35): merchants use their own PSP accounts | 2026-11-05 |
 | [D37](../decisions.md#d37): void and authorization expiry | 2026-11-05 |
@@ -47,8 +49,10 @@ Stage 1 is the spike, test tools, payment core and first ramp steps. The rules a
 | ☑ | Task 3: replicated stack, and [commit behavior observed](../../benchmarks/spike/commit-cancel.md) | Done, `108a626` |
 | ☑ | Task 4: spike schemas and workloads | Done, `511c8d9` |
 | ☑ | Task 5: [spike runner](../../benchmarks/spike/README.md), proven by a local dry run | Done, `7ceb0dd` |
-| ◐ | Task 6: [MacBook spike](../benchmarks/spike/macbook-2026-11-05/summary.md) done in part. The owner stopped database-only runs on 2026-11-05, to benchmark the full platform once built | D25 and D26 approved; first migration written |
-| ☐ | Accept that G1 stays open: a MacBook can't answer it, so it needs Linux before Stage 4 | Owner |
+| ☑ | Task 6, as far as the owner chose: [MacBook spike](../benchmarks/spike/macbook-2026-11-05/summary.md), with database-only runs stopped on 2026-11-05 to benchmark the full platform once built. [D25](../decisions.md#d25) and [D26](../decisions.md#d26) approved, and `db/migrations/0001_initial.sql` passes `scripts/check-migration.sh` | Done |
+| ☑ | G1 stays open, and closes on Linux before Stage 4 ([D26](../decisions.md#d26)) | Accepted by the owner, 2026-11-05 |
+| ☐ | Install .NET 10 | Owner, before Task 7 |
+| ☐ | Sign below, naming the build's starting commit | Owner |
 
 ## Open, not blocking this gate
 
@@ -58,9 +62,9 @@ These block later stages. Each has a recommendation in the [spec](../superpowers
 - Which PSP sandbox, and one PSP or two? Blocks Stage 2.
 - Does v1 carry real money? Who owns the fraud fallback and shed order? How long is data kept? Blocks Stages 4 and 5.
 
-## Findings for Task 6 and D25
+## Findings settled by D25
 
-Task 4 and the MacBook spike found these. They aren't approved yet. The [summary](../benchmarks/spike/macbook-2026-11-05/summary.md#proposed-decisions-not-approved) has the proposal.
+Task 4 and the MacBook spike found these, and [D25](../decisions.md#d25) now covers them.
 
 - **The outbox had no way to find unpublished rows.** The spike adds a partial index, `outbox_unpublished`, which isn't in the design.
 - **Time-partitioning forces two key changes (schema B).** `attempt_id` stops being unique alone, and `source_event_id` can't be globally unique, so a ledger transaction's ID must be derived from its source event ([D32](../decisions.md#d32)).
@@ -70,6 +74,8 @@ Task 4 and the MacBook spike found these. They aren't approved yet. The [summary
 - Whether Npgsql sends a cancel when its own timeout fires on a commit. Task 13 must settle it, and an answer that breaks D28 is an escalation.
 - Production throughput numbers remain estimates. The [MacBook summary](../benchmarks/spike/macbook-2026-11-05/summary.md) labels each as measured, extrapolated, assumed or unverified.
 - Most spike variants, including the full mix (V13) and two cells, weren't measured.
+- Schema C has one measured run, and its read cost across partitions isn't measured.
+- The build starts before G1 is answered. If Linux requires cells, Stage 4 gets replanned ([D26](../decisions.md#d26)).
 
 ## Sign-off
 

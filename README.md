@@ -91,7 +91,7 @@ The clickable UX prototype and case study for the merchant dashboard and checkou
 
 **Suggested next steps:**
 
-1. Close the [design gate](docs/gates/stage-1-design.md): decide D25 and D26, and write the first migration. [Gate G1](docs/scaling-playbook.md#decision-gates) needs a Linux run, because a MacBook can't answer it.
+1. Sign the [design gate](docs/gates/stage-1-design.md) and install .NET 10. [Gate G1](docs/scaling-playbook.md#decision-gates) closes on Linux before Stage 4, because a MacBook can't answer it.
 2. Start [Phase 0](docs/verification.md#build-phases): mock PSP, load scripts, automatic correctness checks.
 3. Build the payments core test first, then run the first benchmark steps.
 

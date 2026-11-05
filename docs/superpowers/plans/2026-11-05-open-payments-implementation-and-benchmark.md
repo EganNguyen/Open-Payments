@@ -12,7 +12,7 @@
 
 **Scope of this plan:** Tasks 1-17 are detailed, up to the first recorded ramp steps. The [roadmap](#roadmap-after-task-17) covers everything after that. It is enough to size and order the work, and each stage gets a detailed plan when it starts.
 
-**Status:** Tasks 1 and 2 are done. The [design review](../specs/2026-11-05-implementation-and-benchmark-design.md#what-the-review-found) and the owner's acceptance of D35, D37, D38 and D39 changed the tasks below. Tasks 1-5 are done. Task 6 is done in part on the owner's MacBook, whose results are in the [MacBook summary](../../benchmarks/spike/macbook-2026-11-05/summary.md); its Linux run still answers G1, and D25, D26 and the first migration are open.
+**Status:** Tasks 1 and 2 are done. The [design review](../specs/2026-11-05-implementation-and-benchmark-design.md#what-the-review-found) and the owner's acceptance of D35, D37, D38 and D39 changed the tasks below. Tasks 1-5 are done. Task 6 is done on the owner's MacBook, as far as the owner chose: results are in the [MacBook summary](../../benchmarks/spike/macbook-2026-11-05/summary.md), [D25](../../decisions.md#d25) and [D26](../../decisions.md#d26) are recorded, and the first migration exists. The Linux run that closes G1 moves to before Stage 4.
 
 | Gate | Tasks | Done by | Exit record |
 |---|---|---|---|
@@ -297,6 +297,8 @@ Expected: PASS, then a `summary.md` headed "Local: comparative only, does not an
 
 ### Task 6: Run the spike and decide
 
+**Done on the MacBook, as far as the owner chose** ([D26](../../decisions.md#d26)). Steps 2-5 are met by the [MacBook summary](../../benchmarks/spike/macbook-2026-11-05/summary.md), D25, D26 and the migration. Step 1 remains, on Linux before Stage 4, and also closes G1.
+
 Needs the owner's choice of machines. Machines: primary and two standbys on NVMe with WAL on its own volume in three zones, plus a separate generator. Start with 16-32 vCPU, record what was used, and shut them down after.
 
 **Files:**
@@ -312,7 +314,7 @@ Needs the owner's choice of machines. Machines: primary and two standbys on NVMe
 - [ ] **Step 4: Record D25 (partitioning and retention) and D26 (G1).** If G1 requires cells, stop and replan the roadmap before continuing.
 - [ ] **Step 5: Write `0001_initial.sql` from the chosen variant.** Apply it twice to prove the runner's recorded-version check, with `scripts/migrate.sh` using a `schema_migrations` table.
 
-Run: `scripts/migrate.sh && scripts/migrate.sh && psql "$DB_DIRECT_URL" -c "select count(*) from schema_migrations"`
+Run: `scripts/check-migration.sh`
 Expected: both runs exit 0, count 1.
 
 - [ ] **Step 6: Commit** with message `feat: add initial schema from spike results`.

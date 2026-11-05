@@ -167,8 +167,9 @@ Amounts are `bigint` minor units with a `currency` column. A currency table hold
 `merchant_id` is on every tenant-owned table. Provider-scoped `psp_events` is excluded ([D8](decisions.md#d8)), and `settlement_lines` has it only once matched.
 
 ```sql
+-- Hot tables are hash-partitioned 32 ways (D25). db/migrations/0001_initial.sql is the exact schema.
 create table payments (
-  id                   uuid primary key,
+  id                   uuid not null,
   merchant_id          uuid not null,
   state                text not null,
   amount_minor         bigint not null check (amount_minor > 0),
@@ -183,8 +184,9 @@ create table payments (
   version              int not null default 0,
   created_at           timestamptz not null default now(),
   updated_at           timestamptz not null default now(),
-  check (refunded_minor + refund_pending_minor <= captured_minor)
-);
+  check (refunded_minor + refund_pending_minor <= captured_minor),
+  primary key (id)
+) partition by hash (id);
 create index payments_merchant_created on payments (merchant_id, created_at desc);
 create index payments_unresolved on payments (updated_at)
   where state in ('PSP_PENDING','UNKNOWN');
@@ -207,13 +209,13 @@ create table psp_accounts (
 -- one row per authorize, sale, capture or void, each with its own key (D5, D29, D37)
 -- refunds have their own row and key in the refunds table
 create table payment_attempts (
-  attempt_id    uuid primary key,
+  attempt_id    uuid not null, -- not unique alone (D25); a lookup needs payment_id
   payment_id    uuid not null references payments(id),
   merchant_id   uuid not null,
   operation     text not null check (operation in ('authorize','sale','capture','void')),
   psp           text not null,
   psp_account_id uuid not null references psp_accounts(id),
-  target_attempt_id uuid references payment_attempts(attempt_id), -- set when voiding a late approval
+  target_attempt_id uuid, -- set when voiding a late approval, always on the same payment
   state         text not null,
   failure_code  text,
   -- how to pay: a PSP token and typed details, never card data; null on capture and void
@@ -224,8 +226,10 @@ create table payment_attempts (
   action_expires_at timestamptz,
   psp_reference text,
   created_at    timestamptz not null default now(),
-  check (operation in ('capture','void') or (method_ref is not null and method_type is not null))
-);
+  check (operation in ('capture','void') or (method_ref is not null and method_type is not null)),
+  primary key (payment_id, attempt_id),
+  foreign key (payment_id, target_attempt_id) references payment_attempts (payment_id, attempt_id)
+) partition by hash (payment_id);
 create index payment_attempts_unresolved on payment_attempts (created_at)
   where state in ('PENDING','UNKNOWN');
 create index payment_attempts_action_window on payment_attempts (action_expires_at)
@@ -241,7 +245,7 @@ create unique index payment_attempts_one_live_capture on payment_attempts (payme
   where operation in ('capture','void') and target_attempt_id is null
     and state in ('PENDING','UNKNOWN','SUCCEEDED');
 -- one live or successful void of a late-approved attempt; never blocks the payment's capture
-create unique index payment_attempts_one_late_void on payment_attempts (target_attempt_id)
+create unique index payment_attempts_one_late_void on payment_attempts (payment_id, target_attempt_id)
   where operation = 'void' and target_attempt_id is not null
     and state in ('PENDING','UNKNOWN','SUCCEEDED');
 
@@ -262,7 +266,7 @@ create table idempotency_keys (
 create index idempotency_keys_expirable on idempotency_keys (resolved_at)
   where resolved_at is not null;
 
--- time-partitioned; whole partitions are dropped once published and old
+-- time-partitioned, each range hash-partitioned by id; whole partitions are dropped once published and old
 create table outbox (
   id             uuid not null,
   merchant_id    uuid not null,
@@ -275,6 +279,7 @@ create table outbox (
   published_at   timestamptz,
   primary key (created_at, id)
 ) partition by range (created_at);
+create index outbox_unpublished on outbox (created_at) where published_at is null; -- how the publisher finds rows
 
 create table psp_events (
   psp_account_id uuid not null,
@@ -313,11 +318,14 @@ create table settlement_lines (
   currency      char(3) not null,
   state         text not null,
   merchant_id   uuid, -- set when matched
-  attempt_id    uuid references payment_attempts(attempt_id),
+  payment_id    uuid, -- set with attempt_id, which needs it to find the attempt
+  attempt_id    uuid,
   refund_id     uuid references refunds(id),
   received_at   timestamptz not null default now(),
   primary key (psp_account_id, file_id, line_no),
-  check (attempt_id is null or refund_id is null)
+  check (attempt_id is null or refund_id is null),
+  check (attempt_id is null or payment_id is not null),
+  foreign key (payment_id, attempt_id) references payment_attempts (payment_id, attempt_id)
 );
 -- one matched capture or refund line per operation, so a repeated line can't post twice
 create unique index settlement_lines_one_attempt on settlement_lines (attempt_id)
@@ -353,7 +361,7 @@ create table api_keys (
 );
 ```
 
-`Open`: inbox, balance snapshot, delivery log and discrepancy tables are named in this doc but not yet specified. Partitioning and retention are decided after the database spike, because the one-live-attempt indexes must include any partition key on `payment_attempts`.
+`Open`: inbox, balance snapshot, delivery log and discrepancy tables are named in this doc but not yet specified. Partitioning and how data retires are in [D25](decisions.md#d25). How long data is kept stays open.
 
 ## Ledger
 
@@ -365,14 +373,16 @@ create table api_keys (
 
 ```sql
 create table ledger_transactions (
-  id              uuid primary key,
+  id              uuid not null,
   merchant_id     uuid not null,
   payment_id      uuid,
-  kind            text not null,        -- authorization, capture, refund, fee, ...
-  source_event_id uuid not null unique, -- one ledger transaction per business event
+  kind            text not null, -- authorization, capture, refund, fee, ...
+  source_event_id uuid not null,
   effective_at    timestamptz not null, -- business date; a late PSP event keeps its earlier date
-  created_at      timestamptz not null default now()
-);
+  created_at      timestamptz not null default now(),
+  check (id = source_event_id), -- so the primary key allows one ledger transaction per business event (D25)
+  primary key (id)
+) partition by hash (id);
 
 -- hash-partitioned by txn_id so the unique key includes the partition key
 create table ledger_entries (

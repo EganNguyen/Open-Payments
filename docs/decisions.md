@@ -215,7 +215,21 @@ All values are starting points until measured. Other docs state the resulting ru
 - **Why:** Phase 1 required edge cases that depend on later phases, gates required checks with no broker or reconciler to satisfy them, and the headline number would have come from a path missing a synchronous step.
 - **Consequence:** Runs before Phase 3 are previews and prove nothing on the checklist. The estimated write load about doubles, which the database spike must test. [D29](#d29) and [D30](#d30) refine the numbers.
 
-D25 and D26 are reserved for the spike's answers: partitioning and retention, and gate G1.
+### D25
+
+**Hash-partition the hot tables, and retire most data by batched delete.** Status: `Committed`.
+
+- **Decision:** Partition 32 ways by hash: `payments` by `id`, `payment_attempts` by `payment_id`, `ledger_transactions` by `id`, and the outbox's current range by `id`. A ledger transaction's `id` must equal its `source_event_id`. `outbox_unpublished` joins the schema. `payment_attempts` and `settlement_lines` refer to an attempt by `(payment_id, attempt_id)`. Only the outbox stays range-partitioned, so old partitions can be dropped. Payments, attempts and the ledger retire by batched delete or archive. How long data is kept stays with the owner.
+- **Why:** On the [MacBook spike](benchmarks/spike/macbook-2026-11-05/summary.md#durable-rate-search), this cut lock-timeout aborts from hundreds per rate to 0-8. Writers had been queuing to extend `payments`. It also gives each partition its own last pages, where writers contended. Time-ordered partitions (schema B) weren't measured.
+- **Consequence:** `attempt_id` and `source_event_id` aren't unique alone in the database. A lookup by `attempt_id` or `psp_reference` alone probes all 32 partitions, so PSP metadata should carry `payment_id`. Merchant lists also probe all of them, at a read cost not yet measured. Violations name the partition's index, so the application matches the name's rule suffix, such as `_one_live_authorize`. The partition count needs a table rewrite to change. Schema C has one measured run, and V5 and V7 weren't run, so its benefits need repeating on Linux. A job that creates outbox partitions must exist before Stage 3. Until then, everything lands in the default partition.
+
+### D26
+
+**G1 stays open, and the build continues on one cell.** Status: `Committed`.
+
+- **Decision:** A MacBook can't answer G1, so it's closed by a Linux run before Stage 4. Until then, the build targets one cell, per [D14](#d14).
+- **Why:** The MacBook's limit is its one SSD, which all three database copies share, so its numbers don't describe a production primary. [The capacity assessment](benchmarks/spike/macbook-2026-11-05/summary.md#production-capacity-assessment) finds 5,000 payments/s plausible with cells and one primary not shown, and that isn't a measured answer.
+- **Consequence:** The build now starts before G1, reversing the order the plan first set. If Linux requires cells, Stage 4 gets replanned. `merchant_id` on tenant tables keeps that open, but moving data and adding the router remain real work. G3, G4 and G6 stay open too.
 
 ### D27
 
