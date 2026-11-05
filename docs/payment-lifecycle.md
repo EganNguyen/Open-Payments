@@ -118,14 +118,14 @@ Each row is one allowed transition. Anything not listed is forbidden.
 | `UNKNOWN` | `AWAITING_METHOD` | Inquiry says not approved, or unknown attempt; attempt `FAILED` | Reconciler | None | `Committed` |
 | `UNKNOWN` | `ACTION_REQUIRED` | Inquiry says the customer must act | Reconciler | None | `Committed` |
 | `AWAITING_METHOD` | `REVIEW` | Late approval on a `FAILED` attempt | Callback or reconciler | None until resolved | `Committed` |
-| `AUTHORIZED` | `CAPTURED` | PSP confirms capture | PSP response, callback or reconciler | Debit customer funds, credit merchant payable | `Committed` |
+| `AUTHORIZED` | `CAPTURED` | PSP confirms capture | PSP response, callback or reconciler | Release the hold; debit `psp_receivable`, credit `merchant_payable` | `Committed` |
 | `AUTHORIZED` | `REVIEW` | Capture amount mismatch | PSP response, callback or reconciler | None for the disputed amount | `Committed` |
 | `REVIEW` | `AUTHORIZED`, `AWAITING_METHOD` or `CAPTURED` | Person compares the PSP record | Manual | Matching entries, or a reversing entry | `Committed` |
-| `CAPTURED` | `PARTIALLY_REFUNDED` | PSP confirms a partial refund | PSP response, callback or reconciler | Reverse part of the entries | `Committed` |
-| `CAPTURED` | `REFUNDED` | PSP confirms a full refund | PSP response, callback or reconciler | Reverse all entries | `Committed` |
-| `PARTIALLY_REFUNDED` | `REFUNDED` | PSP confirms the remainder | PSP response, callback or reconciler | Reverse remaining entries | `Committed` |
+| `CAPTURED` | `PARTIALLY_REFUNDED` | PSP confirms a partial refund | PSP response, callback or reconciler | Debit `refund_reserved`, credit `psp_refund_payable` | `Committed` |
+| `CAPTURED` | `REFUNDED` | PSP confirms a full refund | PSP response, callback or reconciler | Debit `refund_reserved`, credit `psp_refund_payable` | `Committed` |
+| `PARTIALLY_REFUNDED` | `REFUNDED` | PSP confirms the remainder | PSP response, callback or reconciler | Debit `refund_reserved`, credit `psp_refund_payable` | `Committed` |
 | `PSP_PENDING` | `PROCESSING` | PSP accepted; result comes later | PSP response or callback | None | `Proposed` |
-| `PROCESSING` | `CAPTURED` | Payment finalized | Callback or reconciler | Debit customer funds, credit merchant payable | `Proposed` |
+| `PROCESSING` | `CAPTURED` | Payment finalized | Callback or reconciler | Debit `psp_receivable`, credit `merchant_payable` | `Proposed` |
 | `PROCESSING` | `AWAITING_METHOD` | Payment failed later; attempt `FAILED` | Callback or reconciler | None | `Proposed` |
 | `AUTHORIZED` | `VOIDED` | Void request | Merchant | Release hold | `Proposed` |
 | `AUTHORIZED` | `EXPIRED` | Window ends | Timer job | Release hold | `Proposed` |
@@ -152,6 +152,8 @@ Zero rows updated means someone else already moved the payment. The caller re-re
 ### State, ledger and outbox commit together
 
 In one short transaction: conditionally update the state, insert the ledger entries, insert the outbox event. The PSP call happens before this transaction, never inside it.
+
+An "authorization hold" is a logical ledger entry, `auth_hold` against `auth_hold_contra`, because no money has moved. Customer funds aren't an account we hold. The accounts are in [Fund flows](architecture.md#ledger) ([D21](decisions.md#d21)).
 
 ### Idempotency
 
@@ -235,7 +237,7 @@ The reconciler ingests PSP settlement files line by line ([D18](decisions.md#d18
 | `UNMATCHED` | No operation has this reference | Discrepancy record that pages; no ledger entry |
 | `MISMATCH` | Operation found, but the amount or currency differs | Discrepancy record that pages; no ledger entry |
 
-An operation with no settlement line past its expected date also raises a discrepancy. Fee and adjustment lines are stored, and their ledger treatment is `Open` until the `accounts` table is specified.
+An operation with no settlement line past its expected date also raises a discrepancy. Fee and adjustment lines are stored, and their ledger treatment is `Open`.
 
 ## The Unknown state
 
@@ -282,7 +284,7 @@ Timer jobs use the same conditional update, so a job and a manual capture cannot
 |---|---|---|---|
 | 1 | Merchant creates a payment of 100.00; API records the attempt and calls the PSP | `PSP_PENDING` | none |
 | 2 | PSP approves | `AUTHORIZED` | hold 100.00 |
-| 3 | Merchant captures 100.00; PSP confirms | `CAPTURED` | customer funds to merchant payable, 100.00 |
+| 3 | Merchant captures 100.00; PSP confirms | `CAPTURED` | hold released; `psp_receivable` to `merchant_payable`, 100.00 |
 | 4 | Merchant refunds 30.00; reserved while the PSP is called | `CAPTURED` | reservation entry 30.00, `refund_pending_minor = 30.00` |
 | 5 | PSP confirms the refund | `PARTIALLY_REFUNDED` | reservation reversed, refund recorded, `refunded_minor = 30.00`, `refund_pending_minor = 0` |
 | 6 | Merchant refunds 70.00; reserved, then the PSP confirms | `REFUNDED` | same steps, `refunded_minor = 100.00` |

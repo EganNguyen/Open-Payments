@@ -28,6 +28,21 @@ Run after every load and chaos test.
 | CK4 | Every outbox row is eventually published, and every event had exactly one effect in each consumer |
 | CK5 | No payment, capture attempt or refund remains unresolved past the reconciler threshold |
 | CK6 | No sustained growth in queue depth, outbox age or consumer lag |
+| CK7 | Clearing: no clearing account balance is nonzero past its allowed age |
+| CK8 | Timeliness: settlement files and other inputs arrived within their window |
+| CK9 | Completeness: every source record has its ledger match, both ways, such as a `CAPTURED` payment with its capture transaction |
+| CK10 | Cross-check: independent records agree, such as `payments.captured_minor` and the ledger sum for that payment |
+
+CK7-CK10 are separate code from the payment-transition module ([D23](decisions.md#d23)). Every check must fail on injected corruption and on zero rows.
+
+**Which checks apply** ([D24](decisions.md#d24)). A check that can't apply yet is reported as not applicable, never as passed. Runs before Phase 3 are previews and tick no checklist row.
+
+| Stage | CK1-CK3 | CK4 | CK5 | CK6 | CK7-CK10 |
+|---|---|---|---|---|---|
+| Database spike | CK1 and CK3 by SQL | n/a | n/a | n/a | n/a |
+| After Phase 1 | Yes | Every transition has its outbox row | Yes, with no PSP timeouts injected | Without outbox age | CK9, CK10 |
+| After Phase 2 | Yes | Same as Phase 1 | Yes, with timeouts | Without outbox age | Yes |
+| Phase 3 onward | Yes | Full | Yes | Full | Yes |
 
 ## Load tests
 
@@ -74,7 +89,7 @@ Run after every load and chaos test.
 | C28 | Full outage, then restart of all services | Staged ramp and capped backlog drain; no second outage; CK pass before recovery is declared |
 | C29 | Replica lag of 30 s | Reads that must be fresh go to the primary; no stale payment status after create |
 | C30 | One merchant sends 50% of all traffic | Per-merchant limits protect others; other merchants keep their SLO |
-| C31 | Edge-case suite for payment handling ([E1-E24](failure-scenarios.md#edge-cases)) | Each case returns its defined result; no state or ledger corruption |
+| C31 | Edge-case suite for payment handling ([E1-E24](failure-scenarios.md#edge-cases)), split by phase: C31a (E1-E9, E11-E13, E16-E18, E21), C31b (E10, E19, E20, E22-E24), C31c (E14, E15). Until void and expiry are built, E8 covers capture from a non-`AUTHORIZED` state | Each case returns its defined result; no state or ledger corruption |
 | C32 | PSP returns an amount or currency that differs from ours | Payment moves to `REVIEW`; no ledger entry for the disputed amount; alert fires |
 | C33 | Cell router or its config store unavailable (only if cells are adopted) | Routers keep the last mapping; mapping changes frozen; traffic keeps flowing |
 | C34 | Capture, refund and reconciler race on one payment, with lock order forced to collide | `40P01` is raised and counted in `pg_stat_database.deadlocks`; retried at most twice; `55P03` returns 503; exactly one effect per operation; CK1 and CK3 pass |
@@ -340,11 +355,11 @@ A scenario is verified only when its proof test has passed with a recorded run, 
 
 | Phase | Build | Exit when these pass |
 |---|---|---|
-| 0 | Mock PSP, k6 load scripts, automated CK1-CK5 checks, dashboards | CK checks run automatically after every test |
-| 1 | Payments core, idempotency, ledger, refunds, outbox table (written in the same transaction from the start) | U1-U4, C5, C6, C31, S1, S3, S5, S6 |
-| 2 | PSP adapter, reconciler, callbacks, settlement ingestion | C3, C4, C9, C12, C13, C15, C16, C23, C26, C32, C34, C35, C36, C37, C38, C39, C40, C41, U5 |
-| 3 | Outbox publisher, broker, consumers, webhooks | C8, C17, C18, C27, U5, CK6 |
-| 4 | Hardening: limits, HA, deployment, and cells only if gate G1 requires them | L1-L6, C1, C2, C7, C10, C11, C19-C22, C24, C25, C28-C30, C33 (cells only), S2, S4, O3 |
-| 5 | Security, fraud rules, operations, test mode isolation | U6-U8, F1, C14, C42, O1, O2, O4, O5, O6 |
+| 0 | Mock PSP, k6 load scripts, automated CK1-CK10 checks, dashboards | CK checks run automatically after every test |
+| 1 | Payments core, idempotency, ledger, refunds, outbox table (written in the same transaction from the start), canonical log line | U1-U4, C5, C6, C31a, S1, S3, S5, S6 |
+| 2 | PSP adapter, reconciler, callbacks, settlement ingestion | C3, C4, C9, C12, C13, C15, C16, C23, C26, C31b, C32, C34, C35, C36, C37, C38, C39, C40, C41, U5 |
+| 3 | Outbox publisher, broker, consumers, webhooks | C8, C17, C18, C27, C31c, U5, CK6 |
+| 4 | Hardening: limits, HA, deployment, minimal synchronous fraud, vault and edge gateway, and cells only if gate G1 requires them | L1-L6, C1, C2, C7, C10, C11, C19-C22, C24, C25, C28-C30, C33 (cells only), S2, S4, O3 |
+| 5 | Security, full fraud rules, operations, test mode isolation | U6-U8, F1, C14, C42, O1, O2, O4, O5, O6, then L5 again on the complete path |
 
-**Sign-off:** all 108 and all 25 checklist rows are ticked, each with a recorded run.
+**Sign-off:** all 108 and all 25 checklist rows are ticked, each with a recorded run, and the L5 run after Phase 5 is the number reported ([D24](decisions.md#d24)).

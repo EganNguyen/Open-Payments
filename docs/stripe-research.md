@@ -386,7 +386,7 @@ The README's [next steps](../README.md#where-the-project-stands) already start w
 
 ## Decisions for the owner
 
-Decided 2026-11-05. The records are in [Decisions](decisions.md), and the [lifecycle](payment-lifecycle.md), [data model](architecture.md#data-model) and [adapter](architecture.md#psp-integration) now follow them. "Open Payments today" notes above describe the docs before these changes. The rest of this doc stays `Proposed`, including `PROCESSING` and fund flows.
+Decided 2026-11-05. The records are in [Decisions](decisions.md), and the [lifecycle](payment-lifecycle.md), [data model](architecture.md#data-model) and [adapter](architecture.md#psp-integration) now follow them. "Open Payments today" notes above describe the docs before these changes. The rest of this doc stays `Proposed`, including `PROCESSING`.
 
 | Question | Decision | Record |
 |---|---|---|
@@ -395,6 +395,9 @@ Decided 2026-11-05. The records are in [Decisions](decisions.md), and the [lifec
 | Does settlement ingestion join version 1? | Yes, without payouts | [D18](decisions.md#d18) |
 | What is the idempotency retention period? | At least 24 hours after the operation resolves, and never while it is unresolved | [D19](decisions.md#d19) |
 | Is there a merchant test mode? | Yes, with separate keys and isolated data | [D20](decisions.md#d20) |
+| Are accounts and fund flows adopted? | Yes, with real and logical money kept apart | [D21](decisions.md#d21) |
+| Is the money decision kept free of I/O? | Yes, as a pure `Decide` plus a thin shell | [D22](decisions.md#d22) |
+| Are the extra correctness checks and the log line adopted? | Yes, as CK7-CK10 and one wide line per request | [D23](decisions.md#d23) |
 
 ## Sources
 

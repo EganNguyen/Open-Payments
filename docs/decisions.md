@@ -165,7 +165,7 @@ All values are starting points until measured. Other docs state the resulting ru
 
 - **Decision:** The reconciler ingests PSP settlement lines and posts them through the payment-transition module, matching each to its payment. Payouts stay out of scope.
 - **Why:** Daily totals can't show which payment failed to settle, and clearing checks need these lines to clear the PSP receivable. See [Stripe research](stripe-research.md#1-balanced-is-not-the-same-as-correct).
-- **Consequence:** Parsing and matching work per PSP in Phase 2. Settlement is tracked per line and never changes the payment state, because refunds can still be running. `SETTLED` stays `Proposed`. Unmatched or mismatched lines raise a discrepancy and post nothing. Ledger entries need the `accounts` table, still unspecified. If cells are adopted, a file spanning cells needs a routing rule. See [Settlement lines](payment-lifecycle.md#settlement-lines).
+- **Consequence:** Parsing and matching work per PSP in Phase 2. Settlement is tracked per line and never changes the payment state, because refunds can still be running. `SETTLED` stays `Proposed`. Unmatched or mismatched lines raise a discrepancy and post nothing. Ledger entries use the accounts in [D21](#d21). If cells are adopted, a file spanning cells needs a routing rule. See [Settlement lines](payment-lifecycle.md#settlement-lines).
 
 ### D19
 
@@ -183,6 +183,38 @@ All values are starting points until measured. Other docs state the resulting ru
 - **Why:** Merchants need a safe place to integrate, and adding test keys later touches authentication and routing. See [Stripe research](stripe-research.md#8-separate-rate-limits-from-load-shedding).
 - **Consequence:** The API contract defines key types, and routing must consider the key's mode as well as the merchant. The isolation mechanism is `Open`; a dedicated test cell is one candidate.
 
+### D21
+
+**Specify accounts and fund flows before the first migration.** Status: `Committed`.
+
+- **Decision:** Adopt the [fund flows](stripe-research.md#1-balanced-is-not-the-same-as-correct) from the Stripe research. Every account is `clearing` or `terminal`, and `real` or `logical`. Authorization entries are logical. A ledger transaction may not mix real and logical accounts, so a capture posts two ledger transactions in one database transaction: one releases the hold and one records the money, each with its own `source_event_id`. Ledger rows gain `effective_at` and `subject_id`. Add minimal `currencies` and `api_keys` tables.
+- **Why:** The `accounts` table was named but unspecified, which blocked the first migration. Clearing accounts make a missing settlement visible, and keeping logical entries apart from real ones stops a hold from ever looking like cash.
+- **Consequence:** A capture writes more rows. Fee and adjustment treatment stays `Open`, and benchmarks post up to 2 more entries per capture to cover it. The merchant platform stays out of scope, so `api_keys` is the only merchant record for now.
+
+### D22
+
+**Keep the money decision free of I/O.** Status: `Committed`.
+
+- **Decision:** Split the payment-transition module into a pure `Decide` function, with no database, clock, random or network access, and a thin shell that loads a snapshot, calls `Decide` and writes the result in one transaction. Time and IDs are inputs. Amends [D2](#d2): the one write path is unchanged.
+- **Why:** Exhaustive state tests and golden datasets become cheap, and old and new rules can be compared on recorded inputs. See [Stripe research](stripe-research.md#4-keep-the-money-decision-free-of-io).
+- **Consequence:** Business rules may not live in the shell. A test enforces that the `Decide` project references no I/O.
+
+### D23
+
+**Add independent checks and a canonical log line.** Status: `Committed`.
+
+- **Decision:** Add correctness checks CK7 to CK10 for clearing, timeliness, completeness and cross-checks, in code that doesn't reference the payment-transition module. Each request also emits one wide log line.
+- **Why:** A balanced ledger can still be wrong, and the module can't check itself. The log line gives platform overhead as a direct measurement, total time minus PSP wait.
+- **Consequence:** The checks run after every load and chaos test. Every check must fail on injected corruption and on zero rows.
+
+### D24
+
+**Correct the derived load and the phase gates.** Status: `Committed`.
+
+- **Decision:** Count the real two-transaction flow in the derived load. Split C31 by phase. State which correctness checks apply at each stage. Add minimal synchronous fraud, the vault and the edge gateway to Phase 4, and run L5 again after Phase 5 as the sign-off number.
+- **Why:** Phase 1 required edge cases that depend on later phases, gates required checks with no broker or reconciler to satisfy them, and the headline number would have come from a path missing a synchronous step.
+- **Consequence:** Runs before Phase 3 are previews and prove nothing on the checklist. The estimated write load about doubles, which the database spike must test.
+
 ## Assumptions and limits
 
 - **Numbers are targets, not measurements.** SLOs, thresholds, pool sizes and the 60% CPU target are replaced by measured values from L1 and O3.
@@ -199,7 +231,7 @@ All values are starting points until measured. Other docs state the resulting ru
 ## Open questions
 
 - **Open-source parts.** Hyperswitch, Formance Ledger and TigerBeetle are candidates, none written in C#. Adopting one could change D11.
-- **Data model gaps.** `accounts`, inbox, currency, balance snapshot, delivery log and discrepancy tables are named but not yet specified.
+- **Data model gaps.** Inbox, balance snapshot, delivery log and discrepancy tables are named but not yet specified.
 - **Manual review tooling** for `REVIEW` and stuck payments needs a simple internal screen.
 - **Fraud fallback policy** needs a business owner.
 - **Shed order** in [Rules for every failure](failure-scenarios.md#rules-for-every-failure) needs owner confirmation.

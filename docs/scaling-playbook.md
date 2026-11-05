@@ -25,7 +25,7 @@ Measure [admitted req/s, rejected req/s and completed payments/s](architecture.m
 
 - Error rate below 0.1%, excluding deliberate rejections in overload tests.
 - Platform overhead p99 ≤ 100 ms.
-- [CK1-CK6](verification.md#correctness-checks) pass. A queue that grows slowly fails CK6 even if latency looks fine.
+- The [correctness checks that apply at that stage](verification.md#correctness-checks) pass. A queue that grows slowly fails CK6 even if latency looks fine. Runs before Phase 3 can't apply all of them, so they are previews.
 
 A step that misses the final SLO is a finding to fix, not a threshold to relax.
 
@@ -206,7 +206,7 @@ Runtime: ThreadPool queue ____ Gen 2 GC/s ____ allocation rate ____
 Database: pool wait ____ lock waits ____ deadlocks ____ WAL rate ____
 Async: outbox age ____ consumer lag ____
 
-Correctness: CK1 ☐ CK2 ☐ CK3 ☐ CK4 ☐ CK5 ☐ CK6 ☐
+Correctness: CK1 ☐ CK2 ☐ CK3 ☐ CK4 ☐ CK5 ☐ CK6 ☐ CK7 ☐ CK8 ☐ CK9 ☐ CK10 ☐ (mark n/a where the stage doesn't apply it)
 Gates passed: ☐ yes ☐ no
 
 Bottleneck found:

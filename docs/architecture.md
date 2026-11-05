@@ -24,7 +24,7 @@ Stack: C# / .NET 10, ASP.NET Core, PostgreSQL, Kafka-compatible broker, Kubernet
 
 **Derived load (to validate in L1):**
 
-- Each payment causes roughly 8-10 database writes: payment, attempt, idempotency record, outbox event, 2-4 ledger entries. That is about 40-50k writes/s across the fleet, or 10-12k per cell with 4 active cells.
+- An auto-captured payment takes up to 4 commits and about 20-22 row writes across the two authorize and two capture transactions ([D24](decisions.md#d24), our estimate). That is up to 20k commits/s and about 100-110k row writes/s at target, before refunds, which add about 1.7k commits/s at the [example mix](scaling-playbook.md#workload-and-load-generation). With 4 active cells, it is about a quarter of that per cell.
 - PSP latency of 200 ms to 2 s means about 5,000 requests in flight at a 1 s average (Little's Law).
 
 ## Principles
@@ -105,7 +105,7 @@ Not on the diagram: observability, the Kubernetes platform, Redis, and the mock 
 
 **Boundary rules:**
 
-1. **There is one write path.** The payment-transition module is the only code that writes money state ([D2](decisions.md#d2)).
+1. **There is one write path.** The payment-transition module is the only code that writes money state ([D2](decisions.md#d2)). It is a pure `Decide` function plus a thin database shell ([D22](decisions.md#d22)).
 2. **One short transaction.** State change, ledger entries and outbox event commit together, with no PSP, HTTP or broker call inside.
 3. **Async never blocks sync.** Workers read committed data and can lag or fail without touching a payment. The reconciler and timer jobs are the exceptions that write, and only through the module. Timer jobs run in the reconciler process.
 4. **Card data stays in the vault.** Everything else sees a token.
@@ -298,9 +298,36 @@ create unique index settlement_lines_one_attempt on settlement_lines (attempt_id
   where state = 'MATCHED' and attempt_id is not null;
 create unique index settlement_lines_one_refund on settlement_lines (refund_id)
   where state = 'MATCHED' and refund_id is not null;
+
+create table currencies (
+  code     char(3) primary key,
+  exponent smallint not null,
+  rounding text not null
+);
+
+-- D21; hot accounts use sub_account 0-63
+create table accounts (
+  id             uuid primary key,
+  merchant_id    uuid, -- null for platform accounts
+  account_type   text not null,
+  sub_account    smallint not null default 0 check (sub_account between 0 and 63),
+  class          text not null check (class in ('clearing','terminal')),
+  class_of_money text not null check (class_of_money in ('real','logical')),
+  currency       char(3) not null references currencies(code),
+  unique nulls not distinct (merchant_id, account_type, sub_account, currency)
+);
+
+-- the only merchant record until the merchant platform is designed
+create table api_keys (
+  key_hash    bytea primary key, -- SHA-256; the key itself is never stored
+  merchant_id uuid not null,
+  mode        text not null check (mode in ('live','test')),
+  scopes      text[] not null,
+  revoked_at  timestamptz
+);
 ```
 
-`Open`: `accounts`, inbox, currency, balance snapshot, delivery log and discrepancy tables are named in this doc but not yet specified.
+`Open`: inbox, balance snapshot, delivery log and discrepancy tables are named in this doc but not yet specified. Partitioning and retention are decided after the database spike, because the one-live-attempt indexes must include any partition key on `payment_attempts`.
 
 ## Ledger
 
@@ -317,6 +344,7 @@ create table ledger_transactions (
   payment_id      uuid,
   kind            text not null,        -- authorization, capture, refund, fee, ...
   source_event_id uuid not null unique, -- one ledger transaction per business event
+  effective_at    timestamptz not null, -- business date; a late PSP event keeps its earlier date
   created_at      timestamptz not null default now()
 );
 
@@ -326,6 +354,7 @@ create table ledger_entries (
   entry_no     smallint not null,
   merchant_id  uuid not null,
   account_id   uuid not null,
+  subject_id   uuid not null, -- usually the payment, so clearing is checkable per payment
   direction    char(1) not null check (direction in ('D','C')),
   amount_minor bigint not null check (amount_minor > 0),
   currency     char(3) not null,
@@ -333,6 +362,19 @@ create table ledger_entries (
   primary key (txn_id, entry_no)
 ) partition by hash (txn_id);
 ```
+
+**Fund flows** ([D21](decisions.md#d21)). Clearing accounts return to zero when a flow finishes, so a nonzero balance past its allowed age means something is missing.
+
+| Event | Debit | Credit | Money | Clears when |
+|---|---|---|---|---|
+| Authorize | `auth_hold` | `auth_hold_contra` | Logical | Capture releases it |
+| Capture: release the hold | `auth_hold_contra` | `auth_hold` | Logical | Clears the hold |
+| Capture: record the money | `psp_receivable` | `merchant_payable` | Real | Settlement line matches |
+| Settlement of a capture | `settlement_bank` | `psp_receivable` | Real | Clears the receivable |
+| Refund reserved | `merchant_payable` | `refund_reserved` | Real | Confirm or release |
+| Refund released | `refund_reserved` | `merchant_payable` | Real | Clears the reservation |
+| Refund confirmed | `refund_reserved` | `psp_refund_payable` | Real | Settlement line matches |
+| Settlement of a refund | `psp_refund_payable` | `settlement_bank` | Real | Clears the payable |
 
 **Balance invariant.** The application inserts all entries of a transaction in one statement, and a deferred constraint trigger checks that debits equal credits per `txn_id`. Its cost is measured in L1. If too high, a continuous audit query that pages on any imbalance replaces it, and property tests (U3) remain the main guard.
 
@@ -399,6 +441,6 @@ public interface IPspAdapter
 | Payments | Retry on the same payment, customer-action state, cancel | `Committed` ([D16](decisions.md#d16), [D17](decisions.md#d17)) |
 | Payments | Merchant test mode | `Committed` ([D20](decisions.md#d20)); isolation mechanism `Open` |
 | Payments | Delayed-result methods (`PROCESSING`), wider payment methods | `Proposed` |
-| Money correctness | Settlement file ingestion | `Committed` ([D18](decisions.md#d18)); ledger accounts `Open` |
+| Money correctness | Settlement file ingestion | `Committed` ([D18](decisions.md#d18)); fee and adjustment lines `Open` |
 | Future | Rest of settlement, payouts, disputes | `Proposed` in the [lifecycle](payment-lifecycle.md#proposed-rules); not designed |
 | Future | Marketplace features, billing, advanced fraud, formal PCI assessment | `Open` |

@@ -187,7 +187,7 @@ The routes are defined in `api/openapi.yaml`, and these codes follow the plan's 
 | Same key, different body | 422 |
 | Same key, first request running | 409 with `Retry-After` |
 | Another attempt or capture is live | Current status, or 409 with `Retry-After` |
-| Attempt cap reached | Rejected with a stable error code |
+| Attempt cap reached | 409 with code `attempt_cap_reached` |
 | Merchant over its rate limit | 429 with `Retry-After` |
 | In-flight cap reached, pool wait timed out or `55P03` | 503 with `Retry-After` |
 | `40001` or `40P01` after two retries, or retry budget spent | 503 with `Retry-After` |

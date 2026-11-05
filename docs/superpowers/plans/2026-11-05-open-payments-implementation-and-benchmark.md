@@ -27,7 +27,7 @@ Task 1 resolves these. The arithmetic is ours and unmeasured, so each figure is 
 
 | # | Problem | Effect | Resolution |
 |---|---|---|---|
-| 1 | The docs estimate 8-10 writes per payment. Counting the two-transaction flow gives about 17-19 row writes and up to 4 commits per auto-captured payment | About 85-95k row writes/s and up to 20k commits/s at target, not the stated 40-50k writes/s. Refunds add about 1.7k commits/s. G1 could be judged against the wrong number | Spike the real transaction shape. Correct the derived load |
+| 1 | The docs estimate 8-10 writes per payment. Counting the two-transaction flow gives about 20-22 row writes and up to 4 commits per auto-captured payment | About 100-110k row writes/s and up to 20k commits/s at target, not the stated 40-50k writes/s. Refunds add about 1.7k commits/s. G1 could be judged against the wrong number | Spike the real transaction shape. Correct the derived load |
 | 2 | A pool of about 100 connections at 20k tx/s allows only 5 ms per transaction by Little's Law, including the synchronous commit | The pool may saturate before the database does. PgBouncer is single-threaded, so one process may also limit | Spike varies pool size, PgBouncer process count and statement pipelining |
 | 3 | Gates require CK1-CK6 at every ramp step, but steps 0-7 have no broker and Phase 1 has no reconciler | CK4 and CK5 can't pass at those steps as written | Define which checks apply at each stage, below |
 | 4 | Phase 1 exit includes all of C31, but E10, E19, E20 and E22-E24 need Phase 2 parts, and E14 and E15 need Phase 3 events. E8 needs void, which is `Proposed` | Phase 1 can never exit | Split C31 by phase |
@@ -206,7 +206,7 @@ Expected: error "zero payments".
 
 - [ ] **Step 3: Write two schemas.** A follows the current docs with the Task 1 additions. B range-partitions `payments` and `ledger_entries` on UUIDv7 keys and hash-partitions `payment_attempts` by `payment_id`, per [problem 6](#problems-found-in-the-docs). Both include the deferred balance trigger and every documented partial index.
 - [ ] **Step 4: Write transaction scripts matching the real flow,** one pgbench transaction per database transaction:
-  - `tx-auth-capture`: A (idempotency, payment, attempt), B (payment, attempt, idempotency, ledger transaction, 2 entries, outbox), capture A, capture B (with 2-4 entries).
+  - `tx-auth-capture`: A (idempotency, payment, attempt), B (payment, attempt, idempotency, ledger transaction, 2 entries, outbox), capture A, capture B (a hold-release ledger transaction with 2 entries, and a money ledger transaction with 2-4 entries, per D21).
   - `tx-decline`: A, then B moving the payment back with no ledger rows.
   - `tx-refund`: advisory lock and balance read, reserve, ledger reservation, then confirm.
 - [ ] **Step 5: Write `seed.sql`,** with parameters for merchant count (1, 100, 10,000), an 80/20 skew and prefill size. Target for Linux runs: 100M payments with matching children. Benchmarking an empty database would flatter every number.

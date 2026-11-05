@@ -113,7 +113,7 @@ Our own proposal, not Stripe's internal architecture. **Money** means the capabi
 |---|---|---|---|---|---|---|
 | 10 | Ledger writes | `Committed` | Module | Payment-transition module | Yes | Build |
 | 11 | Balances | `Committed` | Deployable | Ledger projector | No, read model | Build |
-| 12 | Financial accounts | `Open` | Module | Payments API; `accounts` table not specified | Yes | Build |
+| 12 | Financial accounts | `Committed` ([D21](decisions.md#d21)) | Module | Payments API | Yes | Build |
 | 13 | Transfers | `Open` | Planned | Money Movement | Yes | Build |
 | 14 | Payouts | `Open` | Planned | Money Movement | Yes | Build |
 | 15 | Settlement | `Proposed`; file ingestion is `Committed` ([D18](decisions.md#d18)) | Planned; ingestion is in the reconciler | Money Movement | Yes | Build |

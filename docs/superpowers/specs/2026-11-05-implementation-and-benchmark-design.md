@@ -55,7 +55,7 @@ Each is recorded in [Decisions](../../decisions.md) once accepted. Nothing here 
 
 **D24 in detail:**
 
-- **Derived load:** count the real two-transaction flow. Our estimate is about 17-19 row writes and up to 4 commits per auto-captured payment, against the documented 8-10 writes. The spike replaces this estimate.
+- **Derived load:** count the real two-transaction flow. Our estimate is about 20-22 row writes and up to 4 commits per auto-captured payment, against the documented 8-10 writes. The spike replaces this estimate.
 - **C31 split by phase:** C31a in Phase 1 (E1-E9, E11-E13, E16-E18, E21), C31b in Phase 2 (E10, E19, E20, E22-E24), C31c in Phase 3 (E14, E15).
 - **Full path before the final number:** minimal synchronous fraud, vault and edge gateway join Phase 4, and L5 runs again after Phase 5.
 

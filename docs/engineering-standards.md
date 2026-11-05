@@ -156,6 +156,8 @@ Check each library's license and .NET 10 support before adopting it (gate S6).
 
 Thresholds are tuned after L1. OpenTelemetry tracing follows a payment from API through PSP call to consumer. Profiling runbooks are drilled in O2.
 
+**Canonical log line** ([D23](decisions.md#d23)). Each request emits one wide line, in a block that always runs, and a failure building it never fails the request. Fields: `merchant_id`, `payment_id`, `attempt_id`, state from and to, limiter outcome, request class, PSP, breaker state, PSP wait, database time, pool wait and `Decide` rule version. Platform overhead is total time minus PSP wait. The log scan in U8 covers this line.
+
 | Signal | Source | Alert |
 |---|---|---|
 | ThreadPool queue length and thread count | `dotnet-counters`, runtime metrics | Queue above threshold for 30 s |
