@@ -1,28 +1,24 @@
-# Failure Scenarios, Edge Cases and Recovery (Open Payments)
+# Failure Scenarios
 
-Status: draft v1 · Date: 2026-11-04 · Companion to `payment-system-design.md`, `scaling-playbook.md`, `payment-lifecycle.md` and `deadlock-handling.md`
+What can go wrong in the payment system, what it does by itself, how people recover it, and which test proves it.
 
-## 0. Purpose and status
+Status: Draft · Last updated: 2026-11-05
 
-This document lists what can go wrong in the payment system, what the system does by itself, how people recover it, and which test proves it.
+**Nothing here is verified yet.** Every row is a design claim until its test has passed with a recorded run. Test IDs are defined in [Verification](verification.md), and thresholds and times are starting values to be replaced by measurements.
 
-**Nothing here is verified yet.** Every row below is a design claim until its test (an ID such as `C3` or `L6`) has passed with a recorded run. Thresholds and times are starting values to be replaced by measurements.
-
-Test IDs refer to section 18 of the design document. The new tests this document adds (C23 to C33 and O6) are also listed there.
-
-## 1. Rules that apply to every failure
+## Rules for every failure
 
 These rules decide what the system protects first. Every scenario below is a case of one of them.
 
 1. **Money is never lost or doubled.** If the system is unsure, it says "unknown" and finds out later. It never guesses.
-2. **Save intent before acting.** The attempt is written to the database before the bank is called (design section 7), so a crash always leaves something the reconciler can find.
+2. **Save intent before acting.** The attempt is written to the database before the bank is called ([Payment flow](architecture.md#payment-flow)), so a crash always leaves something the reconciler can find.
 3. **Say "busy" quickly.** An overloaded service rejects extra work at once (429 or 503 with `Retry-After`). It does not queue it without limit.
 4. **Every wait has a limit.** Every call to a bank, database, broker or other service has a deadline.
 5. **Every retry is safe.** Retries use the same idempotency key, and consumers ignore events they have already handled.
 6. **Failure stays small.** A slow merchant, bank or consumer must not slow everyone else (bulkheads, per-merchant limits, separate queues).
 7. **Recovery is gradual.** After an outage, load and backlogs return in steps, not all at once.
 
-**Order of protection when resources run short (proposal, owner to confirm):**
+**Order of protection when resources run short (`Proposed`, owner to confirm):**
 
 | Priority | Protect | Shed first when overloaded |
 |---|---|---|
@@ -32,11 +28,11 @@ These rules decide what the system protects first. Every scenario below is a cas
 | 4 | Webhook delivery (slow down, do not drop) | shed or slow earlier |
 | 5 | Reports, exports and dashboards | shed first |
 
-## 2. Failure catalogue
+## Failure catalogue
 
 Columns: **Detect** is the signal that shows it. **Automatic** is what the system does without a person. **Recovery** is what restores normal service. **Proof** is the test.
 
-### 2.1 Payment provider (PSP) and other outside services
+### Payment provider (PSP) and other outside services
 
 | ID | Failure | Detect | Automatic | Recovery | Proof |
 |---|---|---|---|---|---|
@@ -46,17 +42,17 @@ Columns: **Detect** is the signal that shows it. **Automatic** is what the syste
 | FS-04 | PSP rate-limits us (429) | 429 count from PSP | Client-side limiter and backoff with jitter; no new attempt IDs | Lower send rate; ask the PSP for a higher limit | C12 |
 | FS-05 | Duplicate, late or out-of-order PSP callbacks | Ignored-event counter; alert on a late event contradicting state | Conditional state update; stale events logged and ignored | Review the alert; no repair needed if state is correct | C9, U2 |
 | FS-06 | PSP DNS fails or its TLS certificate expires | Connect and TLS error alerts | Breaker opens; fast failures | Fix DNS or certificate; breaker recovers; reconcile | C16 |
-| FS-07 | PSP result disagrees with ours (amount or currency) | Amount-mismatch check on every PSP answer | Payment held in a review state; no ledger entry for the disputed amount; alert | Person compares the PSP record, then corrects with a reversing entry | C32 |
+| FS-07 | PSP result disagrees with ours (amount or currency) | Amount-mismatch check on every PSP answer | Payment moves to `REVIEW`; no ledger entry for the disputed amount; alert | Person compares the PSP record, then corrects with a reversing entry | C32 |
 | FS-08 | Fraud service is unavailable | Fraud timeout rate | Fallback policy per risk tier (for example allow low value, hold high value); each decision logged | Restore service; review payments decided by fallback | C14 |
 
-### 2.2 Application and platform
+### Application and platform
 
 | ID | Failure | Detect | Automatic | Recovery | Proof |
 |---|---|---|---|---|---|
-| FS-09 | API process killed at any point in a payment | Pod restart count; payments stuck in `PSP_PENDING` | Crash table in design section 7 applies: nothing, a pending attempt, or a final state | Reconciler resolves pending attempts; client retry returns the stored result | C4, C15 |
+| FS-09 | API process killed at any point in a payment | Pod restart count; payments stuck in `PSP_PENDING` | [Crash recovery](architecture.md#crash-recovery) applies: nothing, a pending attempt, or a final state | Reconciler resolves pending attempts; client retry returns the stored result | C4, C15 |
 | FS-10 | Deploy or scale-down (SIGTERM) | Release dashboards | Stop accepting, finish in-flight work within the grace period, drain the outbox | Roll back if errors rise | C20 |
 | FS-11 | Bad release | Canary SLO breach | Promotion stops; automatic rollback | Fix forward after a postmortem; expand/contract migrations keep rollback safe | C19, S4 |
-| FS-12 | Traffic burst above capacity (15k) or stress (10k) | Rejected rate; in-flight count; CPU | Limiter rejects the excess with 429 or 503; no restart | Autoscaler adds replicas up to the connection-budget cap; rejected traffic retries later | L3, L6 |
+| FS-12 | Overload survival load (15,000 req/s) or stress | Rejected rate; in-flight count; CPU | Limiter rejects the excess with 429 or 503; no restart | Autoscaler adds replicas up to the connection-budget cap; rejected traffic retries later | L3, L6 |
 | FS-13 | One merchant sends a large share of traffic | Per-merchant rate and concurrency | Per-merchant limits and bulkhead; other merchants keep their SLO | Contact merchant; move to its own cell if permanent | C30 |
 | FS-14 | Memory growth, GC pauses, ThreadPool starvation | Gen 2 GC rate, ThreadPool queue, memory trend | Bounded queues; no blocking calls (build gate); pod restart as last resort | Take a dump and trace (runbook), fix, redeploy | L2, O2, S1, S2 |
 | FS-15 | Clock skew on a node (for example 5 min) | NTP offset alert | Webhook signing window and token expiry use tolerance; ordering uses database time, not node time | Fix time sync; drain the node | C25 |
@@ -65,7 +61,7 @@ Columns: **Detect** is the signal that shows it. **Automatic** is what the syste
 | FS-18 | Restart after a full outage (thundering herd) | Request spike and backlog right after recovery | Staged ramp; limiter; consumers resume at a capped rate | Follow runbook R7 | C28 |
 | FS-19 | Cell router or its config store is unavailable (only if cells are adopted) | Routing error rate | Routers keep the last known mapping in memory; mapping changes are frozen | Restore the config store; verify mapping | C33 |
 
-### 2.3 Database
+### Database
 
 | ID | Failure | Detect | Automatic | Recovery | Proof |
 |---|---|---|---|---|---|
@@ -76,9 +72,9 @@ Columns: **Detect** is the signal that shows it. **Automatic** is what the syste
 | FS-24 | Disk fills (database, broker, logs) | Alerts at 70% and 85% | Alerts only; no automatic delete of data | Expand volume, drop old partitions, or archive per runbook | C22 |
 | FS-25 | Migration locks a table or breaks the app | `lock_timeout` errors; error spike | `lock_timeout` aborts the migration; expand/contract keeps old code working | Revert the migration step; retry off-peak | S4 |
 | FS-26 | Data loss, corruption or a bad manual change | Continuous ledger audit; restore drill | Point-in-time recovery is available | Restore to a new instance, compare, then promote or repair with reversing entries | O5 |
-| FS-42 | Deadlocks or lock contention on the same rows (for example capture, refund and reconciler updating one payment) | `pg_stat_database.deadlocks`; lock-wait counter; `40P01` and `55P03` error rate; retry budget use | Database aborts one victim; the transaction runner retries at most twice with jitter inside a retry budget; `lock_timeout` 200 ms fails slow waits fast; limiter sheds if retries pile up | Read the deadlock log, find the two statements, fix lock order or split the hot row; see `deadlock-handling.md` | L1, C6 |
+| FS-42 | Deadlocks or lock contention on the same rows (for example capture, refund and reconciler updating one payment) | `pg_stat_database.deadlocks`; lock-wait counter; `40P01` and `55P03` error rate; retry budget use | `deadlock_timeout` 100 ms finds the cycle and aborts one victim; `40P01` is retried at most twice with jitter inside a retry budget; `lock_timeout` 200 ms turns other slow waits into `55P03`, which returns 503 with `Retry-After`; limiter sheds if retries pile up | Read the deadlock log, find the two statements, fix lock order or split the hot row; see [Deadlock handling](deadlock-handling.md) | L1, C6, C34 |
 
-### 2.4 Messaging and webhooks
+### Messaging and webhooks
 
 | ID | Failure | Detect | Automatic | Recovery | Proof |
 |---|---|---|---|---|---|
@@ -88,17 +84,17 @@ Columns: **Detect** is the signal that shows it. **Automatic** is what the syste
 | FS-30 | Merchant webhook endpoint is slow or down for a long time | Delivery failure rate per merchant | Exponential backoff with jitter; per-merchant queue and concurrency limit; others unaffected | Merchant fixes endpoint; resend from the dashboard; events are kept for the retention period | C27 |
 | FS-31 | Outbox or consumer backlog keeps growing | Outbox age; lag trend | Alert; publishers scale up to a cap | Find the slow stage (broker, consumer, downstream) | CK6, L5 |
 
-### 2.5 Money correctness
+### Money correctness
 
 | ID | Failure | Detect | Automatic | Recovery | Proof |
 |---|---|---|---|---|---|
 | FS-32 | Same idempotency key sent many times at once | Duplicate-key counter | One payment and one charge; all callers get the same stored response | None needed | C5, U4 |
-| FS-33 | Concurrent refunds above the captured amount | Rejected-refund counter | Atomic conditional update on the refunded total | None needed | C6, CK3 |
+| FS-33 | Concurrent refunds above the captured amount | Rejected-refund counter | Atomic conditional update on the refunded and pending total | None needed | C6, CK3 |
 | FS-34 | Ledger imbalance found | Continuous audit query; CK1 | Alert at once; the database never edits or deletes entries | Stop-the-line runbook R5: find the transaction, post a reversing entry, write a postmortem | CK1, U3 |
 | FS-35 | Payments stuck in `PSP_PENDING` or `UNKNOWN` too long | CK5 and age alert | Reconciler retries inquiry with backoff | Escalate to manual review after the threshold; ask the PSP for its record | CK5, C3 |
 | FS-36 | Reconciler is down, slow, or two run at the same time | Reconciler heartbeat; oldest unresolved age | Lease or advisory lock allows one active worker per batch; work is idempotent | Restart; backlog drains with a rate cap | C26 |
 
-### 2.6 Security and operations
+### Security and operations
 
 | ID | Failure | Detect | Automatic | Recovery | Proof |
 |---|---|---|---|---|---|
@@ -108,7 +104,7 @@ Columns: **Detect** is the signal that shows it. **Automatic** is what the syste
 | FS-40 | Slow-body clients, oversized bodies, connection floods | Connection and timeout counters | Kestrel limits cut them off | Block at the edge | L4 |
 | FS-41 | Loss of a whole region | Region health | Not handled in version 1 (single region) | Restore from backup (RPO above 0); cross-region replica is a future decision | O5 (restore only) |
 
-## 3. Edge cases in payment handling
+## Edge cases
 
 These are not outages. They are unusual but valid situations that must give a defined result. All are covered by the edge-case test suite **C31** unless another test is named.
 
@@ -118,9 +114,9 @@ These are not outages. They are unusual but valid situations that must give a de
 | E2 | Same key while the first request is still running | Return 409 with `Retry-After`; do not start a second one |
 | E3 | Client disconnects after transaction A | Processing continues; the result is stored; a retry with the same key returns it |
 | E4 | Key reused after the retention period | Treated as a new request; the retention period is documented to merchants |
-| E5 | Merchant retries with a new key after a timeout | Cannot be detected by key; guidance is to poll the payment ID or use one key per order. Optional: warn on a repeated merchant order reference (**open decision**) |
+| E5 | Merchant retries with a new key after a timeout | Cannot be detected by key; guidance is to poll the payment ID or use one key per order. Optional: warn on a repeated merchant order reference (`Open`) |
 | E6 | Refund on a payment that is not captured, or is `UNKNOWN` | Reject with a clear error |
-| E7 | Refund larger than the remaining amount | Reject; the atomic update protects the total (C6) |
+| E7 | Refund larger than the remaining amount | Reject; the atomic reservation protects the total (C6) |
 | E8 | Capture after the authorization expired or was voided | Reject; state machine forbids it |
 | E9 | Late "declined" callback on a captured payment | Ignore, log, alert (FS-05) |
 | E10 | PSP callback arrives before our transaction B commits | Conditional update finds the old state; event is parked and retried briefly, then reconciled |
@@ -132,9 +128,9 @@ These are not outages. They are unusual but valid situations that must give a de
 | E16 | Card data appears in logs or error messages | Redaction and a log scan (U8) |
 | E17 | Tenant A uses a key against tenant B's data | Rejected by tenant checks (U6) |
 
-## 4. Recovery runbooks
+## Runbooks
 
-Short, ordered steps. Each runbook is rehearsed in a drill (section 5) before it is trusted. Times are starting targets.
+Short, ordered steps. Each runbook is rehearsed in a [drill](#drills) before it is trusted. Times are starting targets.
 
 **R1. Database primary failed (FS-22)**
 1. Confirm the standby was promoted and the old primary is fenced (cannot accept writes).
@@ -180,34 +176,24 @@ Short, ordered steps. Each runbook is rehearsed in a drill (section 5) before it
 3. Resume consumers and reconciler at capped rates.
 4. Run CK1-CK6 before announcing recovery.
 
-## 5. Drills (game days)
+## Drills
 
 | Order | Drill | Tests | Notes |
 |---|---|---|---|
 | 1 | In a test environment, break one thing at a time under 1k TPS | C3, C4, C5, C6, C15 | Money-correctness faults first |
-| 2 | Bank and dependency faults under 5k TPS | C12, C13, C14, C23, C32 | Use the mock PSP in slow, error and down modes |
-| 3 | Data faults under 5k TPS | C1, C2, C7, C29 | Database slow, pool exhausted, failover |
+| 2 | Bank and dependency faults under 5k TPS | C9, C12, C13, C14, C16, C23, C32 | Use the mock PSP in slow, error and down modes |
+| 3 | Data faults under 5k TPS | C1, C2, C7, C22, C29, C34, C35 | Database slow, pool exhausted, failover, disk, lock races |
 | 4 | Messaging faults | C8, C17, C18, C26, C27 | Broker down, poison, webhook endpoints failing |
-| 5 | Platform faults | C10, C11, C19, C20, C24, C25, C28, C30 | Node, zone, release, cache, clock, restart |
+| 5 | Platform faults | C10, C11, C19, C20, C24, C25, C28, C30, and C33 only if cells are adopted | Node, zone, release, cache, clock, restart, routing |
 | 6 | Security and recovery | C21, O5, O6, F1 | Rotation, restore, leak response |
 
 Rules for every drill: define the expected result first, run CK1-CK6 afterwards, record the run ID, and file a fix for anything that surprised the team. A drill does not count if it only passed because the fault was not really injected (verify the fault happened).
 
-## 6. Verification status
-
-| Group | Count | Verified |
-|---|---|---|
-| Failure scenarios (FS-01 to FS-42) | 42 | 0 |
-| Edge cases (E1 to E17) | 17 | 0 |
-| Runbooks (R1 to R7) | 7 | 0 (none rehearsed) |
-
-A scenario is verified only when its proof test has passed with a recorded run (graph or report), and its runbook, if any, has been rehearsed.
-
-## 7. Open decisions and limits
+## Open questions
 
 - **Fallback policy for the fraud service** (allow, hold or reject, by risk tier) needs a business owner.
-- **Warning on repeated order references (E5)** is optional and not designed yet.
-- **Manual review tooling** (FS-07, FS-35) needs a simple internal screen; not designed.
+- **A warning on repeated order references (E5)** is optional and not designed yet.
+- **Manual review tooling** for `REVIEW` and FS-35 needs a simple internal screen; not designed.
 - **Region loss (FS-41)** is out of scope for version 1.
-- **Priority order in section 1** is a proposal until the owner confirms it.
+- **The order of protection** is `Proposed` until the owner confirms it.
 - **All times and thresholds** are starting values until measured.
