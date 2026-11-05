@@ -602,8 +602,8 @@ Expected: PASS.
 Task<T> TxRunner.RunAsync<T>(MerchantId m, Func<NpgsqlConnection, NpgsqlTransaction, CancellationToken, Task<T>> work, CancellationToken ct);
 // ct applies to the work, never to COMMIT. After the 3 s wait limit, a dropped connection,
 // or a "canceling wait" warning, COMMIT throws CommitOutcomeUnknownException.
-// Check how Npgsql's Command Timeout and Cancellation Timeout behave first. If its timeout
-// sends a cancel and closing the socket can't avoid it, stop and escalate: D28 depends on this.
+// Command Timeout=0 on this data source; the commit keeps running past the limit and holds its
+// connection until it finishes. The required behavior is in E1's answer, in docs/gates/stage-1-escalations.md.
 Task<KeyLookup> PaymentStore.ReadKeyAsync(MerchantId m, string key, byte[] requestHash, CancellationToken ct);
 // NotFound | Finished(StoredResponse) | Unresolved(PaymentView) | InFlight | HashMismatch
 Task<BeginResult> PaymentStore.BeginAttemptAsync(BeginAttempt cmd, CancellationToken ct);
@@ -631,6 +631,10 @@ Task<ApplyResult> PaymentStore.ApplyAsync(PaymentId p, PaymentCommand c, StoredR
 [Fact] public Task C43_commit_wait_limit_sends_no_cancel_and_reports_unknown(); // assert via server log: no "canceling wait"
 [Fact] public Task C43_failed_commit_reports_unknown_not_failure();   // connection dropped during COMMIT
 [Fact] public Task C43_commit_warning_is_treated_as_unknown_and_counted();      // injected cancel from outside the runner
+[Fact] public Task C43_abandoned_commit_completes_later_and_releases_its_connection();
+[Fact] public Task C43_abandoned_commits_exhaust_the_pool_and_new_work_is_shed();
+[Fact] public Task C43_command_timeout_nonzero_is_refused_at_startup();
+[Fact] public Task C43_same_key_retry_during_abandoned_commit_returns_busy_with_no_psp_effect(); // reasoned, not measured
 [Fact] public Task Key_conflict_does_not_abort_the_transaction();     // ON CONFLICT DO NOTHING
 [Fact] public Task E29_refusal_stores_no_key();
 ```

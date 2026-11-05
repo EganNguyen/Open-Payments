@@ -161,7 +161,7 @@ answer the client
 
 **4. Treating "not found" as "not charged".** A delayed request can still land. Only proof fails an attempt ([D27](decisions.md#d27)), and a replay stops well before the PSP's key retention ends.
 
-**5. Cancelling a commit.** [On PostgreSQL 18.6](../benchmarks/spike/commit-cancel.md), a cancel during the synchronous wait returned a normal `COMMIT` success with only a warning, while no standby had the row. So no cancel is ever sent during `COMMIT`. The wait has its own limit, because `statement_timeout` doesn't cover it, and hitting the limit means dropping the connection and treating the outcome as unknown ([D28](decisions.md#d28)).
+**5. Cancelling a commit.** [On PostgreSQL 18.6](../benchmarks/spike/commit-cancel.md), a cancel during the synchronous wait returned a normal `COMMIT` success with only a warning, while no standby had the row. So no cancel is ever sent during `COMMIT`. The wait has its own limit, because `statement_timeout` doesn't cover it, and hitting the limit means no longer waiting and treating the outcome as unknown. The commit keeps running on its connection until it finishes ([D28](decisions.md#d28)).
 
 ### Outcomes and answers
 

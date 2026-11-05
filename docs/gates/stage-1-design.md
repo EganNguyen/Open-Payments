@@ -71,7 +71,7 @@ Task 4 and the MacBook spike found these, and [D25](../decisions.md#d25) now cov
 
 ## Risks carried into the build
 
-- Whether Npgsql sends a cancel when its own timeout fires on a commit. Task 13 must settle it, and an answer that breaks D28 is an escalation.
+- Whether Npgsql sends a cancel when its own timeout fires on a commit. **Settled by [E1](stage-1-escalations.md#e1-task-13-npgsql-commit-cancellation-breaks-d28):** it does, so the runner sets `Command Timeout=0` and D28 was amended.
 - Production throughput numbers remain estimates. The [MacBook summary](../benchmarks/spike/macbook-2026-11-05/summary.md) labels each as measured, extrapolated, assumed or unverified.
 - Most spike variants, including the full mix (V13) and two cells, weren't measured.
 - Schema C has one measured run, and its read cost across partitions isn't measured.

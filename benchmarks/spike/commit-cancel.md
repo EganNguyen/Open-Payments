@@ -32,5 +32,5 @@ After the standbys resumed, the row reached them in every scenario.
 
 ## Still to verify
 
-- Whether Npgsql sends a cancel request when its own command timeout fires on a commit. Task 13 must test this, because if it does, a timeout causes the same problem as a cancel.
+- ~~Whether Npgsql sends a cancel request when its own command timeout fires on a commit.~~ It does; see the [Npgsql probe](../npgsql-commit-probe/README.md).
 - An actual failover during this state. That belongs to C7 and C43 on the full stack.

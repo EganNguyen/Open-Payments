@@ -115,7 +115,7 @@ These remain open. Each has a recommendation.
 | State machine, including void and expiry | `READY` | Authorization window per PSP | U2, C50 |
 | Pure `Decide` and shell | `READY` | Nothing | U2, U3 |
 | Idempotency | `READY` | Key expiry method | E1-E4, E25-E29, C5, C41; V7 |
-| Commit semantics | `READY` | Server behavior [observed](../../../benchmarks/spike/commit-cancel.md); Npgsql's timeout behavior to confirm | Task 13, C43 |
+| Commit semantics | `READY` | Server behavior [observed](../../../benchmarks/spike/commit-cancel.md); Npgsql's timeout behavior [probed](../../../benchmarks/npgsql-commit-probe/README.md) | Task 13, C43 |
 | PSP recovery contract | `READY` | Each adapter's mode, once a PSP is chosen | C44, C45, U5 |
 | Merchant PSP accounts | `READY` | Onboarding flow, with the merchant platform | C51, U6 |
 | PSP adapter for a real provider | `NEEDS-OWNER` | Which PSP | Then C39 |
