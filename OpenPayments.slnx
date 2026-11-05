@@ -2,8 +2,12 @@
   <Folder Name="/src/">
     <Project Path="src/OpenPayments.Domain/OpenPayments.Domain.csproj" />
   </Folder>
+  <Folder Name="/tools/">
+    <Project Path="tools/OpenPayments.MockPsp/OpenPayments.MockPsp.csproj" />
+  </Folder>
   <Folder Name="/tests/">
     <Project Path="tests/OpenPayments.Analyzers.Tests/OpenPayments.Analyzers.Tests.csproj" />
     <Project Path="tests/OpenPayments.Domain.Tests/OpenPayments.Domain.Tests.csproj" />
+    <Project Path="tests/OpenPayments.MockPsp.Tests/OpenPayments.MockPsp.Tests.csproj" />
   </Folder>
 </Solution>
