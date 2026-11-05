@@ -1,0 +1,22 @@
+global:
+  scrape_interval: 5s
+  evaluation_interval: 5s
+
+scrape_configs:
+  - job_name: prometheus
+    static_configs:
+      - targets: ["prometheus:9090"]
+
+  - job_name: postgres
+    static_configs:
+      - targets: ["postgres-exporter:9187"]
+
+  - job_name: pgbouncer
+    static_configs:
+      - targets: ["pgbouncer-exporter:9127"]
+
+  # The API runs on the host in local development. host-gateway makes this work on Linux
+  # as well as Docker Desktop.
+  - job_name: api
+    static_configs:
+      - targets: ["host.docker.internal:8080"]

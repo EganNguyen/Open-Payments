@@ -1,0 +1,8 @@
+# Custom postgres-exporter queries. The stock collectors expose the current WAL size, not
+# bytes written, so expose the LSN offset and let Prometheus take its rate.
+pg_wal:
+  query: "SELECT pg_wal_lsn_diff(pg_current_wal_lsn(), '0/0')::float8 AS bytes"
+  metrics:
+    - bytes:
+        usage: GAUGE
+        description: WAL bytes written since the start of the cluster.

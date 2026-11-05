@@ -1,0 +1,63 @@
+# Prometheus, Grafana and the database exporters for the local stack.
+# Start the database stack first with compose.yaml, then this file. Both use the same
+# Compose project name so the exporters can reach primary and pgbouncer by service name.
+name: open-payments
+
+services:
+  prometheus:
+    image: prom/prometheus:v3.15.1
+    command:
+      - --config.file=/etc/prometheus/prometheus.yml
+      - --storage.tsdb.path=/prometheus
+      - --web.enable-lifecycle
+    ports:
+      - "127.0.0.1:9090:9090"
+    volumes:
+      - ./prometheus/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - prometheus-data:/prometheus
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    healthcheck:
+      test: ["CMD", "wget", "--spider", "-q", "http://127.0.0.1:9090/-/ready"]
+      interval: 2s
+      timeout: 3s
+      retries: 30
+
+  grafana:
+    image: grafana/grafana:13.3.0
+    environment:
+      GF_SECURITY_ADMIN_USER: admin
+      GF_SECURITY_ADMIN_PASSWORD: admin
+      GF_USERS_ALLOW_SIGN_UP: "false"
+      GF_AUTH_ANONYMOUS_ENABLED: "false"
+    ports:
+      - "127.0.0.1:3000:3000"
+    volumes:
+      - ./grafana/provisioning:/etc/grafana/provisioning:ro
+      - ./grafana/dashboards:/var/lib/grafana/dashboards:ro
+      - grafana-data:/var/lib/grafana
+
+  postgres-exporter:
+    image: prometheuscommunity/postgres-exporter:v0.20.1
+    command: ["--extend.query-path=/etc/postgres-exporter/queries.yaml"]
+    environment:
+      DATA_SOURCE_NAME: postgresql://postgres:op_local_only@primary:5432/openpayments?sslmode=disable
+    ports:
+      - "127.0.0.1:9187:9187"
+    volumes:
+      - ./prometheus/postgres-exporter-queries.yaml:/etc/postgres-exporter/queries.yaml:ro
+    depends_on:
+      - prometheus
+
+  pgbouncer-exporter:
+    image: prometheuscommunity/pgbouncer-exporter:v0.12.1
+    environment:
+      PGBOUNCER_EXPORTER_CONNECTION_STRING: postgres://postgres:op_local_only@pgbouncer:6432/pgbouncer?sslmode=disable
+    ports:
+      - "127.0.0.1:9127:9127"
+    depends_on:
+      - prometheus
+
+volumes:
+  prometheus-data:
+  grafana-data:
