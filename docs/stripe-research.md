@@ -356,7 +356,7 @@ The research supplied for this work points in the right direction, and its dates
 | Database table: "add merchant-to-cell routing", "preserve tenant data" | Already in the design. The real gap is the data movement itself |
 | "19 independent services" | The table has 20 rows, and it conflicts with the existing [9 deployables](service-catalog.md#open-payments-today). `PSP Integration` is a library here, on purpose |
 | Add `service-catalog.md` and `payment-state-machine.md` | Both exist: the catalog and [Payment lifecycle](payment-lifecycle.md) |
-| Eleven new documents | Most belong in existing docs under the [one-home rule](superpowers/specs/2026-11-05-docs-restructure-design.md#3-writing-rules). Only data movement may earn its own doc, and only if cells are needed |
+| Eleven new documents | Most belong in existing docs, since each fact has one home. Only data movement may earn its own doc, and only if cells are needed |
 | Decisions D1-D10 | These IDs are taken with other meanings. New decisions start at D16 |
 | Service networking as a top-three gap | Not for nine deployables with few hops. Moved to a few standards rules |
 | Missing sources | Fleet remediation, replay testing, Credits, thin events, Shepherd, and the older rate limiter, migration, and log line posts |
