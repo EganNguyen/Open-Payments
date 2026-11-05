@@ -3,6 +3,7 @@ import { Trend } from 'k6/metrics';
 
 const rate = Number(__ENV.RATE || 25000);
 const holdSeconds = Number(__ENV.HOLD || 30);
+const vus = Number(__ENV.VUS || Math.ceil(rate * 0.3));
 
 const addedLatency = new Trend('mock_added_latency_ms', true);
 
@@ -14,8 +15,8 @@ export const options = {
       rate,
       timeUnit: '1s',
       duration: `${holdSeconds}s`,
-      preAllocatedVUs: Math.ceil(rate * 0.25),
-      maxVUs: Math.ceil(rate * 0.6),
+      preAllocatedVUs: vus,
+      maxVUs: vus,
       gracefulStop: '30s',
     },
   },
