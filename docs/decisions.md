@@ -213,12 +213,118 @@ All values are starting points until measured. Other docs state the resulting ru
 
 - **Decision:** Count the real two-transaction flow in the derived load. Split C31 by phase. State which correctness checks apply at each stage. Add minimal synchronous fraud, the vault and the edge gateway to Phase 4, and run L5 again after Phase 5 as the sign-off number.
 - **Why:** Phase 1 required edge cases that depend on later phases, gates required checks with no broker or reconciler to satisfy them, and the headline number would have come from a path missing a synchronous step.
-- **Consequence:** Runs before Phase 3 are previews and prove nothing on the checklist. The estimated write load about doubles, which the database spike must test.
+- **Consequence:** Runs before Phase 3 are previews and prove nothing on the checklist. The estimated write load about doubles, which the database spike must test. [D29](#d29) and [D30](#d30) refine the numbers.
+
+D25 and D26 are reserved for the spike's answers: partitioning and retention, and gate G1.
+
+### D27
+
+**A negative answer from a PSP needs proof.** Status: `Committed`.
+
+- **Decision:** An attempt becomes `FAILED` only on an explicit decline, a confirmed cancel, or a not-found from a lookup the adapter declares authoritative, after a quiet window. Anything else is inconclusive, and the attempt stays `UNKNOWN`. Each adapter declares how it recovers: authoritative lookup, replay with the same key, or technical cancel. A replay happens only well inside the PSP's key retention, and never after it. The first recovery action waits for the attempt timeout, which is longer than the PSP deadline.
+- **Why:** The old rule, "PSP reports unknown attempt, so `FAILED`", can double-charge. A delayed request can land after the lookup, and the customer may then pay again on a new attempt. Real lookups also lag: [Stripe Search](https://docs.stripe.com/search) can be up to an hour behind in outages and isn't meant for read-after-write. Stripe's [guidance](https://docs.stripe.com/error-low-level) is to retry with the same key within 24 hours, and not to retry with any key after that.
+- **Consequence:** `InquireAsync` becomes `RecoverAsync`, with an inconclusive result, and `UNKNOWN` can last longer. Replay can complete a charge the PSP never received, which is correct because the customer asked for it and hasn't been told it failed. The assumption that every PSP supports inquiry by our ID is withdrawn. Tests C44 and C45 cover this.
+
+### D28
+
+**Never cancel a commit, and treat a failed commit as unknown.** Status: `Committed`.
+
+- **Decision:** `COMMIT` runs with no cancellation token. If a commit fails or the connection drops, the outcome is unknown. After a failed transaction A, the PSP is not called and the client gets 503. After a failed transaction B, the client gets 202 and the attempt stays findable.
+- **Why:** PostgreSQL treats a cancel during the synchronous wait as a [warning, and the transaction stays committed locally](https://paquier.xyz/postgresql-2/track-commit-synchronous/), possibly unreplicated. By our reading of that behavior, a cancelled request could silently break RPO 0, and a client could be told about a commit that a failover then loses.
+- **Consequence:** The transaction runner keeps commit out of the request's cancellation. Test C43 stalls both standbys and cancels during commit, to confirm the behavior on the version we run.
+
+### D29
+
+**Auto-capture is one PSP call where the PSP supports it.** Status: `Committed`.
+
+- **Decision:** Add a `sale` operation and the transitions into `CAPTURED` that it needs. Adapters declare the capability. Where it's missing, auto-capture stays two calls. Sales post only the money entries, with no hold.
+- **Why:** Two calls double PSP time and quota, double the commits, and add a state where authorization succeeded but capture failed, all to serve customers who never wanted the separation.
+- **Consequence:** An auto-captured payment drops from up to 4 commits to 2, which G1 depends on. The one-live-attempt index covers `sale`. `AUTHORIZED` is skipped on this path, so the merchant gets `payment.captured` alone.
+
+### D30
+
+**Callbacks apply atomically, and count as load.** Status: `Committed`.
+
+- **Decision:** The callback receiver inserts into `psp_events` and applies the event in one short transaction. If the event can't apply yet (E10), it commits with `processed_at` null, and a worker retries it. Adapters pass `attempt_id` to the PSP as the reference, so a callback can find its attempt before `psp_reference` is known. Callbacks are in the load model, with a concurrency limit of their own.
+- **Why:** The old text could record an event as seen and then crash before applying it, and the dedupe would then drop the retry. Separately, each PSP operation can produce a callback, which adds thousands of requests and commits per second that no capacity figure included.
+- **Consequence:** Callback traffic joins the mix and the mock PSP. `psp_events` needs a retention plan in D25.
+
+### D31
+
+**Idempotency answers are defined for every case.** Status: `Committed`.
+
+- **Decision:** All mutating requests share `idempotency_keys`, so `refunds` loses its own key column and unique index. The request hash covers the method, route and body. A request refused before its work began stores nothing, so the same key can run later. Once an operation has started, a replay of a finished operation returns the stored answer, and a replay of an unresolved one renders the current state.
+- **Why:** The docs said a retry "returns the stored answer", but an unresolved operation's stored 202 goes stale. Two key stores also cost a second unique index on the refund path.
+- **Consequence:** A key reused across routes gets 422. E25 and E27 cover this.
+
+### D32
+
+**Event and ledger identity are deterministic.** Status: `Committed`.
+
+- **Decision:** `payments.event_seq` rises by one for each outbox event, and that value is the event's `sequence`. `source_event_id` and `event_id` are derived from the attempt or refund ID and the posting kind. The balance check is per `txn_id` and currency.
+- **Why:** Using `version` as the sequence would leave gaps, because a refund reservation bumps it with no event, and consumers park on gaps. Deterministic IDs make a repeated decision produce the same rows, which unique constraints then reject.
+- **Consequence:** One more column on `payments`. `Decide` receives the IDs as inputs or derives them purely, as [D22](#d22) requires.
+
+### D33
+
+**Check the key before fraud, and record fraud blocks.** Status: `Committed`.
+
+- **Decision:** A read of the idempotency key comes before the fraud check, and a replay skips fraud. A fraud block is an attempt outcome: `FAILED` with `failure_code = fraud_blocked`, committed with no PSP call, and answered with 402.
+- **Why:** With fraud first, retries inflate velocity counters and spend the 50 ms budget on requests that do nothing. A block also had no row, no event and no answer defined anywhere.
+- **Consequence:** One extra read on the primary per request. The unique index stays the real guard against duplicates, since the read can race.
+
+### D34
+
+**Separate limits for each kind of waiting, and fixed timer ordering.** Status: `Committed`.
+
+- **Decision:** Requests, PSP calls per PSP, database work and callbacks each have their own concurrency limit. The reconciler has its own PSP quota, inside the PSP's limit, so recovery can't starve live traffic. Timers must keep this order: database call (200 ms) < PSP deadline (2.5 s) < total request budget (5 s) < attempt timeout (starting at 30 s) < PSP key retention.
+- **Why:** One in-flight cap can't tell 5,000 requests politely waiting on a PSP from a stuck database. A PSP slowdown also creates `UNKNOWN` attempts in bulk, and their inquiries would compete for the quota live payments need.
+- **Consequence:** More limits to tune in L1. Values remain starting points.
+
+### D35
+
+**What v1 does with money.** Status: `Proposed`, owner decision.
+
+- **Options:** (a) Merchants connect their own PSP accounts, and Open Payments never holds funds. (b) The platform holds funds and pays merchants out, as a payment facilitator does.
+- **Recommendation:** (a). Holding funds brings licensing, banking and payouts, which are out of scope. It also sets the PSP limit: Stripe's [default of 100 requests/s](https://docs.stripe.com/rate-limits) applies per account, so one platform account can't reach the target by default, while many merchant accounts might. [Hyperswitch](https://hyperswitch.io/blog/building-hyperswitch-the-world-s-first-open-source-payments-platform) is an open-source example of connecting merchants' own processors.
+- **Consequence if accepted:** Per-merchant PSP credentials become a requirement. `merchant_payable` and `settlement_bank` in [D21](#d21) become records of what the PSP owes the merchant, rather than our liabilities. Legal advice is still needed.
+
+### D36
+
+**Is 5,000 completed payments/s a peak or an average?** Status: `Proposed`, owner decision.
+
+- **Recommendation:** A peak. Keep L5 at 5,000/s for 60 min. State an average rate for storage sizing, and run the L2 soak at that rate plus peak bursts.
+- **Why:** 5,000/s for a full day is 432 million payments. Visa reports [257.5 billion processed transactions](https://s29.q4cdn.com/385744025/files/doc_downloads/2025/Visa-Fiscal-2025-Annual-Report.pdf) in fiscal 2025, about 705 million a day, so this would be about 61% of Visa's daily average. Data volume, backups and restore time on one primary may limit before throughput does.
+- **Consequence if accepted:** L2 and the storage model change. The throughput target doesn't.
+
+### D37
+
+**Build void and authorization expiry in v1.** Status: `Proposed`, owner decision.
+
+- **Recommendation:** Move `VOIDED` and `EXPIRED` to `Committed`, and void a late-approved attempt automatically where the PSP allows.
+- **Why:** Without them an `AUTHORIZED` payment has no exit but capture. The merchant can't release a customer's funds, the `auth_hold` clearing account can't clear ([D21](#d21)), and CK7 would page on every uncaptured payment. A late approval (C38) also needs a person to reverse it, when a void would fix it automatically. Adyen's [authorizations usually last 28 days](https://docs.adyen.com/account/payments-lifecycle), so expiry is a real case.
+- **Consequence if accepted:** A new adapter call, two new states in the contract, and more tests. If declined, CK7 must exclude `auth_hold`, and stuck holds become a manual process.
+
+### D38
+
+**Defer the per-account refund lock until balances can actually go negative.** Status: `Proposed`, owner decision. Would amend [D9](#d9).
+
+- **Recommendation:** Remove the advisory lock and balance check from v1, and bring them back with fees or payouts.
+- **Why:** With no payouts and no retained fees, refunds on each payment can't exceed its capture (CK3), so the sum can't go negative. The lock guards nothing yet, while it may cap one merchant at a few hundred refunds/s and add a lock to the deadlock order.
+- **Consequence if accepted:** C35 and the balance part of U3 wait for that later work, and row 87 of the checklist can't be ticked until then, so sign-off needs an exception recorded. If fees are added with a retained-fee refund policy, this must be revisited first, because a full refund could then take a balance below zero.
+
+### D39
+
+**Use PSP-hosted card fields in v1, and defer our own vault.** Status: `Proposed`, owner decision. Would amend [D10](#d10).
+
+- **Recommendation:** Card data never reaches our systems. `method_ref` is a PSP token, and browsers talk to the API with a limited client secret.
+- **Why:** [Hosted fields can keep merchants in the lightest assessment](https://www.securitymetrics.com/blog/ultimate-cheat-sheet-making-online-pci-compliance-work-you), while handling card data brings the full one. The vault is also the one shared dependency on the payment path. Vendor sources only, so confirm with a PCI assessor.
+- **Consequence if accepted:** PSP tokens don't move between PSPs, so failover (C13) only works for methods the second PSP can charge. Phase 4 drops the vault. A client-secret flow must be designed either way, because the docs let customers start attempts while the API has only secret merchant keys.
 
 ## Assumptions and limits
 
 - **Numbers are targets, not measurements.** SLOs, thresholds, pool sizes and the 60% CPU target are replaced by measured values from L1 and O3.
-- **The PSP must support idempotency keys and status inquiry by our ID.** The design depends on both.
+- **The PSP must support idempotency keys, and at least one recovery mode** ([D27](#d27)). The design depends on both. Inquiry by our ID is no longer assumed.
 - **The PSP contract is outside this design.** If the acquirer or PSP caps below the target, the answer is more PSPs or negotiation, not more code.
 - **Synchronous replication costs latency.** If p99 is breached, tune commit batching or add cells. Moving to asynchronous replication gives up RPO 0, which is an owner decision, not a tuning step.
 - **Exactly-once is not claimed.** Outcomes are effectively-once through idempotency keys and conditional transitions. Broker idempotence alone is not relied on.

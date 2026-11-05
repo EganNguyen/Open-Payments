@@ -26,7 +26,7 @@ Run after every load and chaos test.
 | CK2 | Every payment has at most one successful authorize, one successful capture, and one effect per refund at the PSP (compared by the PSP key of each operation) |
 | CK3 | `refunded_minor + refund_pending_minor ≤ captured_minor` for every payment, and `refund_pending_minor` equals the sum of its unresolved refunds |
 | CK4 | Every outbox row is eventually published, and every event had exactly one effect in each consumer |
-| CK5 | No payment, capture attempt or refund remains unresolved past the reconciler threshold |
+| CK5 | No payment, capture attempt or refund remains unresolved past the reconciler threshold, and no PSP event stays parked past its limit |
 | CK6 | No sustained growth in queue depth, outbox age or consumer lag |
 | CK7 | Clearing: no clearing account balance is nonzero past its allowed age |
 | CK8 | Timeliness: settlement files and other inputs arrived within their window |
@@ -49,7 +49,7 @@ CK7-CK10 are separate code from the payment-transition module ([D23](decisions.m
 | ID | Test | Pass criteria |
 |---|---|---|
 | L1 | Ramp per the [playbook](scaling-playbook.md#ramp-plan), one step at a time up to 5,000 completed payments/s, mixed workload, against the mock PSP with realistic latency and 2-5% errors | Gates met at every step: p99 platform overhead ≤ 100 ms; error rate (excluding deliberate rejections) < 0.1%; CK1-CK6 pass; results logged for the capacity model |
-| L2 | Soak: 5,000 completed payments/s for 24 h | Memory and Gen 2 GC rate show no upward trend; ThreadPool queue stable; no pool wait growth; CK1-CK6 pass |
+| L2 | Soak: 5,000 completed payments/s for 24 h. The rate is under owner review ([D36](decisions.md#d36)) | Memory and Gen 2 GC rate show no upward trend; ThreadPool queue stable; no pool wait growth; CK1-CK6 pass |
 | L3 | Overload survival: 15,000 req/s for 10 min | Excess rejected with 429 or 503; 5,000 completed payments/s holds; no OOM or restart; SLO restored within 2 min after the burst; CK1-CK6 pass |
 | L4 | Abuse: slow-body clients, oversized bodies, connection floods | Abusive clients are cut off; normal traffic keeps its SLO |
 | L5 | Sustained: 5,000 completed payments/s for 60 min | Gates met throughout; memory, queues and pool wait stay flat |
@@ -89,7 +89,7 @@ CK7-CK10 are separate code from the payment-transition module ([D23](decisions.m
 | C28 | Full outage, then restart of all services | Staged ramp and capped backlog drain; no second outage; CK pass before recovery is declared |
 | C29 | Replica lag of 30 s | Reads that must be fresh go to the primary; no stale payment status after create |
 | C30 | One merchant sends 50% of all traffic | Per-merchant limits protect others; other merchants keep their SLO |
-| C31 | Edge-case suite for payment handling ([E1-E24](failure-scenarios.md#edge-cases)), split by phase: C31a (E1-E9, E11-E13, E16-E18, E21), C31b (E10, E19, E20, E22-E24), C31c (E14, E15). Until void and expiry are built, E8 covers capture from a non-`AUTHORIZED` state | Each case returns its defined result; no state or ledger corruption |
+| C31 | Edge-case suite for payment handling ([E1-E29](failure-scenarios.md#edge-cases)), split by phase: C31a (E1-E9, E11-E13, E16-E18, E21, E25-E29), C31b (E10, E19, E20, E22-E24), C31c (E14, E15). Until void and expiry are built, E8 covers capture from a non-`AUTHORIZED` state | Each case returns its defined result; no state or ledger corruption |
 | C32 | PSP returns an amount or currency that differs from ours | Payment moves to `REVIEW`; no ledger entry for the disputed amount; alert fires |
 | C33 | Cell router or its config store unavailable (only if cells are adopted) | Routers keep the last mapping; mapping changes frozen; traffic keeps flowing |
 | C34 | Capture, refund and reconciler race on one payment, with lock order forced to collide | `40P01` is raised and counted in `pg_stat_database.deadlocks`; retried at most twice; `55P03` returns 503; exactly one effect per operation; CK1 and CK3 pass |
@@ -101,6 +101,13 @@ CK7-CK10 are separate code from the payment-transition module ([D23](decisions.m
 | C40 | Settlement file with duplicate lines, unmatched lines, wrong amounts and a missing line, ingested twice | Each line ends in the defined state; discrepancies page; ledger entries post once; a killed ingest resumes safely |
 | C41 | Key expiry job runs while payments are `UNKNOWN` past 24 hours, then the client retries | Key is kept, the stored answer returns, and there is no second charge; resolved keys expire |
 | C42 | Test-mode keys used against live data and live keys against test data, with test traffic flooding under load | Isolation holds in both directions; test traffic is shed first; live keeps its SLO ([D20](decisions.md#d20)) |
+| C43 | Stall both standbys and cancel the request while `COMMIT` waits. Separately, drop the connection during `COMMIT` for transactions A and B | No client is told a commit succeeded unless a standby has it, in a run with the fault verified. After A, no PSP call is made. After B, the answer is 202 and the attempt stays findable; CK2 passes ([D28](decisions.md#d28)) |
+| C44 | PSP lookup says not found, then the delayed request lands and is approved | The attempt isn't failed by the lookup alone. No second attempt can charge. With a proof-giving mode, a late approval still goes to `REVIEW`; CK2 passes ([D27](decisions.md#d27)) |
+| C45 | Attempt unresolved past the PSP's key retention, under each recovery mode | No replay is sent. The attempt stays `UNKNOWN` and escalates; no second charge |
+| C46 | Kill the process between callback receipt and commit; deliver a callback before transaction B commits; redeliver both | Each event applies once. The early event parks, then applies. None is dropped as already seen ([D30](decisions.md#d30)) |
+| C47 | PSP slows until thousands of attempts are `UNKNOWN`, then recovers | Recovery stays inside its own quota; live payments keep theirs; backlog drains with a rate cap; CK2 and CK5 pass ([D34](decisions.md#d34)) |
+| C48 | Callback flood at several times the normal rate | Callbacks are limited with their own permits and the PSP's retries deliver the rest; create-payment keeps its SLO; no event is lost |
+| C49 | Status-query flood | Create-payment keeps its SLO; reads shed first ([Stripe research](stripe-research.md#8-separate-rate-limits-from-load-shedding)) |
 
 ## Unit and property tests
 
@@ -110,7 +117,7 @@ CK7-CK10 are separate code from the payment-transition module ([D23](decisions.m
 | U2 | State machine: every legal transition, every illegal and out-of-order event |
 | U3 | Ledger property tests: always balanced, append-only, reservations never produce a negative balance |
 | U4 | Idempotency unit and integration tests (same key, same hash; same key, different hash; in-flight) |
-| U5 | Contract tests: event schemas (backward compatibility, size limit), PSP adapter recorded fixtures |
+| U5 | Contract tests: event schemas (backward compatibility, size limit), PSP adapter recorded fixtures, each adapter's declared capabilities, and amount conversion per currency |
 | U6 | Tenant isolation: a key for merchant A can never read or change merchant B's data |
 | U7 | Webhook and request signature, timestamp window and replay tests |
 | U8 | Log redaction: scanning logs for card-number patterns finds none |
@@ -252,7 +259,7 @@ The **Design response** column links to the mechanism, and **Proof** lists tests
 
 | # | Production problem | Design response | Proof | Verified |
 |---|---|---|---|---|
-| 70 | PSP timeout | [PSP integration](architecture.md#psp-integration): `UNKNOWN` state, status inquiry by reconciler | C3 | ☐ |
+| 70 | PSP timeout | [PSP integration](architecture.md#psp-integration): `UNKNOWN` state, recovery by reconciler | C3, C44 | ☐ |
 | 71 | PSP outage | [PSP integration](architecture.md#psp-integration): per-PSP breaker, failover to secondary | C13 | ☐ |
 | 72 | PSP rate limiting | [PSP integration](architecture.md#psp-integration): client-side token bucket, 429 handling | C12 | ☐ |
 | 73 | Duplicate authorization | [PSP integration](architecture.md#psp-integration): `attempt_id` as PSP idempotency key | C3, C5 | ☐ |
@@ -328,14 +335,14 @@ The **Design response** column links to the mechanism, and **Proof** lists tests
 | 15 | Double-entry ledger | [Ledger](architecture.md#ledger) | U3, CK1 | ☐ |
 | 16 | Atomic refund limits | [Refund rules](payment-lifecycle.md#refund-rules) | C6, CK3 | ☐ |
 | 17 | Unknown payment state handling | [Transition rules](payment-lifecycle.md#transition-rules), [PSP integration](architecture.md#psp-integration) | C3, C4, CK5 | ☐ |
-| 18 | Provider status inquiry | [PSP integration](architecture.md#psp-integration) | C3 | ☐ |
+| 18 | Provider recovery mode | [PSP integration](architecture.md#psp-integration) | C3, C44, C45 | ☐ |
 | 19 | Reconciliation | [PSP integration](architecture.md#psp-integration) | C9, CK5 | ☐ |
 | 20 | Multi-AZ Kubernetes deployment | [Cells](architecture.md#cells-and-routing), [Kubernetes](engineering-standards.md#kubernetes-and-operations) | C10, C11 | ☐ |
 | 21 | Autoscaling with headroom | [Kubernetes](engineering-standards.md#kubernetes-and-operations) | L3 | ☐ |
 | 22 | Circuit breakers and bulkheads | [PSP integration](architecture.md#psp-integration) | C13 | ☐ |
 | 23 | Canary deployments | [Kubernetes](engineering-standards.md#kubernetes-and-operations) | C19 | ☐ |
 | 24 | Security and PCI DSS controls | [Security](engineering-standards.md#security-and-fraud) | O4, U6, U8 | ☐ |
-| 25 | 5,000 TPS load and failure testing | [Verification](#how-verification-works) | L1-L6, C1-C42 (C33 only if cells are adopted) | ☐ |
+| 25 | 5,000 TPS load and failure testing | [Verification](#how-verification-works) | L1-L6, C1-C49 (C33 only if cells are adopted) | ☐ |
 
 ## Progress
 
@@ -345,8 +352,8 @@ Update these counts as rows are ticked.
 |---|---|---|
 | Production problems | 108 | 0 |
 | Production readiness items | 25 | 0 |
-| [Failure scenarios](failure-scenarios.md#failure-catalogue) (FS-01 to FS-42) | 42 | 0 |
-| [Edge cases](failure-scenarios.md#edge-cases) (E1 to E24) | 24 | 0 |
+| [Failure scenarios](failure-scenarios.md#failure-catalogue) (FS-01 to FS-49) | 49 | 0 |
+| [Edge cases](failure-scenarios.md#edge-cases) (E1 to E29) | 29 | 0 |
 | [Runbooks](failure-scenarios.md#runbooks) (R1 to R7) | 7 | 0 (none rehearsed) |
 
 A scenario is verified only when its proof test has passed with a recorded run, and its runbook, if any, has been rehearsed.
@@ -356,10 +363,10 @@ A scenario is verified only when its proof test has passed with a recorded run, 
 | Phase | Build | Exit when these pass |
 |---|---|---|
 | 0 | Mock PSP, k6 load scripts, automated CK1-CK10 checks, dashboards | CK checks run automatically after every test |
-| 1 | Payments core, idempotency, ledger, refunds, outbox table (written in the same transaction from the start), canonical log line | U1-U4, C5, C6, C31a, S1, S3, S5, S6 |
-| 2 | PSP adapter, reconciler, callbacks, settlement ingestion | C3, C4, C9, C12, C13, C15, C16, C23, C26, C31b, C32, C34, C35, C36, C37, C38, C39, C40, C41, U5 |
+| 1 | Payments core, idempotency, ledger, refunds, outbox table (written in the same transaction from the start), canonical log line | U1-U4, C5, C6, C31a, C43, S1, S3, S5, S6 |
+| 2 | PSP adapter, reconciler, callbacks, settlement ingestion | C3, C4, C9, C12, C13, C15, C16, C23, C26, C31b, C32, C34, C35, C36, C37, C38, C39, C40, C41, C44, C45, C46, C47, U5 |
 | 3 | Outbox publisher, broker, consumers, webhooks | C8, C17, C18, C27, C31c, U5, CK6 |
-| 4 | Hardening: limits, HA, deployment, minimal synchronous fraud, vault and edge gateway, and cells only if gate G1 requires them | L1-L6, C1, C2, C7, C10, C11, C19-C22, C24, C25, C28-C30, C33 (cells only), S2, S4, O3 |
+| 4 | Hardening: limits, HA, deployment, minimal synchronous fraud, vault and edge gateway, and cells only if gate G1 requires them | L1-L6, C1, C2, C7, C10, C11, C19-C22, C24, C25, C28-C30, C33 (cells only), C48, C49, S2, S4, O3 |
 | 5 | Security, full fraud rules, operations, test mode isolation | U6-U8, F1, C14, C42, O1, O2, O4, O5, O6, then L5 again on the complete path |
 
 **Sign-off:** all 108 and all 25 checklist rows are ticked, each with a recorded run, and the L5 run after Phase 5 is the number reported ([D24](decisions.md#d24)).

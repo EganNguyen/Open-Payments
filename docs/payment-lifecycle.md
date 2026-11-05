@@ -24,16 +24,19 @@ stateDiagram-v2
   AWAITING_METHOD --> PSP_PENDING: method given, attempt recorded
   AWAITING_METHOD --> CANCELED: merchant cancels or window ends
   PSP_PENDING --> AUTHORIZED: PSP approved
+  PSP_PENDING --> CAPTURED: PSP approved a sale
   PSP_PENDING --> AWAITING_METHOD: attempt declined
   PSP_PENDING --> ACTION_REQUIRED: customer must act
   PSP_PENDING --> UNKNOWN: timeout or crash
   PSP_PENDING --> REVIEW: amount or currency mismatch
   ACTION_REQUIRED --> PSP_PENDING: action finished
   ACTION_REQUIRED --> AUTHORIZED: PSP reports approved
+  ACTION_REQUIRED --> CAPTURED: PSP reports a sale approved
   ACTION_REQUIRED --> AWAITING_METHOD: action failed
   ACTION_REQUIRED --> UNKNOWN: action window ends
   UNKNOWN --> AUTHORIZED: inquiry says approved
-  UNKNOWN --> AWAITING_METHOD: inquiry says not approved
+  UNKNOWN --> CAPTURED: inquiry says a sale approved
+  UNKNOWN --> AWAITING_METHOD: declined, or proven not charged
   UNKNOWN --> ACTION_REQUIRED: inquiry says customer must act
   UNKNOWN --> REVIEW: amount or currency mismatch
   AWAITING_METHOD --> REVIEW: late approval on a failed attempt
@@ -87,10 +90,10 @@ stateDiagram-v2
 
 ## Attempts
 
-Each authorize or capture is one `payment_attempts` row with its own PSP key ([D5](decisions.md#d5)). Its states are `PENDING`, `ACTION_REQUIRED`, `UNKNOWN`, `SUCCEEDED`, `FAILED` and `REVIEW`. A decline is `FAILED` with a `failure_code`.
+Each authorize, sale or capture is one `payment_attempts` row with its own PSP key ([D5](decisions.md#d5), [D29](decisions.md#d29)). Its states are `PENDING`, `ACTION_REQUIRED`, `UNKNOWN`, `SUCCEEDED`, `FAILED` and `REVIEW`. A decline is `FAILED` with a `failure_code`.
 
-- **One live or successful attempt.** The unique index `payment_attempts_one_live_authorize` allows one authorize per payment in `PENDING`, `ACTION_REQUIRED`, `UNKNOWN` or `SUCCEEDED`, so two tries can't both charge. A new attempt while one is live gets 409 with `Retry-After`.
-- **Every attempt is checked.** Each passes admission and the fraud check, because retries on one payment are also how card testing works.
+- **One live or successful attempt.** The unique index `payment_attempts_one_live_authorize` allows one authorize or sale per payment in `PENDING`, `ACTION_REQUIRED`, `UNKNOWN` or `SUCCEEDED`, so two tries can't both charge. A new attempt while one is live gets 409 with `Retry-After`.
+- **Every attempt is checked.** Each passes admission and the fraud check, because retries on one payment are also how card testing works. A replay of a request isn't a new attempt, so it skips the check ([D33](decisions.md#d33)). A block is a `FAILED` attempt with `fraud_blocked`, with no PSP call, and it counts toward the cap.
 - **Attempts are bounded.** A payment allows at most 10 authorize attempts as a starting value. After that, new attempts are rejected and the payment waits for its window to end.
 - **Only the merchant or customer starts a new attempt.** The reconciler resolves attempts and never begins one.
 - **Keys are per request.** A retry with the same `Idempotency-Key` returns the stored answer, including a decline. A new try needs a new key.
@@ -106,7 +109,8 @@ Each row is one allowed transition. Anything not listed is forbidden.
 | `AWAITING_METHOD` | `PSP_PENDING` | New attempt recorded | Merchant or customer | None | `Committed` |
 | `AWAITING_METHOD` | `CANCELED` | Cancel request or payment window ends | Merchant or timer job | None | `Committed` |
 | `PSP_PENDING` | `AUTHORIZED` | PSP approved | PSP response, callback or reconciler | Authorization hold | `Committed` |
-| `PSP_PENDING` | `AWAITING_METHOD` | PSP declined; attempt `FAILED` | PSP response, callback or reconciler | None | `Committed` |
+| `PSP_PENDING`, `ACTION_REQUIRED` or `UNKNOWN` | `CAPTURED` | PSP approved a sale ([D29](decisions.md#d29)) | PSP response, callback or reconciler | Debit `psp_receivable`, credit `merchant_payable`; no hold | `Committed` |
+| `PSP_PENDING` | `AWAITING_METHOD` | PSP declined, or proof it can't succeed ([D27](decisions.md#d27)); attempt `FAILED` | PSP response, callback or reconciler | None | `Committed` |
 | `PSP_PENDING` | `ACTION_REQUIRED` | PSP requires customer action | PSP response or callback | None | `Committed` |
 | `PSP_PENDING` | `UNKNOWN` | Timeout, or reconciler finds a stale attempt | Internal | None | `Committed` |
 | `PSP_PENDING` or `UNKNOWN` | `REVIEW` | Amount or currency mismatch | PSP response, callback or reconciler | None for the disputed amount | `Committed` |
@@ -115,7 +119,7 @@ Each row is one allowed transition. Anything not listed is forbidden.
 | `ACTION_REQUIRED` | `AWAITING_METHOD` | Action failed; attempt `FAILED` | Callback or reconciler | None | `Committed` |
 | `ACTION_REQUIRED` | `UNKNOWN` | Action window ends | Timer job | None | `Committed` |
 | `UNKNOWN` | `AUTHORIZED` | Inquiry says approved | Reconciler | Authorization hold | `Committed` |
-| `UNKNOWN` | `AWAITING_METHOD` | Inquiry says not approved, or unknown attempt; attempt `FAILED` | Reconciler | None | `Committed` |
+| `UNKNOWN` | `AWAITING_METHOD` | PSP declined, or proof it can't succeed ([D27](decisions.md#d27)); attempt `FAILED` | Reconciler | None | `Committed` |
 | `UNKNOWN` | `ACTION_REQUIRED` | Inquiry says the customer must act | Reconciler | None | `Committed` |
 | `AWAITING_METHOD` | `REVIEW` | Late approval on a `FAILED` attempt | Callback or reconciler | None until resolved | `Committed` |
 | `AUTHORIZED` | `CAPTURED` | PSP confirms capture | PSP response, callback or reconciler | Release the hold; debit `psp_receivable`, credit `merchant_payable` | `Committed` |
@@ -158,10 +162,11 @@ An "authorization hold" is a logical ledger entry, `auth_hold` against `auth_hol
 ### Idempotency
 
 - Every create, new-attempt, cancel, capture and refund request carries an `Idempotency-Key`, as would `Proposed` void requests.
-- A retry with the same key returns the stored result and does not repeat the transition.
-- The same key with a different body is rejected with 422.
+- A retry with the same key of a finished operation returns the stored result and does not repeat the transition. A retry of an unresolved operation renders the current state, which is never staler than the stored 202 ([D31](decisions.md#d31)).
+- The same key with a different method, route or body is rejected with 422.
 - The same key while the first request is running returns 409 with `Retry-After`.
-- Refunds use their own key on the `refunds` table.
+- A request refused before its work began stores nothing, so the same key can run later.
+- All mutating requests share `idempotency_keys`, including refunds.
 - Keys are kept for at least 24 hours after their operation resolves, and never expire while it is unresolved ([D19](decisions.md#d19)). The module sets `resolved_at` in the same transaction as the attempt's final state.
 
 ### Late, duplicate and out-of-order events
@@ -211,7 +216,7 @@ update payments
 
 **Or release.** On a PSP decline, subtract the amount from `refund_pending_minor`, conditionally move the refund to `FAILED`, post a reversing entry for the reservation, and insert the outbox event. Roll back if the refund moved no row.
 
-**On a timeout,** the refund becomes `UNKNOWN`, the amount stays reserved, and the reconciler confirms or releases it. If the PSP reports no such refund, for example after a crash before the call, the reconciler releases it.
+**On a timeout,** the refund becomes `UNKNOWN`, the amount stays reserved, and the reconciler confirms or releases it. It releases only with proof that the refund can't succeed ([D27](decisions.md#d27)), for example after a crash before the call. The per-account lock in step 1 may be deferred ([D38](decisions.md#d38), `Proposed`).
 
 **On an amount or currency mismatch,** the refund moves to `REVIEW` and the payment state does not change. The amount stays reserved until a person confirms or releases it.
 
@@ -244,9 +249,9 @@ An operation with no settlement line past its expected date also raises a discre
 A PSP timeout does not tell us whether the customer was charged.
 
 - The API returns `202 Accepted` with the payment ID. The merchant learns the result by webhook or polling.
-- The reconciler asks the PSP for the attempt's status and applies the answer.
-- Never retry a charge without the same PSP idempotency key, or the customer can be charged twice.
-- If the PSP reports an unknown attempt, an authorize attempt is marked `FAILED` and the payment returns to `AWAITING_METHOD`, while a capture attempt is marked `FAILED` so a new capture can be requested.
+- The reconciler recovers through the adapter's [mode](architecture.md#psp-integration), after the attempt timeout and within its own quota, and applies the answer.
+- Never retry a charge without the same PSP idempotency key, or the customer can be charged twice. Never replay after the PSP's key retention, because it could run as a new charge.
+- **A "not found" is not a failure** unless it is proof ([D27](decisions.md#d27)), because a delayed request can still land. With proof, an authorize or sale attempt is marked `FAILED` and the payment returns to `AWAITING_METHOD`, while a capture attempt is marked `FAILED` so a new capture can be requested. Without proof it stays `UNKNOWN`, and escalates past the age limit.
 - While an attempt is `UNKNOWN`, no new attempt can start, because the one-live-attempt index blocks it.
 - Capture attempts and refunds stay unresolved on their own rows, and the payment state does not change until they resolve.
 - A payment, capture attempt or refund unresolved beyond a time limit raises an alert. A stuck refund also blocks its reserved amount.
@@ -256,7 +261,7 @@ A PSP timeout does not tell us whether the customer was charged.
 | Mode | Behavior | Use when | Status |
 |---|---|---|---|
 | Authorize, then capture | Funds are reserved, and the merchant captures later | Physical goods, hotels, rentals | `Committed` |
-| Auto-capture | Capture is triggered right after authorization | Digital goods, instant services | `Committed` |
+| Auto-capture | One PSP sale call where supported ([D29](decisions.md#d29)), otherwise capture right after authorization | Digital goods, instant services | `Committed` |
 | Partial capture | Capture less than authorized; the remainder is released | Partial shipment | `Proposed` |
 
 The capture amount must not exceed the authorized amount. Capture and refund requests at the same moment are serialized by conditional updates: one wins and the other re-reads.
@@ -267,7 +272,7 @@ Timer jobs use the same conditional update, so a job and a manual capture cannot
 
 | Timer | Applies to | Action | Status |
 |---|---|---|---|
-| Attempt timeout | `PSP_PENDING` | Move to `UNKNOWN`, then inquire. These payments are found through the partial index `payments_unresolved` | `Committed` |
+| Attempt timeout (starting value 30 seconds, always above the PSP deadline) | `PSP_PENDING` | Move to `UNKNOWN`, then recover. These payments are found through the partial index `payments_unresolved` | `Committed` |
 | Action window (starting value 15 minutes) | `ACTION_REQUIRED` | Move to `UNKNOWN`, then inquire. Found through `payment_attempts_action_window` | `Committed` |
 | Payment window (starting value 24 hours) | `AWAITING_METHOD` | Move to `CANCELED`. Found through `payments_awaiting` | `Committed` |
 | Idempotency key expiry | Keys resolved at least 24 hours ago | Delete in batches; never a key with no `resolved_at` | `Committed` |

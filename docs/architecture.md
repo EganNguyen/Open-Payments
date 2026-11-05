@@ -24,7 +24,8 @@ Stack: C# / .NET 10, ASP.NET Core, PostgreSQL, Kafka-compatible broker, Kubernet
 
 **Derived load (to validate in L1):**
 
-- An auto-captured payment takes up to 4 commits and about 20-22 row writes across the two authorize and two capture transactions ([D24](decisions.md#d24), our estimate). That is up to 20k commits/s and about 100-110k row writes/s at target, before refunds, which add about 1.7k commits/s at the [example mix](scaling-playbook.md#workload-and-load-generation). With 4 active cells, it is about a quarter of that per cell.
+- Our estimates, to be replaced by the spike ([D24](decisions.md#d24)). An auto-captured payment takes 2 commits and about 11-13 row writes as one PSP call ([D29](decisions.md#d29)), or up to 4 commits and about 20-22 row writes as two. Refunds add 2 commits each, and each PSP callback can add 1 ([D30](decisions.md#d30)).
+- At target with the [example mix](scaling-playbook.md#workload-and-load-generation), that is about 12k commits/s with one-call capture, or about 22k with two, plus up to 6-11k/s for callbacks. Publishing the outbox adds more. With 4 active cells, it is about a quarter of that per cell.
 - PSP latency of 200 ms to 2 s means about 5,000 requests in flight at a 1 s average (Little's Law).
 
 ## Principles
@@ -130,17 +131,18 @@ Not on the diagram: observability, the Kubernetes platform, Redis, and the mock 
 **Make an attempt** ([D16](decisions.md#d16)):
 
 1. **Admit.** Authenticate, rate-limit, take a concurrency permit. If none is available, reject at once with 429 or 503 and `Retry-After`.
-2. **Fraud check** within a 50 ms budget, for every attempt. On timeout, apply the fallback for the payment's risk tier.
-3. **Transaction A** (short, no network calls). Insert the idempotency record, insert the payment or conditionally move it from `AWAITING_METHOD` to `PSP_PENDING`, and insert an attempt with its own `attempt_id`. Commit.
-   - A unique violation on `(merchant_id, idempotency_key)` means a duplicate. If the stored request hash matches, return the stored result. If not, return 422. If the first request is still in flight, return 409 with `Retry-After`.
-   - A unique violation on `payment_attempts_one_live_authorize` means another attempt is live or succeeded, so return the current status, or 409 with `Retry-After`. The attempt cap is also checked here.
-4. **Call the PSP** using `attempt_id` as the PSP idempotency key, with a hard deadline, circuit breaker and rate limiter.
-5. **Transaction B** (short). Conditionally move the payment to its new state, update the attempt, insert any ledger entries and insert the outbox event. Commit.
-6. **Respond** with the result:
+2. **Read the key.** A finished or running request with this key answers now, with no fraud check ([D33](decisions.md#d33), [D31](decisions.md#d31)).
+3. **Fraud check** within a 50 ms budget, for every new attempt. On timeout, apply the fallback for the payment's risk tier. A block commits a `FAILED` attempt with `fraud_blocked`, makes no PSP call and answers 402.
+4. **Transaction A** (short, no network calls). Insert the idempotency record, insert the payment or conditionally move it from `AWAITING_METHOD` to `PSP_PENDING`, and insert an attempt with its own `attempt_id`. Commit, with no cancellation ([D28](decisions.md#d28)). If the commit fails, answer 503 and don't call the PSP.
+   - A conflict on `(merchant_id, key)` means a duplicate, and is handled as in step 2. If the stored request hash differs, return 422. If the first request is still running, return 409 with `Retry-After`. Use `ON CONFLICT DO NOTHING`, so the transaction isn't aborted by the conflict.
+   - A unique violation on `payment_attempts_one_live_authorize` means another attempt is live or succeeded, so return the current status, or 409 with `Retry-After`. The attempt cap is also checked here. These refusals store nothing, so the key can run later.
+5. **Call the PSP** using `attempt_id` as the PSP idempotency key and as the reference, with a hard deadline, circuit breaker and rate limiter. From here on, the request's cancellation no longer applies, so a client disconnect can't strand a charged attempt.
+6. **Transaction B** (short). Conditionally move the payment to its new state, update the attempt, insert any ledger entries and insert the outbox event. Commit, with no cancellation. If it fails, the attempt stays unresolved and the answer is 202, never a decline.
+7. **Respond** with the result:
 
 | PSP result | Payment | Attempt | API answer |
 |---|---|---|---|
-| Approved | `AUTHORIZED` | `SUCCEEDED` | Success |
+| Approved | `AUTHORIZED`, or `CAPTURED` for a sale | `SUCCEEDED` | Success |
 | Declined | `AWAITING_METHOD` | `FAILED` with a `failure_code` | The decline, with a way to try again |
 | Requires action | `ACTION_REQUIRED` | `ACTION_REQUIRED` | The action the customer must take ([Customer action](payment-lifecycle.md#customer-action)) |
 | Timeout | `UNKNOWN` | `UNKNOWN` | `202 Accepted` with the payment ID; the result comes by webhook or polling |
@@ -154,8 +156,9 @@ Not on the diagram: observability, the Kubernetes platform, Redis, and the mock 
 | Crash point | What the database holds | Recovery |
 |---|---|---|
 | Before transaction A commits | nothing | Client retries with the same key |
-| After A, before the PSP call | payment in `PSP_PENDING`, attempt `PENDING` | Reconciler inquires by `attempt_id`. The PSP reports "unknown attempt", so the attempt is `FAILED` and the payment returns to `AWAITING_METHOD` |
-| After the PSP call, before B | payment in `PSP_PENDING`, attempt `PENDING` | Reconciler inquires by `attempt_id` and applies the PSP's real answer |
+| After A, before the PSP call | payment in `PSP_PENDING`, attempt `PENDING` | After the attempt timeout, the reconciler recovers through the adapter's mode ([D27](decisions.md#d27)). It fails the attempt only with proof that it can't succeed. A replay may complete the charge instead |
+| After the PSP call, before B | payment in `PSP_PENDING`, attempt `PENDING` | Same, and the reconciler applies the PSP's real answer |
+| During a commit | Unknown until read | Read the row. Nothing is retried blind ([D28](decisions.md#d28)) |
 | After B commits, before the response | final state and outbox event | Client retries; the idempotency record returns the stored result |
 
 ## Data model
@@ -175,6 +178,7 @@ create table payments (
   refunded_minor       bigint not null default 0,
   refund_pending_minor bigint not null default 0,
   attempt_count        int not null default 0,
+  event_seq            int not null default 0, -- rises by one per outbox event (D32)
   expires_at           timestamptz not null, -- payment window for AWAITING_METHOD
   version              int not null default 0,
   created_at           timestamptz not null default now(),
@@ -187,13 +191,13 @@ create index payments_unresolved on payments (updated_at)
 create index payments_awaiting on payments (expires_at)
   where state = 'AWAITING_METHOD';
 
--- one row per authorize or capture, each with its own key (D5); void is Proposed
+-- one row per authorize, sale or capture, each with its own key (D5, D29); void is Proposed
 -- refunds have their own row and key in the refunds table
 create table payment_attempts (
   attempt_id    uuid primary key,
   payment_id    uuid not null references payments(id),
   merchant_id   uuid not null,
-  operation     text not null check (operation in ('authorize','capture')),
+  operation     text not null check (operation in ('authorize','sale','capture')),
   psp           text not null,
   state         text not null,
   failure_code  text,
@@ -215,7 +219,7 @@ create index payment_attempts_psp_reference on payment_attempts (psp, psp_refere
   where psp_reference is not null;
 -- one live or successful authorize per payment (D16)
 create unique index payment_attempts_one_live_authorize on payment_attempts (payment_id)
-  where operation = 'authorize'
+  where operation in ('authorize','sale')
     and state in ('PENDING','ACTION_REQUIRED','UNKNOWN','SUCCEEDED');
 -- one live or successful capture per payment
 create unique index payment_attempts_one_live_capture on payment_attempts (payment_id)
@@ -228,6 +232,7 @@ create table idempotency_keys (
   request_hash   bytea not null,
   payment_id     uuid,
   attempt_id     uuid,
+  refund_id      uuid,
   response_code  int,
   response_body  jsonb,
   created_at     timestamptz not null default now(),
@@ -256,6 +261,7 @@ create table psp_events (
   psp_event_id text not null,
   payload      jsonb not null,
   received_at  timestamptz not null default now(),
+  processed_at timestamptz, -- null means parked, to be retried (D30)
   primary key (psp, psp_event_id)
 );
 
@@ -263,13 +269,11 @@ create table refunds (
   id              uuid primary key,
   payment_id      uuid not null references payments(id),
   merchant_id     uuid not null,
-  idempotency_key text not null,
   amount_minor    bigint not null check (amount_minor > 0),
   state           text not null,
   psp             text not null,
   psp_reference   text,
-  created_at      timestamptz not null default now(),
-  unique (merchant_id, idempotency_key)
+  created_at      timestamptz not null default now()
 );
 create index refunds_unresolved on refunds (created_at)
   where state in ('PENDING','UNKNOWN');
@@ -376,7 +380,7 @@ create table ledger_entries (
 | Refund confirmed | `refund_reserved` | `psp_refund_payable` | Real | Settlement line matches |
 | Settlement of a refund | `psp_refund_payable` | `settlement_bank` | Real | Clears the payable |
 
-**Balance invariant.** The application inserts all entries of a transaction in one statement, and a deferred constraint trigger checks that debits equal credits per `txn_id`. Its cost is measured in L1. If too high, a continuous audit query that pages on any imbalance replaces it, and property tests (U3) remain the main guard.
+**Balance invariant.** The application inserts all entries of a transaction in one statement, and a deferred constraint trigger checks that debits equal credits per `txn_id` and currency. Its cost is measured in L1. If too high, a continuous audit query that pages on any imbalance replaces it, and property tests (U3) remain the main guard.
 
 **Negative balance.** Refund and payout checks take a per-account advisory transaction lock, read the available balance from the latest snapshot plus recent entries, and insert a reservation entry in the same transaction ([D9](decisions.md#d9)). The create-payment path never takes this lock. Payout reservation rules belong to the payout design, which is `Open`.
 
@@ -385,17 +389,37 @@ create table ledger_entries (
 ```csharp
 public interface IPspAdapter
 {
+    PspCapabilities Capabilities { get; } // sale, recovery mode, key retention (D27, D29)
     Task<PspResult> AuthorizeAsync(AttemptId attempt, Money amount, PaymentMethodRef method, CancellationToken ct);
+    Task<PspResult> SaleAsync(AttemptId attempt, Money amount, PaymentMethodRef method, CancellationToken ct); // authorize and capture in one call
     Task<PspResult> CompleteActionAsync(AttemptId attempt, CancellationToken ct); // after the customer acts
     Task<PspResult> CaptureAsync(AttemptId attempt, Money amount, CancellationToken ct);
     Task<PspResult> RefundAsync(RefundId refund, Money amount, CancellationToken ct);
-    Task<PspInquiry> InquireAsync(AttemptId attempt, CancellationToken ct); // status by our idempotency key
-    Task<PspInquiry> InquireRefundAsync(RefundId refund, CancellationToken ct);
+    Task<PspInquiry> RecoverAsync(AttemptId attempt, CancellationToken ct); // through the adapter's recovery mode
+    Task<PspInquiry> RecoverRefundAsync(RefundId refund, CancellationToken ct);
     IAsyncEnumerable<SettlementLine> ReadSettlementAsync(SettlementFile file, CancellationToken ct);
 }
 ```
 
-`PspResult` is one of `Approved`, `Declined` (with a failure code) or `RequiresAction` (with what the customer must do). A `Pending` result is `Proposed`, for methods that finish later. `PaymentMethodRef` names a method by type and token, so a new method needs no interface change ([D17](decisions.md#d17)).
+`PspResult` is one of `Approved`, `Declined` (with a failure code) or `RequiresAction` (with what the customer must do). A `Pending` result is `Proposed`, for methods that finish later. `PspInquiry` adds `ProvenNotCharged` and `Inconclusive`, and only proof fails an attempt ([D27](decisions.md#d27)). `PaymentMethodRef` names a method by type and token, so a new method needs no interface change ([D17](decisions.md#d17)).
+
+**Recovery modes.** PSPs differ in how a lost answer is found, so each adapter declares its mode:
+
+| Mode | How it recovers | Proves "not charged"? | Example |
+|---|---|---|---|
+| Authoritative lookup | Reads the operation by our reference | Only after a quiet window, and only if the PSP documents the lookup as consistent | To be checked per PSP |
+| Replay | Sends the same request with the same key, which returns the first answer or runs it now | No need: it ends with a real answer. Allowed only well inside key retention, starting at 1 hour | [Stripe](https://docs.stripe.com/error-low-level) |
+| Technical cancel | Cancels by our reference, and the result arrives by callback | Yes, once the cancel is confirmed | [Adyen `/cancels`](https://docs.adyen.com/api-explorer/Checkout/latest/post/payments/_paymentPspReference_/cancels) |
+
+Callbacks can resolve an attempt under any mode. If no mode can reach an answer, the attempt stays `UNKNOWN` and escalates to a person.
+
+| Checked 2026-11-05 | Stripe | Adyen |
+|---|---|---|
+| Default rate limit | [100 requests/s per account, 25 per endpoint](https://docs.stripe.com/rate-limits) | Not confirmed; ask the PSP |
+| Idempotency key retention | [At least 24 hours](https://docs.stripe.com/api/idempotent_requests); a new request may run after that | [7 days or more](https://docs.adyen.com/development-resources/api-idempotency); its pages differ on the upper bound |
+| Lookup by our ID | [Search lags under a minute, up to an hour in outages](https://docs.stripe.com/search); not for read-after-write | Not confirmed; [webhooks are its advice for missing responses](https://docs.adyen.com/development-resources/api-idempotency) |
+
+Provider facts change, so recheck them at adapter time, and record results in the adapter's contract tests.
 
 - **Idempotency:** each `attempt_id` and `refund_id` is the PSP idempotency key for one operation, reused for any retry of that operation. Authorize and capture have different keys ([D5](decisions.md#d5)).
 - **Deadline:** each call has an explicit deadline from the request budget (initially 2.5 s, configurable per PSP).
@@ -403,14 +427,14 @@ public interface IPspAdapter
 - **Retries:** automatic only before the request was sent (connection failures) or with the same idempotency key. Never a blind retry of a charge.
 - **Failover:** when a PSP breaker is open, new payments route to a secondary PSP if the merchant allows it. In-flight attempts stay with the failed PSP and are resolved by inquiry.
 - **Provider changes:** adapters are versioned and covered by recorded-fixture contract tests (U5).
-- **Callbacks:** the callback receiver in the Payments API verifies the signature, inserts into `psp_events` (`ON CONFLICT DO NOTHING`) and applies the event through the payment-transition module. Duplicate callbacks are no-ops.
+- **Callbacks:** the callback receiver in the Payments API verifies the signature, inserts into `psp_events` (`ON CONFLICT DO NOTHING`) and applies the event through the payment-transition module, in one transaction. An event that can't apply yet is parked and retried. Duplicate callbacks are no-ops ([D30](decisions.md#d30)).
 - **Reconciler:**
-  - Every few seconds it selects payments, attempts and refunds that are unresolved past a threshold, calls `InquireAsync` or `InquireRefundAsync`, and applies the answer.
+  - Every few seconds it selects payments, attempts and refunds that are unresolved past the attempt timeout, calls `RecoverAsync` or `RecoverRefundAsync` within its own PSP quota ([D34](decisions.md#d34)), and applies the answer.
   - It ingests each PSP settlement file line by line, matches lines to operations, and writes any discrepancy to a table that pages on non-zero ([Settlement lines](payment-lifecycle.md#settlement-lines), [D18](decisions.md#d18)).
 
 ## Events and webhooks
 
-- **Transactional outbox.** The event row is inserted in the same transaction as the state change. The publisher reads unpublished rows in batches with `FOR UPDATE SKIP LOCKED`, publishes with `Acks.All` and idempotence enabled, compresses batches, then marks rows published. If the broker is down, events wait in the outbox.
+- **Transactional outbox.** The event row is inserted in the same transaction as the state change. The publisher reads unpublished rows in batches, publishes with `Acks.All` and idempotence enabled, compresses batches, then records its progress. If the broker is down, events wait in the outbox. How it reads is `MEASURE-FIRST`: marking every row adds an update per event to the primary, so the spike compares that with a progress marker and with log-based capture, whose [replication slot can fill the disk if it stalls](https://www.conduktor.io/blog/transactional-outbox-pattern-database-kafka.md). Each payment has a single publisher at a time ([Stripe research](stripe-research.md#7-fix-event-ordering)).
 - **Topics:** keyed by `payment_id`, so one payment's events stay ordered. Each event has `event_id`, a per-payment `sequence` and a schema version, and carries IDs and state rather than large blobs (about 32 KB at most). A partition plan per cell is reviewed in O3.
 - **Broker:** replication factor 3, `min.insync.replicas=2`.
 - **Consumers:**
@@ -427,8 +451,9 @@ public interface IPspAdapter
 
 | Area | Feature | Status |
 |---|---|---|
-| Payments | Create with an idempotency key; authorize then full capture; status query | `Committed` |
-| Payments | Partial capture, void, authorization expiry | `Proposed` |
+| Payments | Create with an idempotency key; authorize then full capture; one-call sale; status query | `Committed` |
+| Payments | Void and authorization expiry | `Proposed`, owner decision [D37](decisions.md#d37) |
+| Payments | Partial capture | `Proposed` |
 | Refunds | Full and partial refunds, refund idempotency, total never above captured | `Committed` |
 | Money correctness | Append-only double-entry ledger, derived balances, reconciliation, continuous audit | `Committed` |
 | Reliability | Safe retries, bounded queues, deadlines, deadlock prevention and retry, provider failover | `Committed` |
@@ -436,7 +461,7 @@ public interface IPspAdapter
 | Reliability | Multiple cells | `Open` until G1 |
 | Events | Transactional outbox; signed merchant webhooks with dead-letter queue | `Committed` |
 | Security and risk | Vault, tenant isolation, secrets rotation, fast fraud rules with fallback | `Committed` |
-| Operations | Metrics, logs, traces, alerts; runbooks and drills for 42 failure scenarios | `Committed` (none rehearsed) |
+| Operations | Metrics, logs, traces, alerts; runbooks and drills for 49 failure scenarios | `Committed` (none rehearsed) |
 | Merchant experience | Dashboard and checkout screens | `Proposed`: prototype outside this repo |
 | Payments | Retry on the same payment, customer-action state, cancel | `Committed` ([D16](decisions.md#d16), [D17](decisions.md#d17)) |
 | Payments | Merchant test mode | `Committed` ([D20](decisions.md#d20)); isolation mechanism `Open` |

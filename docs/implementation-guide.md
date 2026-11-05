@@ -152,6 +152,10 @@ Write a new detailed plan at the start of each [roadmap stage](superpowers/plans
 ```
 validate request and auth
       |
+read the key; a replay answers here
+      |
+fraud check; a block commits a failed attempt and answers 402
+      |
 transaction A: idempotency key + payment + attempt   commit
       |
    request token is dropped here; a deadline token takes over
@@ -163,13 +167,17 @@ transaction B: state + attempt + key result + ledger + outbox   commit
 answer the client
 ```
 
-### Three mistakes to design out
+### Five mistakes to design out
 
 **1. Cancelling after the money has moved.** If the client disconnects after transaction A and the request token still governs the work, the PSP may charge while transaction B never runs. After A commits, use a deadline token only.
 
 **2. Reporting a decline you don't know about.** If transaction B fails after the PSP approved, the customer may have been charged. Answer 202, leave the attempt unresolved, and let recovery find it. Never answer with a decline.
 
 **3. Calling the PSP under a new key.** A retry of the same operation uses the same `attempt_id` or `refund_id`. A new key is a new charge.
+
+**4. Treating "not found" as "not charged".** A delayed request can still land. Only proof fails an attempt ([D27](decisions.md#d27)), and a replay stops well before the PSP's key retention ends.
+
+**5. Cancelling a commit.** A cancel during the synchronous wait can leave a transaction committed but not replicated, so `COMMIT` never takes a cancellable token ([D28](decisions.md#d28)).
 
 ### Outcomes and answers
 
@@ -181,8 +189,10 @@ The routes are defined in `api/openapi.yaml`, and these codes follow the plan's 
 | PSP requires customer action | 200 with the action |
 | Declined | 402 with `failure_code`; the payment can be retried |
 | PSP timeout, or transaction B failed after the PSP call | 202 with the payment ID |
-| Same key, same body, finished | The stored answer, unchanged |
-| Same key, different body | 422 |
+| Same key, same request, finished | The stored answer, unchanged |
+| Same key, same request, unresolved | The current state, with 202 |
+| Same key, different method, route or body | 422 |
+| Fraud block | 402 with `fraud_blocked`, and no PSP call |
 | Same key, first request running | 409 with `Retry-After` |
 | Another attempt or capture is live | Current status, or 409 with `Retry-After` |
 | Attempt cap reached | 409 with code `attempt_cap_reached` |

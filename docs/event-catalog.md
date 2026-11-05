@@ -15,7 +15,7 @@ Every event has the same fields, and is at most 32 KB.
 | `event_id` | UUID | Unique per event. Merchants and consumers deduplicate on it |
 | `type` | string | A name from the table below. New types may be added |
 | `schema_version` | integer | Version of this event's shape |
-| `sequence` | integer | Per payment, rising with no gaps within that payment's events |
+| `sequence` | integer | `payments.event_seq`: per payment, rising by one for each event ([D32](decisions.md#d32)) |
 | `payment_id` | UUID | Also the topic key, so one payment's events stay ordered |
 | `merchant_id` | UUID | The owning merchant |
 | `state` | string | Payment state after the change |
@@ -37,7 +37,7 @@ Delivery is at-least-once, so a consumer can see an event twice. A lower `sequen
 | `payment.refunded` | `refund_id`, `amount_minor`, `refunded_minor`, `currency` |
 | `payment.refund_failed` | `refund_id`, `failure_code` |
 
-`REVIEW` sends no event until it is resolved.
+`REVIEW` sends no event until it is resolved. A one-call sale sends `payment.captured` alone, so a merchant can't rely on `payment.authorized` coming first ([D29](decisions.md#d29)). A fraud block is a `payment.attempt_failed` with `fraud_blocked`.
 
 ## Thin or full events
 

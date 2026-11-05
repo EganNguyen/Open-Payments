@@ -21,6 +21,7 @@ Status: Draft · Last updated: 2026-11-05
 | **p95 / p99** | 95 or 99 of every 100 requests are faster than this time. It shows the slow cases averages hide. |
 | **RPO / RTO** | How much committed data can be lost, and how long recovery may take. |
 | **Reconciliation** | A background job asks the PSP what really happened and records the answer, and compares PSP settlement files with the ledger. |
+| **Sale** | One PSP call that authorizes and captures together. |
 | **Runbook / drill** | Ordered recovery steps, and a rehearsal of them under an injected fault. |
 | **State machine** | A payment can move only along allowed steps. Anything else is rejected. |
 | **Unknown state** | The PSP outcome is not known yet. This is a real state, not a failure. |
@@ -37,3 +38,4 @@ Status: Draft · Last updated: 2026-11-05
 | **outbox publisher** | The worker moving committed outbox events to the broker | "relay" |
 | **PSP** | Payment service provider: the company or bank connection that moves card money | "bank", when the PSP is meant |
 | **`Committed` / `Proposed` / `Open`** | Part of the design / suggested but not adopted / not yet decided | Any other status label |
+| **`READY` / `MEASURE-FIRST` / `NEEDS-OWNER`** | How far an area can be built: its questions are resolved / it needs a measurement first / it needs an owner decision first. Used only in the [readiness table](superpowers/specs/2026-11-05-implementation-and-benchmark-design.md#design-readiness) | A claim that something works |

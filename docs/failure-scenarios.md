@@ -44,6 +44,11 @@ Columns: **Detect** is the signal that shows it. **Automatic** is what the syste
 | FS-06 | PSP DNS fails or its TLS certificate expires | Connect and TLS error alerts | Breaker opens; fast failures | Fix DNS or certificate; breaker recovers; reconcile | C16 |
 | FS-07 | PSP result disagrees with ours (amount or currency) | Amount-mismatch check on every PSP answer | Payment moves to `REVIEW`; no ledger entry for the disputed amount; alert | Person compares the PSP record, then corrects with a reversing entry | C32 |
 | FS-08 | Fraud service is unavailable | Fraud timeout rate | Fallback policy per risk tier (for example allow low value, hold high value); each decision logged | Restore service; review payments decided by fallback | C14 |
+| FS-44 | PSP lookup says "not found", but the request lands later | Late-approval alert; lookup age | The attempt stays `UNKNOWN` without proof, so no new attempt can charge. A late approval goes to `REVIEW` | Resolve through the adapter's recovery mode ([D27](decisions.md#d27)) | C44, CK2 |
+| FS-45 | Attempt is still unresolved when the PSP's idempotency key expires | Unresolved age against key retention | Replay stops well before retention ends, so a new charge can't run | Escalate; a person compares the PSP's record | C45 |
+| FS-46 | Crash during callback handling, or a callback arrives before transaction B | Parked event count and age | Insert and apply share one transaction; an early event parks and retries ([D30](decisions.md#d30)) | Worker clears parked events; alert past the limit | C46, CK5 |
+| FS-47 | PSP slowdown creates thousands of `UNKNOWN` attempts | `UNKNOWN` count; recovery quota use | Recovery stays inside its own quota; live traffic keeps its share ([D34](decisions.md#d34)) | Backlog drains with a rate cap after the PSP recovers | C47, C23 |
+| FS-48 | Callback flood from a PSP | Callback rate; rejected callbacks | Callbacks have their own concurrency limit; the PSP's retries deliver what was rejected | Raise the limit if sustained; reconcile anything late | C48 |
 
 ### Application and platform
 
@@ -60,6 +65,7 @@ Columns: **Detect** is the signal that shows it. **Automatic** is what the syste
 | FS-17 | Node or availability zone lost | Node and zone health | Remaining replicas serve; spread constraints keep replicas in several zones | Replace capacity; check headroom (40%) held | C10, C11 |
 | FS-18 | Restart after a full outage (thundering herd) | Request spike and backlog right after recovery | Staged ramp; limiter; consumers resume at a capped rate | Follow runbook R7 | C28 |
 | FS-19 | Cell router or its config store is unavailable (only if cells are adopted) | Routing error rate | Routers keep the last known mapping in memory; mapping changes are frozen | Restore the config store; verify mapping | C33 |
+| FS-49 | Status-query flood | Read rate by merchant; shed count | Reads shed before writes; create-payment keeps reserved capacity | Contact the merchant; tighten its read limit | C49 |
 
 ### Database
 
@@ -73,6 +79,7 @@ Columns: **Detect** is the signal that shows it. **Automatic** is what the syste
 | FS-25 | Migration locks a table or breaks the app | `lock_timeout` errors; error spike | `lock_timeout` aborts the migration; expand/contract keeps old code working | Revert the migration step; retry off-peak | S4 |
 | FS-26 | Data loss, corruption or a bad manual change | Continuous ledger audit; restore drill | Point-in-time recovery is available | Restore to a new instance, compare, then promote or repair with reversing entries | O5 |
 | FS-42 | Deadlocks or lock contention on the same rows (for example capture, refund and reconciler updating one payment) | `pg_stat_database.deadlocks`; lock-wait counter; `40P01` and `55P03` error rate; retry budget use | `deadlock_timeout` 100 ms finds the cycle and aborts one victim; `40P01` is retried at most twice with jitter inside a retry budget; `lock_timeout` 200 ms turns other slow waits into `55P03`, which returns 503 with `Retry-After`; limiter sheds if retries pile up | Read the deadlock log, find the two statements, fix lock order or split the hot row; see [Deadlock handling](deadlock-handling.md) | L1, C6, C34 |
+| FS-43 | Commit outcome is ambiguous: connection lost during `COMMIT`, or a cancel while waiting for a standby | Commit error count; PostgreSQL's "committed locally" warning | Commits are never cancelled. After a failed A, no PSP call. After a failed B, the answer is 202 ([D28](decisions.md#d28)) | Read the row; the reconciler completes anything unresolved. Any warning pages, because RPO 0 may be broken for that transaction | C43, CK2 |
 
 ### Messaging and webhooks
 
@@ -133,7 +140,12 @@ These are not outages. They are unusual but valid situations that must give a de
 | E21 | Retry of a declined request with the same key | Stored decline is returned, with no new PSP call. A new try needs a new key |
 | E22 | Settlement line with no matching operation, or a different amount | Line is `UNMATCHED` or `MISMATCH`; a discrepancy pages; nothing is posted (C40) |
 | E23 | Same settlement file ingested twice | The primary key makes it a no-op; no second ledger entry (C40) |
-| E24 | Key older than 24 hours whose payment is still `UNKNOWN` | Key is kept, so a retry returns the stored answer and can't charge again (C41) |
+| E24 | Key older than 24 hours whose payment is still `UNKNOWN` | Key is kept, so a retry returns the current state and can't charge again (C41) |
+| E25 | Same key used on a different route | Reject with 422; the hash covers method, route and body ([D31](decisions.md#d31)) |
+| E26 | Fraud check blocks an attempt | Attempt `FAILED` with `fraud_blocked`, no PSP call, 402, counts toward the cap, and a retry with a new key can run ([D33](decisions.md#d33)) |
+| E27 | Retry with the same key while the operation is `UNKNOWN` | Renders the current state; no PSP call and no new attempt ([D31](decisions.md#d31)) |
+| E28 | Retry with the same key of a finished request | Stored answer, with no fraud check and no change to velocity counters ([D33](decisions.md#d33)) |
+| E29 | Request refused before its work began (attempt live or cap reached), then retried with the same key | The refusal stored nothing, so the retry is evaluated fresh ([D31](decisions.md#d31)) |
 
 ## Runbooks
 
@@ -187,9 +199,9 @@ Short, ordered steps. Each runbook is rehearsed in a [drill](#drills) before it 
 
 | Order | Drill | Tests | Notes |
 |---|---|---|---|
-| 1 | In a test environment, break one thing at a time under 1k TPS | C3, C4, C5, C6, C15, C36, C37, C38, C41 | Money-correctness faults first |
-| 2 | PSP and dependency faults under 5k TPS | C9, C12, C13, C14, C16, C23, C32, C39, C40 | Use the mock PSP in slow, error and down modes |
-| 3 | Data faults under 5k TPS | C1, C2, C7, C22, C29, C34, C35 | Database slow, pool exhausted, failover, disk, lock races |
+| 1 | In a test environment, break one thing at a time under 1k TPS | C3, C4, C5, C6, C15, C36, C37, C38, C41, C43, C44, C45, C46 | Money-correctness faults first |
+| 2 | PSP and dependency faults under 5k TPS | C9, C12, C13, C14, C16, C23, C32, C39, C40, C47, C48 | Use the mock PSP in slow, error and down modes |
+| 3 | Data faults under 5k TPS | C1, C2, C7, C22, C29, C34, C35, C49 | Database slow, pool exhausted, failover, disk, lock races, read flood |
 | 4 | Messaging faults | C8, C17, C18, C26, C27 | Broker down, poison, webhook endpoints failing |
 | 5 | Platform faults | C10, C11, C19, C20, C24, C25, C28, C30, and C33 only if cells are adopted | Node, zone, release, cache, clock, restart, routing |
 | 6 | Security and recovery | C21, C42, O5, O6, F1 | Rotation, restore, leak response |

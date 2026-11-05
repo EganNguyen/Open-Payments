@@ -73,7 +73,7 @@ public async Task<T> RunAsync<T>(Func<NpgsqlTransaction, Task<T>> work, Cancella
         try
         {
             var result = await work(tx);
-            await tx.CommitAsync(ct);
+            await tx.CommitAsync(CancellationToken.None); // never cancelled (D28)
             return result;
         }
         catch (PostgresException e) when (
@@ -94,6 +94,7 @@ public async Task<T> RunAsync<T>(Func<NpgsqlTransaction, Task<T>> work, Cancella
 **Rules:**
 
 - Retry only `40001` and `40P01`. Never retry business errors or `55P03`.
+- A failed `COMMIT` is not a retry case. Its outcome is unknown, so read the row ([D28](decisions.md#d28)).
 - Store the idempotency result in the same transaction, so a retry cannot double-charge.
 - Keep side effects out of the transaction; use the outbox.
 - Re-read state on each attempt.

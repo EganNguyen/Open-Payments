@@ -12,22 +12,29 @@
 
 **Scope of this plan:** Tasks 1-17 are detailed, up to the first recorded ramp steps. The [roadmap](#roadmap-after-task-17) covers everything after that. It is enough to size and order the work, and each stage gets a detailed plan when it starts.
 
+**Status:** Tasks 1 and 2 are done. The [design review](../specs/2026-11-05-implementation-and-benchmark-design.md#what-the-review-found) changed the tasks below. Tasks 3-5 are ready to start. Tasks 6, 12, 14 and 16 are blocked as shown next.
+
 ## Owner decisions needed
 
-| # | Decision | Blocks | Recommendation |
-|---|---|---|---|
-| A | Accept the Task 1 design changes | Task 2 onward | Done: accepted 2026-11-05 |
-| B | Where the benchmarks that count will run | Task 6 answers, Task 17 onward | Rent Linux machines by the hour, only during runs. A laptop can't answer G1 ([playbook](../../scaling-playbook.md#workload-and-load-generation)), and no cloud CLI is installed here |
-| C | Which PSP sandbox to use | Stage 2 (C39, G2), and freezing the API | Choose before Stage 2 starts. It must support idempotency keys, inquiry by our ID and 3D Secure in its sandbox. You sign up, not an agent |
-| D | Auto-capture as a request field or a merchant setting | Task 2 | Done: request field `capture_mode`, the recommended default |
+The [spec](../specs/2026-11-05-implementation-and-benchmark-design.md#owner-decisions) has the reasons and recommendations. Where a task depends on one, the task says which way each answer goes.
+
+| Decision | Blocks |
+|---|---|
+| [D35](../../decisions.md#d35): does the platform hold funds? | First migration in Task 6, Task 12 |
+| [D37](../../decisions.md#d37): void and authorization expiry? | Task 12 |
+| [D38](../../decisions.md#d38): defer the refund lock? | Task 16 |
+| [D39](../../decisions.md#d39): hosted card fields, no vault? | Task 14 |
+| Where recorded benchmarks run | Task 6's answers, Task 17 |
+| [D36](../../decisions.md#d36): peak or average? | L2 and G6, in the roadmap |
+| Which PSP sandbox | Stage 2 |
 
 ## Problems found in the docs
 
-Task 1 resolves these. The arithmetic is ours and unmeasured, so each figure is a reason to test, not a result.
+Task 1 resolved these. The arithmetic is ours and unmeasured, so each figure is a reason to test, not a result. The review's further findings are in the [spec](../specs/2026-11-05-implementation-and-benchmark-design.md#what-the-review-found).
 
 | # | Problem | Effect | Resolution |
 |---|---|---|---|
-| 1 | The docs estimate 8-10 writes per payment. Counting the two-transaction flow gives about 20-22 row writes and up to 4 commits per auto-captured payment | About 100-110k row writes/s and up to 20k commits/s at target, not the stated 40-50k writes/s. Refunds add about 1.7k commits/s. G1 could be judged against the wrong number | Spike the real transaction shape. Correct the derived load |
+| 1 | The docs estimate 8-10 writes per payment. Counting the real flow gives about 11-13 row writes and 2 commits as one PSP sale, or about 20-22 and up to 4 as two calls | About 12k commits/s with a sale or 22k with two calls at target, before callbacks and publishing. G1 could be judged against the wrong number | Spike the real transaction shape. Correct the derived load |
 | 2 | A pool of about 100 connections at 20k tx/s allows only 5 ms per transaction by Little's Law, including the synchronous commit | The pool may saturate before the database does. PgBouncer is single-threaded, so one process may also limit | Spike varies pool size, PgBouncer process count and statement pipelining |
 | 3 | Gates require CK1-CK6 at every ramp step, but steps 0-7 have no broker and Phase 1 has no reconciler | CK4 and CK5 can't pass at those steps as written | Define which checks apply at each stage, below |
 | 4 | Phase 1 exit includes all of C31, but E10, E19, E20 and E22-E24 need Phase 2 parts, and E14 and E15 need Phase 3 events. E8 needs void, which is `Proposed` | Phase 1 can never exit | Split C31 by phase |
@@ -74,6 +81,8 @@ Likely to bite and not named by any single doc test. Each has a test in the task
 3. **A correctness check that passes on empty or missing data.** Each CK must fail on injected corruption and on zero rows (Task 9).
 4. **Amounts at the limits:** JSON numbers above 2^53, sums overflowing `long`, and zero-decimal and three-decimal currencies (Tasks 7, 14).
 5. **Transaction B fails after the PSP approved.** The client must never see a decline, retries must not call the PSP under a new key, and the payment must stay findable (Task 14).
+6. **A cancel arrives while `COMMIT` waits for a standby.** The client must never hear of a commit that a failover could lose (Tasks 3, 13).
+7. **A "not found" followed by a late approval.** The mock must be able to produce it, or C44 proves nothing (Task 8).
 
 ---
 
@@ -165,7 +174,7 @@ This is the README's first step. It needs no C#.
 ### Task 3: Tooling and replicated database stack
 
 **Files:**
-- Create: `deploy/compose/compose.yaml`, `deploy/compose/postgres/primary.conf`, `deploy/compose/pgbouncer/pgbouncer.ini`, `scripts/check-db-settings.sh`, `scripts/bootstrap.sh`
+- Create: `deploy/compose/compose.yaml`, `deploy/compose/postgres/primary.conf`, `deploy/compose/pgbouncer/pgbouncer.ini`, `scripts/check-db-settings.sh`, `scripts/check-commit-cancel.sh`, `scripts/bootstrap.sh`
 
 **Interfaces:**
 - Produces: `DB_URL` (through PgBouncer) and `DB_DIRECT_URL` (primary).
@@ -187,12 +196,17 @@ Expected: non-zero exit with a connection error.
 Run: `docker compose -f deploy/compose/compose.yaml up -d --wait && scripts/check-db-settings.sh`
 Expected: exit 0.
 
-- [ ] **Step 7: Commit** with message `build: add replicated PostgreSQL stack and settings check`.
+- [ ] **Step 7: Confirm the commit behavior behind [D28](../../decisions.md#d28), in `scripts/check-commit-cancel.sh`.** Pause WAL replay receipt on both standbys, start a commit, cancel it, and record whether the client sees success with PostgreSQL's warning or an error, then restart the standbys and confirm the row. Run it directly and through PgBouncer.
+
+Run: `scripts/check-commit-cancel.sh`
+Expected: prints the observed behavior for both paths. Record it in `benchmarks/spike/commit-cancel.md`. If it differs from D28's reading, amend D28 before Task 13.
+
+- [ ] **Step 8: Commit** with message `build: add replicated PostgreSQL stack and settings check`.
 
 ### Task 4: Spike schema and transaction scripts
 
 **Files:**
-- Create: `db/spike/schema-a-hash.sql`, `db/spike/schema-b-range.sql`, `db/spike/seed.sql`, `db/spike/tx-auth-capture.pgbench`, `db/spike/tx-decline.pgbench`, `db/spike/tx-refund.pgbench`, `db/spike/verify.sql`
+- Create: `db/spike/schema-a-hash.sql`, `db/spike/schema-b-range.sql`, `db/spike/seed.sql`, `db/spike/tx-sale.pgbench`, `db/spike/tx-auth-capture.pgbench`, `db/spike/tx-decline.pgbench`, `db/spike/tx-refund.pgbench`, `db/spike/tx-callback.pgbench`, `db/spike/tx-outbox-mark.pgbench`, `db/spike/tx-outbox-marker.pgbench`, `db/spike/verify.sql`
 
 **Interfaces:**
 - Consumes: the Task 1 DDL and the `DB_URL` from Task 3.
@@ -206,9 +220,12 @@ Expected: error "zero payments".
 
 - [ ] **Step 3: Write two schemas.** A follows the current docs with the Task 1 additions. B range-partitions `payments` and `ledger_entries` on UUIDv7 keys and hash-partitions `payment_attempts` by `payment_id`, per [problem 6](#problems-found-in-the-docs). Both include the deferred balance trigger and every documented partial index.
 - [ ] **Step 4: Write transaction scripts matching the real flow,** one pgbench transaction per database transaction:
-  - `tx-auth-capture`: A (idempotency, payment, attempt), B (payment, attempt, idempotency, ledger transaction, 2 entries, outbox), capture A, capture B (a hold-release ledger transaction with 2 entries, and a money ledger transaction with 2-4 entries, per D21).
+  - `tx-sale`: A (idempotency, payment, attempt), then B (payment, attempt, idempotency, ledger transaction, 2-4 entries, outbox), per D29.
+  - `tx-auth-capture`: A, B (with a hold), capture A, capture B (a hold-release ledger transaction with 2 entries, and a money ledger transaction with 2-4 entries, per D21).
   - `tx-decline`: A, then B moving the payment back with no ledger rows.
-  - `tx-refund`: advisory lock and balance read, reserve, ledger reservation, then confirm.
+  - `tx-refund`: reserve, ledger reservation, then confirm. A variable switches the advisory lock and balance read on, for V8.
+  - `tx-callback`: insert into `psp_events`, then a conditional update that finds nothing to do, in one transaction.
+  - `tx-outbox-mark` and `tx-outbox-marker`: read a batch with `SKIP LOCKED` and mark each row, or read past a stored position and update one row. Log capture (V9's third option) is measured by the size of WAL decoded per event, using `pg_logical_slot_get_binary_changes`.
 - [ ] **Step 5: Write `seed.sql`,** with parameters for merchant count (1, 100, 10,000), an 80/20 skew and prefill size. Target for Linux runs: 100M payments with matching children. Benchmarking an empty database would flatter every number.
 - [ ] **Step 6: Run a short check**
 
@@ -235,9 +252,13 @@ def test_highest_rate_requires_cpu_gate():
 def test_failed_verify_disqualifies_row():
     assert sustained_rate(rows(20000, 40, verify_passed=False)) == 0
 
-def test_required_commits_from_mix():
-    # 5,000 payments, 4 commits each, 833 refunds at 2 commits each
-    assert required_commits(5000, 4, 833, 2) == 21666
+def test_required_commits_two_call():
+    # 5,000 payments at 4 commits, 833 refunds at 2, no callbacks
+    assert required_commits(5000, 4, 833, 0) == 21666
+
+def test_required_commits_sale_with_callbacks():
+    # 5,000 sales at 2 commits, 833 refunds at 2, one callback commit per operation
+    assert required_commits(5000, 2, 833, 5833) == 17499
 ```
 
 - [ ] **Step 2: Run to verify they fail**
@@ -246,7 +267,7 @@ Run: `python3 -m pytest db/spike/test_report.py -v`
 Expected: FAIL on missing `sustained_rate`.
 
 - [ ] **Step 3: Implement `run-matrix.sh` and `report.py`.** Run each variant at rising `pgbench -R` rates, with a 2-minute warm-up and 10 minutes measured. Sample `pg_stat_database`, `pg_stat_wal`, `pg_stat_replication` and CPU every 10 s. Mark a row invalid if the generator exceeds 80% CPU. Run `verify.sql` after each row.
-- [ ] **Step 4: Define the matrix.** Change one thing at a time from the baseline (schema A, sync on, trigger on, RLS off, pool 100, one PgBouncer, 100 merchants):
+- [ ] **Step 4: Define the matrix.** Change one thing at a time from the baseline (schema A, `tx-sale` mix, sync on, row trigger on, RLS off, pool 100, one PgBouncer, 100 merchants, callbacks and outbox publishing off):
 
 | Variant | Change | Answers |
 |---|---|---|
@@ -257,7 +278,12 @@ Expected: FAIL on missing `sustained_rate`.
 | V5 | Schema B | Partition choice |
 | V6 | Pipelined statements (`\startpipeline`) | Round trips per transaction |
 | V7 | Batched idempotency-key deletes running throughout | D19 expiry |
-| V8 | Refund mix with 1, 100 and 10,000 merchants | D9 lock limit, problem 7 |
+| V8 | Refund mix with 1, 100 and 10,000 merchants, lock on and off | D38, problem 7 |
+| V9 | Outbox publishing: mark rows, progress marker, log capture | Publisher design |
+| V10 | Callbacks at one per operation, per transaction and batched | Capacity model |
+| V11 | `tx-auth-capture` mix in place of `tx-sale` | D29, required rate |
+| V12 | Balance check as a statement trigger | G4 |
+| V13 | All of the chosen options together, against the required rate | G1, provisional |
 
 - [ ] **Step 5: Run tests to verify they pass, then dry-run** the matrix for 60 s per row on the laptop.
 
@@ -268,7 +294,7 @@ Expected: PASS, then a `summary.md` headed "Local: comparative only, does not an
 
 ### Task 6: Run the spike and decide
 
-Needs decision B. Machines: primary and two standbys on NVMe with WAL on its own volume in three zones, plus a separate generator. Start with 16-32 vCPU, record what was used, and shut them down after.
+Needs the owner's choice of machines. Step 5 also needs D35 and D37. Machines: primary and two standbys on NVMe with WAL on its own volume in three zones, plus a separate generator. Start with 16-32 vCPU, record what was used, and shut them down after.
 
 **Files:**
 - Create: `benchmarks/spike/<run-id>/*`, `benchmarks/spike/REPORT.md`, `db/migrations/0001_initial.sql`, `scripts/migrate.sh`
@@ -278,7 +304,7 @@ Needs decision B. Machines: primary and two standbys on NVMe with WAL on its own
 - Produces: `db/migrations/0001_initial.sql`, the schema every later task uses, and the D25 partitioning and D26 G1 records.
 
 - [ ] **Step 1: Run the full matrix on Linux** with a 100M prefill. Check `valid` on every row.
-- [ ] **Step 2: Write `REPORT.md`:** required commits/s, sustained commits/s at 60% CPU or less for each variant, the first bottleneck and what's left unmeasured.
+- [ ] **Step 2: Write `REPORT.md`:** required commits/s from the formula in the [spec](../specs/2026-11-05-implementation-and-benchmark-design.md#capacity), sustained commits/s at 60% CPU or less for each variant, WAL and bytes per payment for G6, the outbox choice, the first bottleneck and what's left unmeasured.
 - [ ] **Step 3: Bring the answers to the owner.** A one-cell or cells recommendation for G1 is their call under [D14](../../decisions.md#d14). G3 and G4 get provisional answers, since only full-system runs can close them.
 - [ ] **Step 4: Record D25 (partitioning and retention) and D26 (G1).** If G1 requires cells, stop and replan the roadmap before continuing.
 - [ ] **Step 5: Write `0001_initial.sql` from the chosen variant.** Apply it twice to prove the runner's recorded-version check, with `scripts/migrate.sh` using a `schema_migrations` table.
@@ -340,7 +366,8 @@ Expected: PASS.
 - Produces, over HTTP:
   - `POST /authorize`, `/capture`, `/refund` with an `Idempotency-Key` header, returning `{outcome, psp_reference, amount_minor, currency, failure_code?, action?}`.
   - `GET /inquire/{key}`, returning `{status: approved|declined|action_required|unknown_attempt|evicted, ...}`.
-  - `PUT /admin/config` with `{latency_ms, jitter_ms, decline_rate, error_rate, approve_then_hang_rate, rate_limit_per_s, action_rate, mismatch_rate, seed}`.
+  - `POST /sale` and `POST /cancel-by-reference/{key}`, the latter confirmed by callback.
+  - `PUT /admin/config` with `{latency_ms, jitter_ms, decline_rate, error_rate, approve_then_hang_rate, late_landing_rate, rate_limit_per_s, action_rate, mismatch_rate, recovery_mode, key_retention_s, lookup_lag_s, callback_rate, callback_delay_ms, callback_url, seed}`.
   - `GET /admin/stats`. An effect log at `$EFFECTS_DIR/effects.csv` with columns `key,op,amount_minor,currency,at`.
 
 - [ ] **Step 1: Write failing tests**
@@ -353,6 +380,13 @@ Expected: PASS.
 [Fact] public Task Evicted_key_returns_evicted_never_unknown_attempt();
 [Fact] public Task Same_seed_gives_same_outcomes();
 [Fact] public Task Over_rate_limit_returns_429_with_no_effect();
+[Fact] public Task Sale_records_one_effect_of_kind_sale();
+[Fact] public Task Late_landing_lookup_says_not_found_then_effect_appears(); // for C44
+[Fact] public Task Lookup_lag_hides_a_real_effect_until_the_lag_passes();
+[Fact] public Task Replay_mode_runs_a_never_received_request_once();
+[Fact] public Task Replay_after_retention_creates_a_second_effect();          // the danger C45 guards against
+[Fact] public Task Cancel_by_reference_blocks_a_late_landing_and_calls_back();
+[Fact] public Task Callbacks_are_sent_at_the_configured_rate_and_redelivered_on_failure();
 ```
 
 `evicted` must differ from `unknown_attempt`. The reconciler treats `unknown_attempt` as "never charged" and fails the attempt, so an evicted key reported that way would corrupt a soak test.
@@ -468,7 +502,7 @@ def test_preview_label_before_phase3():
 Run: `python3 -m pytest benchmarks/test_report.py -v`
 Expected: FAIL on missing `validity`.
 
-- [ ] **Step 3: Write `mix.js`.** Use one `ramping-arrival-rate` scenario per operation at the [example mix](../../scaling-playbook.md#workload-and-load-generation): 60% create and pay, 15% status, 10% refund, 10% retry with a recent key, 5% other. Merchants come from an 80/20 skewed list. Retried keys come from a per-VU ring buffer, and refund targets from a seeded `SharedArray`, so generators need no shared state. Vendor any k6 helper locally rather than importing from a URL at run time. `steps.json` holds steps 0-11 from the [ramp plan](../../scaling-playbook.md#ramp-plan). 429 and 503 are counted separately from errors.
+- [ ] **Step 3: Write `mix.js`.** Use one `ramping-arrival-rate` scenario per operation at the [example mix](../../scaling-playbook.md#workload-and-load-generation): 60% create and pay, with a configured share of sale and two-call capture, 15% status, 10% refund, 10% retry with a recent key, 5% other. Callbacks come from the mock, not from k6. Merchants come from an 80/20 skewed list. Retried keys come from a per-VU ring buffer, and refund targets from a seeded `SharedArray`, so generators need no shared state. Vendor any k6 helper locally rather than importing from a URL at run time. `steps.json` holds steps 0-11 from the [ramp plan](../../scaling-playbook.md#ramp-plan). 429 and 503 are counted separately from errors.
 - [ ] **Step 4: Write `run.sh`.** Record commit and configuration, reset to the prefilled snapshot, set the mock, run k6, wait for the drain, run `op-checks`, then fill the Results log into `result.md`. Refuse to run on a dirty git tree, ignoring `benchmarks/runs/`.
 - [ ] **Step 5: Run to verify they pass**
 
@@ -499,7 +533,9 @@ public static TransitionResult Decide(PaymentSnapshot current, PaymentCommand co
 // TransitionResult is Accepted(NewState, AttemptChange?, RefundChange?, LedgerLine[], OutboxEvent[]),
 // Rejected(ReasonCode) or NoOp(ReasonCode).
 ```
-  `PaymentCommand` cases include the attempt, PSP-answer, timeout, inquiry, capture, refund-reserve, refund-confirm, refund-release, cancel and manual-resolution commands. All IDs and times are command fields.
+  `PaymentCommand` cases include the attempt, sale, fraud-block, PSP-answer, recovery-answer (`ProvenNotCharged` and `Inconclusive` among them), timeout, capture, refund-reserve, refund-confirm, refund-release, cancel and manual-resolution commands. Add void and expiry if D37 is accepted. All IDs and times are command fields, and event and ledger IDs are derived purely (D32).
+
+Blocked on D35 and D37. D35 sets what the accounts mean, and D37 adds states and commands.
 
 - [ ] **Step 1: Write failing tests (U2, U3)**
 
@@ -514,6 +550,13 @@ public void U2_only_listed_transitions_are_accepted(PaymentState s, PaymentComma
 [Fact] public void Late_approval_on_failed_attempt_goes_to_review_with_no_ledger();
 [Fact] public void Amount_mismatch_goes_to_review_with_no_ledger();
 [Fact] public void Attempt_cap_rejects_eleventh();
+[Fact] public void D27_inconclusive_answer_leaves_attempt_unknown();
+[Fact] public void D27_only_proof_or_decline_fails_an_attempt();
+[Fact] public void D29_sale_approval_captures_with_no_hold();
+[Fact] public void D32_same_input_gives_same_event_and_ledger_ids();
+[Fact] public void D32_event_seq_rises_by_one_only_when_an_event_is_written();
+[Fact] public void D33_fraud_block_fails_attempt_with_no_psp_step();
+[Property] public bool U3_every_transaction_balances_per_currency(PaymentCommand c);
 [Fact] public void Decide_project_references_no_io(); // assembly-reference test
 [Theory, MemberData(nameof(GoldenFiles))] public void Golden_cases_match(string file);
 ```
@@ -544,6 +587,9 @@ Expected: PASS.
 - Produces:
 ```csharp
 Task<T> TxRunner.RunAsync<T>(MerchantId m, Func<NpgsqlConnection, NpgsqlTransaction, CancellationToken, Task<T>> work, CancellationToken ct);
+// ct applies to the work, never to COMMIT. A failed COMMIT throws CommitOutcomeUnknownException.
+Task<KeyLookup> PaymentStore.ReadKeyAsync(MerchantId m, string key, byte[] requestHash, CancellationToken ct);
+// NotFound | Finished(StoredResponse) | Unresolved(PaymentView) | InFlight | HashMismatch
 Task<BeginResult> PaymentStore.BeginAttemptAsync(BeginAttempt cmd, CancellationToken ct);
 // Started(AttemptId) | Replay(StoredResponse) | KeyInFlight | HashMismatch | LiveAttemptExists(PaymentView) | CapExceeded | Rejected(ReasonCode)
 Task<ApplyResult> PaymentStore.ApplyAsync(PaymentId p, PaymentCommand c, StoredResponse? r, CancellationToken ct);
@@ -565,6 +611,10 @@ Task<ApplyResult> PaymentStore.ApplyAsync(PaymentId p, PaymentCommand c, StoredR
 [Fact] public Task One_live_authorize_index_blocks_second_attempt();
 [Fact] public Task Ledger_role_cannot_update_or_delete();       // U3 append-only
 [Fact] public Task Resolved_at_set_in_same_transaction_as_final_state();
+[Fact] public Task C43_commit_ignores_request_cancellation();         // standbys stalled, token cancelled
+[Fact] public Task C43_failed_commit_reports_unknown_not_failure();   // connection dropped during COMMIT
+[Fact] public Task Key_conflict_does_not_abort_the_transaction();     // ON CONFLICT DO NOTHING
+[Fact] public Task E29_refusal_stores_no_key();
 ```
 
 - [ ] **Step 2: Run to verify they fail**
@@ -590,6 +640,8 @@ Expected: PASS.
 - Consumes: `IPspAdapter` exactly as in [PSP integration](../../architecture.md#psp-integration), the store from Task 13, the mock from Task 8, metric names from Task 10.
 - Produces: `PaymentFlow.RunAttemptAsync(BeginAttempt, CancellationToken requestToken) -> ApiAnswer`, and the routes for create, attempts, status and cancel.
 
+Blocked on D39, which decides what `method.ref` is. Phase 1 uses a mock token either way, so if D39 is the only open decision, proceed with a mock token and leave the vault call out.
+
 - [ ] **Step 1: Write failing acceptance tests**
 
 ```csharp
@@ -607,6 +659,13 @@ Expected: PASS.
 [Fact] public Task E17_key_for_merchant_A_gets_404_on_merchant_B_payment();
 [Fact] public Task Over_inflight_cap_rejects_immediately_with_retry_after();
 [Fact] public Task Canonical_log_has_required_fields_and_no_card_pattern();
+[Fact] public Task E25_same_key_on_another_route_422();
+[Fact] public Task E26_fraud_block_402_with_no_psp_call_and_counts_toward_cap();
+[Fact] public Task E27_retry_while_unknown_renders_current_state_with_no_psp_call();
+[Fact] public Task E28_replay_skips_fraud_and_leaves_velocity_counters_alone();
+[Fact] public Task E29_refused_request_retried_with_same_key_is_evaluated_fresh();
+[Fact] public Task C43_failed_commit_of_A_answers_503_with_no_psp_call();
+[Fact] public Task C43_failed_commit_of_B_answers_202_never_a_decline();
 ```
 
 - [ ] **Step 2: Run to verify they fail**
@@ -614,7 +673,7 @@ Expected: PASS.
 Run: `dotnet test tests/OpenPayments.Acceptance.Tests`
 Expected: FAIL, since no API exists.
 
-- [ ] **Step 3: Implement.** After transaction A commits, the flow stops using the request's token, and uses a deadline token instead, so a disconnect can't strand a charged attempt. PSP timeout maps to `UNKNOWN` and 202. Add the `Program.cs` limits from [Load control](../../engineering-standards.md#load-control). Platform overhead is total time minus PSP wait. `op_payments_completed_total` increments only after the final commit. Authentication is a SHA-256 lookup in `api_keys` with a bounded cache. Test-mode routing waits for Stage 5, so non-`live` keys get 403 for now.
+- [ ] **Step 3: Implement.** The order is [Make an attempt](../../architecture.md#payment-flow): admit, read the key, fraud through an `IFraudCheck` with a rule stub, transaction A, PSP, transaction B. After transaction A commits, the flow stops using the request's token, and uses a deadline token instead, so a disconnect can't strand a charged attempt. PSP timeout maps to `UNKNOWN` and 202. Add the `Program.cs` limits from [Load control](../../engineering-standards.md#load-control). Platform overhead is total time minus PSP wait. `op_payments_completed_total` increments only after the final commit. Authentication is a SHA-256 lookup in `api_keys` with a bounded cache. Test-mode routing waits for Stage 5, so non-`live` keys get 403 for now.
 - [ ] **Step 4: Run to verify they pass**
 
 Run: `dotnet test tests/OpenPayments.Acceptance.Tests`
@@ -622,7 +681,7 @@ Expected: PASS.
 
 - [ ] **Step 5: Commit** with message `feat: add create and attempt flow`.
 
-### Task 15: Capture and auto-capture
+### Task 15: Capture and sale
 
 **Files:**
 - Modify: `src/OpenPayments.Api/PaymentFlow.cs`, `Endpoints/Payments.cs`
@@ -639,8 +698,11 @@ Expected: PASS.
 [Fact] public Task C36_two_captures_different_keys_one_psp_effect();
 [Fact] public Task Declined_capture_stays_authorized_and_allows_new_capture();
 [Fact] public Task Capture_timeout_202_stays_authorized_attempt_unknown();
+[Fact] public Task D29_auto_capture_uses_one_psp_call_where_supported();
+[Fact] public Task D29_sale_timeout_answers_202_and_blocks_a_second_attempt();
+[Fact] public Task D29_auto_capture_uses_two_calls_where_unsupported();
 [Fact] public Task Auto_capture_success_counts_one_completed_payment();
-[Fact] public Task Auto_capture_failure_leaves_authorized_and_reports_it();
+[Fact] public Task Two_call_capture_failure_leaves_authorized_and_reports_it();
 [Fact] public Task E8_capture_from_non_authorized_rejected();
 ```
 
@@ -649,7 +711,7 @@ Expected: PASS.
 Run: `dotnet test --filter CaptureTests`
 Expected: FAIL.
 
-- [ ] **Step 3: Implement.** Capture in the same request uses its own attempt row and key.
+- [ ] **Step 3: Implement.** A sale is one attempt row with `operation = 'sale'`. Two-call capture in the same request uses its own attempt row and key. The adapter's `Capabilities` decides which.
 - [ ] **Step 4: Run to verify they pass**
 
 Run: `dotnet test --filter CaptureTests`
@@ -676,24 +738,26 @@ Expected: PASS.
 [Fact] public Task E7_refund_over_remaining_rejected();
 [Fact] public Task E13_capture_and_refund_same_moment_serialize();
 [Fact] public Task Refund_timeout_stays_reserved_as_unknown();
+[Fact] public Task Refund_uses_the_shared_key_store();                         // D31
+// Only if D38 is declined:
 [Fact] public Task Refund_low_balance_rejected_under_advisory_lock();
 [Fact] public Task Create_path_never_takes_advisory_lock();                    // pg_locks sampled
 [Fact] public Task S3_hot_queries_use_expected_indexes();                      // EXPLAIN on a seeded table
 [Fact] public Task S3_each_endpoint_within_query_count();
 ```
 
-Add `C31a` as one test per edge case in E1-E9, E11-E13, E16-E18 and E21 as defined in Task 1, reusing earlier tests by name where one exists.
+Add `C31a` as one test per edge case in E1-E9, E11-E13, E16-E18, E21 and E25-E29 as defined in Task 1, reusing earlier tests by name where one exists.
 
 - [ ] **Step 2: Run to verify they fail**
 
 Run: `dotnet test --filter "RefundTests|C31a|HotQueryPlanTests"`
 Expected: FAIL.
 
-- [ ] **Step 3: Implement** in lock order: advisory lock, `payments`, `refunds`, ledger, outbox.
+- [ ] **Step 3: Implement** in lock order: `payments`, `refunds`, ledger, outbox. If D38 is declined, take the advisory lock first.
 - [ ] **Step 4: Run the whole Phase 1 gate** with run IDs recorded.
 
 Run: `dotnet test && dotnet list package --vulnerable && dotnet build -warnaserror`
-Expected: all pass. Record the commit and results for U1-U4, C5, C6, C31a, S1, S3, S5, S6 in `docs/phase-gates/phase-1.md`. S5 is the review checklist plus analyzers. List by name anything not achieved.
+Expected: all pass. Record the commit and results for U1-U4, C5, C6, C31a, C43, S1, S3, S5, S6 in `docs/phase-gates/phase-1.md`. S5 is the review checklist plus analyzers. List by name anything not achieved.
 
 - [ ] **Step 5: Commit** with message `feat: add refunds and record Phase 1 gate`.
 
@@ -711,7 +775,7 @@ Preview runs only ([why](#problems-found-in-the-docs)). The laptop gives compara
 Run: `for s in 0 1 2 3; do benchmarks/run.sh $s --env local --stage phase1 --psp-latency 200 || break; done`
 Expected: each `result.md` is valid with gates met and is labelled preview. If a gate fails, stop and use superpowers:systematic-debugging with the [bottleneck runbook](../../scaling-playbook.md#bottleneck-runbook). Don't relax the gate.
 
-- [ ] **Step 3: On Linux (decision B), run steps 4 and 5.** Record `C`, then compute `N = ceil(T / (C × U))` with `T` of 8,300, and note the 16,700 case. Compare measured commits per payment with the Task 6 estimate.
+- [ ] **Step 3: On Linux, run steps 4 and 5.** Record `C`, then compute `N = ceil(T / (C × U))` with `T` of 8,300, and note the 16,700 case. Compare measured commits per payment with the Task 6 estimate.
 - [ ] **Step 4: Write `BASELINE.md`:** per-request latency breakdown, the first bottleneck at each step, `C`, and whether the 5,000 target still looks reachable on one cell. State plainly anything that doesn't support the goal.
 - [ ] **Step 5: Commit** the results with message `test: record first ramp baseline`.
 
@@ -723,9 +787,9 @@ Write a detailed plan with superpowers:writing-plans at the start of each stage,
 
 | Stage | Build | Benchmark run | Exit | Needs |
 |---|---|---|---|---|
-| **2: PSP and recovery** | Real adapter, resilience, callback receiver, reconciler and timers, settlement ingestion, one 3D Secure flow; freeze the API contract after C39 | Repeat steps 0-5 with timeouts and failures. **G2** against the sandbox | Phase 2 list in [Verification](../../verification.md#build-phases), plus C31b | Decision C |
-| **3: Async** | Outbox publisher with one publisher per payment and gap parking, Redpanda, ledger projector, webhook dispatcher, inbox dedupe | Steps 6-8. First non-preview runs: **CK4 and CK6 full**. Outbox age and consumer lag | Phase 3 list, with the ordering race in C17, plus C31c | Stage 2 |
-| **4: Hardening** | Kubernetes, HA with Patroni or managed, limits by request class, reserved capacity, dark-launched limiters, minimal synchronous fraud, vault and edge gateway; cells only if D26 requires them | Steps 9-11, **L1, L5, L6**, then L2, L3, L4; **G1, G3, G4, G5** closed on the full system; S2 allocation budgets | Phase 4 list | Rented cluster |
+| **2: PSP and recovery** | Real adapter with its declared recovery mode, resilience with a recovery quota, atomic callback receiver with parking, reconciler and timers, settlement ingestion, review tooling, one 3D Secure flow; freeze the API contract after C39 | Repeat steps 0-5 with timeouts, late landings and callbacks. **G2** against the sandbox and in writing | Phase 2 list in [Verification](../../verification.md#build-phases), plus C31b | PSP choice, D35 |
+| **3: Async** | Outbox publisher by the method V9 chose, with one publisher per payment and gap parking, Redpanda, ledger projector, webhook dispatcher, inbox dedupe | Steps 6-8. First non-preview runs: **CK4 and CK6 full**. Outbox age and consumer lag | Phase 3 list, with the ordering race in C17, plus C31c | Stage 2 |
+| **4: Hardening** | Kubernetes, HA with Patroni or managed, separate limits per kind of waiting, reserved capacity, dark-launched limiters, minimal synchronous fraud, edge gateway, client-side access, and the vault unless D39 removes it; cells only if D26 requires them | Steps 9-11, **L1, L5, L6**, then L2, L3, L4; **G1, G3, G4, G5, G6** closed on the full system; S2 allocation budgets | Phase 4 list | Rented cluster, D36 |
 | **5: Security and operations** | Full fraud rules and decision records, test mode isolation, audit log, RBAC, runbooks and drills | **L5 again as the sign-off number**; C42 | Phase 5 list | Isolation decision, D20 |
 | **Sign-off** | [Final report](../../scaling-playbook.md#final-report) | All of the above, with CK1-CK10 | All 108 and 25 rows ticked, each with a recorded run | Real PSP results |
 

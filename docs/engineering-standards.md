@@ -13,7 +13,7 @@ All values are starting points. L1 and O3 replace them with measured values.
 1. Edge: per-merchant token-bucket rate limit.
 2. Gateway and API: global concurrency limiter with no queue.
 3. Per instance: an in-flight cap, starting at 500 and tuned by L1 and L3.
-4. Downstream: per-PSP rate limiter and per-dependency bulkheads.
+4. Downstream: per-PSP rate limiter and per-dependency bulkheads, with separate limits for requests, PSP calls, database work and callbacks, and a recovery quota inside each PSP's limit ([D34](decisions.md#d34)).
 
 Over the limit, the system rejects immediately with 429 or 503 and `Retry-After`. Waiting in an unbounded queue is never allowed.
 
@@ -32,7 +32,7 @@ builder.Services.AddRateLimiter(o =>
 
 **Bounded concurrency in the process.** Fan-out work (webhook sends, event handling) uses a bounded `Channel<T>` with fixed workers, or `Parallel.ForEachAsync` with `MaxDegreeOfParallelism`. No fire-and-forget `Task.Run`, and no unbounded `Task.WhenAll` over input-sized lists.
 
-**Deadlines.** A request has a total budget of 5 s: fraud 50 ms, PSP up to 2.5 s, each database call 200 ms. The `CancellationToken` is passed into every async call (analyzer CA2016 is enabled), so abandoned work stops.
+**Deadlines.** A request has a total budget of 5 s: fraud 50 ms, PSP up to 2.5 s, each database call 200 ms. The attempt timeout (starting at 30 s) stays above all of these and below the PSP's key retention ([D34](decisions.md#d34)). The `CancellationToken` is passed into every async call (analyzer CA2016 is enabled), so abandoned work stops, with two exceptions: `COMMIT` is never cancelled ([D28](decisions.md#d28)), and once transaction A has committed, the request's token gives way to a deadline token.
 
 **Kestrel limits:**
 
@@ -103,7 +103,8 @@ Check each library's license and .NET 10 support before adopting it (gate S6).
 - The application connects to PgBouncer in transaction-pooling mode. PgBouncer holds a fixed pool per cell, starting at about 100 and tuned in L1.
 - At each scale-out, check that `instances × Npgsql MaxPoolSize` fits PgBouncer's client limit, and that PgBouncer's pool fits `max_connections` with headroom for admin.
 - A short pool wait timeout (for example 200 ms) turns exhaustion into fast failure.
-- Transaction pooling keeps no session state. Verify prepared-statement support in PgBouncer and Npgsql in staging before relying on it.
+- Transaction pooling keeps no session state. PgBouncer 1.21 and later [can track protocol-level prepared statements](https://manpages.ubuntu.com/manpages/questing/man1/pgbouncer.1.html). Verify that with Npgsql in the spike before relying on it.
+- [Each PgBouncer process uses one core](https://clickhouse.com/blog/pgbouncer-clickhouse-managed-postgres.md). Run several with `so_reuseport` if the spike shows one is the limit, and divide the connection budget between them.
 
 **Transactions:**
 

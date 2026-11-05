@@ -37,9 +37,9 @@ Nine deployables, two libraries and four infrastructure parts. How they fit toge
 | Ledger projector | Deployable | Cell | Builds balances and snapshots from entries; rebuildable read model | balance snapshots | No | Balances lag; payments unaffected |
 | Webhook dispatcher | Deployable | Cell | Signed delivery, retries with backoff, dead-letter queue, per-endpoint isolation | delivery log | No | Notifications are late, never lost |
 | Reconciler | Deployable | Cell | Resolves unknown and stuck operations, runs timer jobs, ingests and matches PSP settlement files | discrepancy records | No | Unresolved work stays unresolved longer |
-| Vault and tokenization | Deployable | Shared | Stores card data encrypted, issues tokens; own network segment and PCI scope | encrypted card data | Yes | Card payments cannot start |
+| Vault and tokenization | Deployable; may be deferred ([D39](decisions.md#d39), `Proposed`) | Shared | Stores card data encrypted, issues tokens; own network segment and PCI scope | encrypted card data | Yes | Card payments cannot start |
 | Payment-transition module | Library | Linked into the Payments API and reconciler | State machine, atomic refund limit, ledger and outbox writes; the only code that writes money state | payments, attempts, refunds, ledger, outbox | Yes | Fails with its host process |
-| PSP adapters | Library | Linked into the Payments API and reconciler | One adapter per PSP behind one interface; deadline, breaker, rate limit, status inquiry, failover where allowed. A separate bulkhead per PSP | adapter metadata | Yes | Payment becomes `UNKNOWN` or fails fast |
+| PSP adapters | Library | Linked into the Payments API and reconciler | One adapter per PSP behind one interface; deadline, breaker, rate limit, recovery mode, failover where allowed. A separate bulkhead per PSP | adapter metadata | Yes | Payment becomes `UNKNOWN` or fails fast |
 | PostgreSQL | Infrastructure | Cell | Stores all money state, with synchronous standbys | all financial data | Yes | Standby takes over; committed payments are kept |
 | PgBouncer | Infrastructure | Cell | Pools database connections | nothing | Yes | Writes stop until it is replaced |
 | Kafka or Redpanda | Infrastructure | Cell | Carries events to workers | event log | No | Events wait in the outbox |

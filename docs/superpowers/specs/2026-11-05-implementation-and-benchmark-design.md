@@ -1,73 +1,229 @@
 # Implementation and Benchmark Design
 
-What this build effort delivers, what counts as done, and the rules that make a benchmark result trustworthy.
+What this build delivers, what a design review found wrong with the plan to build it, what is ready, and what counts as done.
 
-Status: Accepted by the owner · Last updated: 2026-11-05
+Status: Reviewed, with owner decisions open · Last updated: 2026-11-05
 
-The system itself is defined in the [design docs](../../../README.md#documents), and this spec doesn't restate it. Where a value already has a home in those docs, this spec links to it. The [implementation plan](../plans/2026-11-05-open-payments-implementation-and-benchmark.md) holds the tasks.
+The system is defined in the [design docs](../../../README.md#documents), and this spec doesn't restate them. The [implementation plan](../plans/2026-11-05-open-payments-implementation-and-benchmark.md) holds the tasks.
+
+**The verdict:** the database spike and the test tools can start now. The payment core can't start until the owner answers four questions, and most throughput claims stay `MEASURE-FIRST`. Nothing has been built or measured, so every number is an estimate or a target.
 
 ## Goal
 
 Build Open Payments and find out, by measurement, whether it sustains [5,000 completed payments/s](../../architecture.md#goals-and-slos) with no duplicate charges, no lost records and balanced books.
 
-**A measured "no" is a valid outcome.** The effort succeeds if it establishes the real limit, what sets it and how the system fails there. Gates are never relaxed to reach the target ([playbook](../../scaling-playbook.md#measures-and-gates)).
+**A measured "no" is a valid outcome.** The effort succeeds if it establishes the real limit, what sets it and how the system fails there. Gates are never relaxed to reach the target.
 
 ## Scope
 
 **In scope:** the `Committed` rows of the [scope table](../../architecture.md#scope-and-status), built through [phases 0-5](../../verification.md#build-phases), and the [ramp plan](../../scaling-playbook.md#ramp-plan) with its load and failure tests.
 
-**Out of scope:** `Proposed` states and everything listed under [Assumptions and limits](../../decisions.md#assumptions-and-limits), including payouts, disputes, multi-region and the formal PCI assessment. Merchant profiles are limited to a minimal `api_keys` table. Cells are built only if G1 requires them ([D14](../../decisions.md#d14)).
+**Out of scope:** `Proposed` states and everything under [Assumptions and limits](../../decisions.md#assumptions-and-limits), including payouts, disputes, multi-region and the formal PCI assessment. Cells are built only if G1 requires them.
 
-## Definition of done
+## What the review found
 
-| Level | Done when |
+The design is strong on one question: did our own write succeed safely? Its weak spots are where it meets things it doesn't control, and where its numbers were never derived from its own flow.
+
+### Money could be wrong
+
+| # | Finding | Why it matters | Resolution |
+|---|---|---|---|
+| 1 | "PSP says not found, so the attempt failed" isn't safe | A delayed request can land after the lookup. The customer then pays on a new attempt and is charged twice. This was the design's main crash-recovery path | [D27](../../decisions.md#d27): only proof fails an attempt |
+| 2 | Inquiry by our ID is assumed, but real PSPs don't work that way | [Stripe](https://docs.stripe.com/error-low-level) recovers by replaying the same key, and warns against any retry after 24 hours. [Its Search](https://docs.stripe.com/search) can lag an hour in outages. [Adyen](https://docs.adyen.com/api-explorer/Checkout/latest/post/payments/_paymentPspReference_/cancels) offers cancel by our reference | [D27](../../decisions.md#d27): each adapter declares its recovery mode |
+| 3 | A replay after the PSP's key retention can run as a new charge | The docs treated the same key as safe forever. Stripe's retention is [at least 24 hours](https://docs.stripe.com/api/idempotent_requests), and Adyen's [7 days or more](https://docs.adyen.com/development-resources/api-idempotency) | [D27](../../decisions.md#d27), [D34](../../decisions.md#d34): timers ordered, replay window bounded |
+| 4 | Cancelling during `COMMIT` can silently break RPO 0 | PostgreSQL [keeps the transaction committed locally](https://paquier.xyz/postgresql-2/track-commit-synchronous/) and only warns. The guide's own sample code passed a cancellable token | [D28](../../decisions.md#d28), test C43 |
+| 5 | A callback could be marked seen, then lost in a crash | Inserting into `psp_events` and applying were separate steps, and dedupe would then drop the retry | [D30](../../decisions.md#d30) |
+| 6 | An `AUTHORIZED` payment has no way out but capture | A merchant can't release a customer's funds. `auth_hold` never clears, so CK7 would page on every uncaptured payment. Late approvals need a person | [D37](../../decisions.md#d37), owner |
+| 7 | Replays answered with a stale result, and refusals were undefined | A stored 202 goes stale once the operation resolves | [D31](../../decisions.md#d31) |
+| 8 | Event `sequence` had no source | Using `version` leaves gaps, because a refund reservation bumps it with no event, and consumers park on gaps | [D32](../../decisions.md#d32) |
+
+### Capacity numbers were wrong or missing
+
+| # | Finding | Why it matters | Resolution |
+|---|---|---|---|
+| 9 | Commit load was understated, then overstated | The docs said 8-10 writes. Our first correction said up to 4 commits for auto-capture, which ignored that PSPs can do it in one call | [D29](../../decisions.md#d29): about 12k commits/s with one call, about 22k with two |
+| 10 | PSP callbacks weren't counted | Up to one per operation adds about 6-11k requests and commits per second | [D30](../../decisions.md#d30), spike variant V10 |
+| 11 | Outbox publishing wasn't counted | Marking each row published adds an update per event on the primary | `MEASURE-FIRST`, spike variant V9 |
+| 12 | The PSP may set the limit long before our code | Stripe's default is [100 requests/s per account](https://docs.stripe.com/rate-limits). G2 was scheduled late, and its answer depends on who owns the account | [D35](../../decisions.md#d35), and ask before Phase 2 |
+| 13 | The target's shape is undefined | A full day at 5,000/s is 432 million payments, about 61% of [Visa's fiscal 2025 daily average](https://s29.q4cdn.com/385744025/files/doc_downloads/2025/Visa-Fiscal-2025-Annual-Report.pdf) (257.5 billion a year). Data volume may limit before throughput | [D36](../../decisions.md#d36), owner; gate G6 |
+| 14 | One in-flight cap covers different kinds of waiting | It can't tell requests waiting on a PSP from a stuck database, and mass `UNKNOWN` recovery would compete with live traffic for PSP quota | [D34](../../decisions.md#d34) |
+
+### Design that may not earn its cost
+
+| # | Finding | Why it matters | Resolution |
+|---|---|---|---|
+| 15 | The refund lock guards nothing in v1 | With no payouts or retained fees, per-payment limits already stop a negative balance. The lock may cap a merchant at a few hundred refunds/s | [D38](../../decisions.md#d38), owner |
+| 16 | Our own vault brings the heaviest compliance scope and a shared hot-path dependency | [Hosted fields can keep merchants in the lightest assessment](https://www.securitymetrics.com/blog/ultimate-cheat-sheet-making-online-pci-compliance-work-you). The trade-off is that PSP tokens don't move between PSPs | [D39](../../decisions.md#d39), owner |
+| 17 | Fraud ran before the idempotency check, and a block had no outcome | Retries inflated velocity counters, and a block left no row, event or answer | [D33](../../decisions.md#d33) |
+| 18 | Two idempotency stores | `refunds` kept its own key and unique index, adding writes and rules for no benefit | [D31](../../decisions.md#d31) |
+
+### Requirements nobody had stated
+
+| # | Finding | Resolution |
+|---|---|---|
+| 19 | Whether the platform holds merchants' money. The ledger, licensing, credentials and PSP limits all depend on it | [D35](../../decisions.md#d35), owner |
+| 20 | How a customer's browser calls the API. The docs let customers start attempts, but the API has only secret merchant keys | [D39](../../decisions.md#d39), and [open questions](#unresolved-questions) |
+| 21 | Whether v1 carries real money. With real cards, disputes happen whether or not they are designed | [Open questions](#unresolved-questions) |
+
+### What held up
+
+These survived challenge, and the review keeps them: writing intent before the PSP call, state with ledger and outbox in one transaction, conditional updates, one-live-attempt unique indexes, `UNKNOWN` as a real state, quorum synchronous replication, one cell first, and shedding overload instead of queueing it.
+
+## Decisions
+
+**`Committed` by this review,** because they fix correctness or define what was ambiguous, and change no scope:
+
+| Record | Decision |
 |---|---|
-| First result | The spike has answered G1 on Linux, and steps 0-5 are recorded as preview runs, with capacity per instance measured |
-| Target claim | L5 passes on the complete payment path (fraud, vault and edge included) on Linux, with all applicable checks passing |
-| Sign-off | The [sign-off rule](../../verification.md#build-phases) is met, and the [final report](../../scaling-playbook.md#final-report) is written |
+| [D27](../../decisions.md#d27) | A negative PSP answer needs proof; adapters declare recovery modes |
+| [D28](../../decisions.md#d28) | `COMMIT` is never cancelled; a failed commit is unknown |
+| [D29](../../decisions.md#d29) | Auto-capture is one PSP call where supported |
+| [D30](../../decisions.md#d30) | Callbacks apply atomically, and count as load |
+| [D31](../../decisions.md#d31) | Idempotency answers defined for every case; one key store |
+| [D32](../../decisions.md#d32) | Deterministic event and ledger identity; balance per currency |
+| [D33](../../decisions.md#d33) | Key check before fraud; fraud blocks are recorded outcomes |
+| [D34](../../decisions.md#d34) | Separate limits per kind of waiting; fixed timer order |
 
-A pass against the mock PSP is not production capacity. The target claim always carries the result of G2, because the PSP contract may set a lower limit.
+D25 and D26 stay reserved for the spike's answers. Changes needing the owner are next.
 
-## Build sequence
+## Owner decisions
 
-Each stage produces something measured before the next begins.
+The first four block the payment core. Each has a recommendation, so a "yes" to all is a complete answer.
 
-| Order | Stage | Why here |
+| # | Decision | Recommendation | Blocks | If unanswered |
+|---|---|---|---|---|
+| 1 | [D35](../../decisions.md#d35): does the platform hold merchants' funds? | No: merchants connect their own PSP accounts | First migration, Task 12, G2 | Fund flows may be wrong, and the PSP limit is unknowable |
+| 2 | [D37](../../decisions.md#d37): void and authorization expiry in v1? | Yes | Task 12, API | Holds can't clear, and CK7 can't run on them |
+| 3 | [D38](../../decisions.md#d38): defer the refund lock? | Yes | Task 16 | Built as designed, with a likely bottleneck |
+| 4 | [D39](../../decisions.md#d39): PSP-hosted card fields, with no vault in v1? | Yes, after a PCI assessor confirms | Task 14, Stage 4 | A vault must be built or bought |
+| 5 | [D36](../../decisions.md#d36): is 5,000/s a peak or an average? | Peak, with a stated average | L2, G6 | L2 stays as a full day at peak |
+| 6 | Where do recorded benchmarks run? | Rent Linux machines by the hour | Task 6's answers | No G1 answer, so no payment-core sizing |
+| 7 | Which PSP sandbox, and one PSP or two in v1? | One to start; choose by its recovery mode, sale support and limit | Stage 2 | C39 can't run, so the API can't freeze |
+| 8 | Thin or full merchant events? | The middle shape in the [catalog](../../event-catalog.md#thin-or-full-events) | Stage 3 | Follows the recommendation |
+
+## Design readiness
+
+`READY` means its important questions are resolved. `MEASURE-FIRST` means a number decides the design. `NEEDS-OWNER` means a decision does. None of these says the thing works.
+
+| Area | Verdict | What's left | Settled by |
+|---|---|---|---|
+| Crash recovery order (intent, PSP, result) | `READY` | Nothing | C3, C4, C15 |
+| State machine, `Committed` rows | `NEEDS-OWNER` | Void and expiry | [D37](../../decisions.md#d37), then U2 |
+| Pure `Decide` and shell | `READY` | Nothing | U2, U3 |
+| Idempotency | `READY` | Key expiry method | E1-E4, E25-E29, C5, C41; V7 |
+| Commit semantics | `READY` | Confirm on our version | C43 |
+| PSP recovery contract | `READY` | Each adapter's mode, once a PSP is chosen | C44, C45, U5 |
+| PSP adapter for a real provider | `NEEDS-OWNER` | Which PSP | Decision 7, then C39 |
+| PSP rate limit against target (G2) | `NEEDS-OWNER` | Account model, then ask the PSP | [D35](../../decisions.md#d35), G2 |
+| Callbacks | `READY` | `psp_events` retention, in D25 | C9, C46, C48 |
+| Reconciler and timers | `READY` | Values | C26, C47 |
+| Ledger mechanics | `READY` | Nothing | U3, CK1 |
+| Fund flows and account meaning | `NEEDS-OWNER` | Whether we hold funds | [D35](../../decisions.md#d35), CK7-CK10 |
+| Balance trigger cost (G4) | `MEASURE-FIRST` | Trigger against audit query | V2, V12 |
+| Refund limits per payment | `READY` | Nothing | C6, CK3 |
+| Refund balance lock | `NEEDS-OWNER` | Defer or build | [D38](../../decisions.md#d38), V8 |
+| One primary's capacity (G1, G3) | `MEASURE-FIRST` | The real commit rate | Spike, then L1 |
+| Connection pool and PgBouncer | `MEASURE-FIRST` | Size and process count | V4 |
+| Partitioning and retention (D25, G6) | `MEASURE-FIRST` | Scheme, plus data volume | V5, V7, [D36](../../decisions.md#d36) |
+| Outbox publishing | `MEASURE-FIRST` | Marking rows, marker or log capture | V9 |
+| Event ordering and consumers | `READY` | Nothing | C17 |
+| Webhooks | `READY` | Event shape confirmation | C27, U7 |
+| Load control | `READY` | Values | L3, C30, C48, C49 |
+| Fraud rules | `READY` | Fallback policy needs an owner | C14, F1 |
+| Card data and vault | `NEEDS-OWNER` | Hosted fields or vault | [D39](../../decisions.md#d39) |
+| Client-side API access | `NEEDS-OWNER` | Design follows D39 | Design in Stage 4 |
+| Test mode isolation | `NEEDS-OWNER` | Mechanism is `Open` | Stage 5 |
+| Cells | `MEASURE-FIRST` | Only if G1 fails | G1 |
+| API contract | `MEASURE-FIRST` | Frozen only after a real 3D Secure flow | C39 |
+| Kubernetes and HA | `READY` | Values | C7, C10, C11, C19, C20 |
+
+## Build order
+
+| Order | Work | Needs | Produces | Why here |
+|---|---|---|---|---|
+| Done | Design closure and this review | | Decisions, contract draft | |
+| 1 | Database stack and spike scripts, tasks 3-5 | Docker | Runnable workloads | Needs no owner decision |
+| 2 | Owner decisions 1-4, and PSP limit question | Owner | Final fund flows, scope | Cheap now, costly after the first migration |
+| 3 | Spike on Linux, task 6 | Decision 6, order 1 | G1, G3, G4 provisional; D25, D26; first migration | A "no" changes the architecture |
+| 4 | Test tools, tasks 7-11 | First migration | Mock PSP, checks, harness | The tools that judge the code exist first |
+| 5 | Payment core, tasks 12-16 | Decisions 1-4 | Phase 1 exit | The rules settle before the layers that use them |
+| 6 | First ramp steps, task 17 | Order 5, Linux | Capacity per instance | First full-system number |
+| 7 | PSP and recovery | Decision 7, G2 answer | C39, API frozen | Real providers before more scale |
+| 8 | Async workers | Publisher choice from V9 | First recorded runs | CK4 and CK6 apply from here |
+| 9 | Hardening with the full synchronous path | Rented cluster | L1-L6, G1-G6 | |
+| 10 | Security and operations, then L5 again | | The sign-off number | |
+
+Orders 1 and 2 can run together. Order 4 can start before the owner answers, on a provisional migration, if Task 6 is the only thing waiting on machines.
+
+## Acceptance criteria
+
+Each is checked by a named test with a recorded run. **Exact values are from the docs, and are starting points where those say so.**
+
+### Money
+
+| Criterion | Passes when | Test |
 |---|---|---|
-| 1 | Design closure | The accounts and data-lifecycle choices must precede the first migration ([Stripe research](../../stripe-research.md#build-order)) |
-| 2 | Database spike | Answers whether one primary is enough. A "no" changes the architecture, so it comes before the code |
-| 3 | Test tools | Correctness checks must exist before the code they judge |
-| 4 | Payment core, then first ramp steps | Proves correctness at low load, and gives the first real capacity number |
-| 5 | PSP and recovery, then async, hardening, security | Each is planned in detail only once earlier numbers exist |
+| No duplicate effect | For every PSP key, the mock's effect log has one effect, every effect has a non-failed attempt, and every `SUCCEEDED` attempt has an effect | CK2, after every run |
+| Same key, 100 concurrent | One payment, one effect, identical answers | C5 |
+| Late landing | With a not-found then a late approval: attempt not failed on the lookup, 0 extra charges | C44 |
+| Key retention | Past retention, 0 replays sent | C45 |
+| Ambiguous commit | Across forced faults on A and B: 0 PSP calls after a failed A, 0 declines after a failed B, 0 answers of success without a standby copy | C43 |
+| Client disconnect | Disconnect after A: the attempt reaches a final state, and a retry returns it | E3 |
+| Refund limit | 50 concurrent refunds above captured: `refunded + pending` never above captured | C6, CK3 |
+| Ledger | Every `txn_id` balances per currency, and 0 rows changed or deleted | CK1, U3 |
+| Completeness | Every `CAPTURED` payment has its capture transaction, and `captured_minor` equals the ledger sum | CK9, CK10 |
+| Clearing | No clearing balance past its age limit; depends on [D37](../../decisions.md#d37) for `auth_hold` | CK7 |
+| Check validity | Every check fails on injected corruption and on zero rows | Task 9 tests |
 
-## Design changes this effort needs
+### State and recovery
 
-D21-D24 are accepted and recorded in [Decisions](../../decisions.md). D25 and D26 follow the spike.
-
-| Record | Change | Reason |
+| Criterion | Passes when | Test |
 |---|---|---|
-| D21 | Accounts and fund flows, with `clearing` or `terminal` and `real` or `logical` classes; `effective_at` and `subject_id`; minimal `api_keys` and `currencies` tables | These tables are named but unspecified, and block the first migration. Fee treatment stays `Open` |
-| D22 | Split the payment-transition module into a pure `Decide` function and a thin database shell | Allows exhaustive state tests and golden datasets. Amends [D2](../../decisions.md#d2) |
-| D23 | Add checks CK7-CK10 and one canonical log line per request | A balanced ledger can still be wrong. The log line also measures platform overhead directly |
-| D24 | Correct the derived load and the phase gates, as below | The current gates can't be met as written |
-| D25 | Partitioning and retention, chosen from spike results | `payment_attempts` can't be partitioned as specified without changing its key |
-| D26 | The answer to G1 | Decides one cell or several |
+| Transitions | Every state × command is accepted only if listed, and all invariants hold at every step of a bounded search | U2 |
+| Callback order | All permutations of duplicate, delayed and reordered callbacks reach one final state | C9 |
+| Callback crash | 0 events lost; early events park and then apply | C46 |
+| Unresolved work | Nothing past the reconciler threshold after the run ends | CK5 |
+| Recovery isolation | With thousands `UNKNOWN`: recovery within its quota, live traffic keeps its share | C47 |
+| Deadlocks | Forced lock collisions: `40P01` is counted, retried at most twice; `55P03` gives 503 | C34 |
 
-**D24 in detail:**
+### Capacity
 
-- **Derived load:** count the real two-transaction flow. Our estimate is about 20-22 row writes and up to 4 commits per auto-captured payment, against the documented 8-10 writes. The spike replaces this estimate.
-- **C31 split by phase:** C31a in Phase 1 (E1-E9, E11-E13, E16-E18, E21), C31b in Phase 2 (E10, E19, E20, E22-E24), C31c in Phase 3 (E14, E15).
-- **Full path before the final number:** minimal synchronous fraud, vault and edge gateway join Phase 4, and L5 runs again after Phase 5.
+| Criterion | Passes when | Test |
+|---|---|---|
+| Spike | Reports sustained commits/s at 60% primary CPU or less, against the required rate from the formula below | Task 6 |
+| Target | 5,000 completed payments/s for 60 min; platform overhead p99 ≤ 100 ms and p50 ≤ 25 ms; errors below 0.1%; all applicable checks pass; memory, queues and pool wait flat | L5 |
+| Complete path | Same, repeated after Phase 5, with synchronous fraud and the real edge in place | L5 again |
+| Overload | 15,000 req/s for 10 min: excess gets 429 or 503, 5,000/s holds, no restart, SLO back within 2 min | L3 |
+| Breaking point | Offered load rising to twice L5: the first failing resource is recorded | L6 |
+| Reads and callbacks | Floods of each: create-payment keeps its SLO | C48, C49 |
+| PSP | G2 is answered in writing by the chosen PSP, or by its sandbox and contract | G2 |
+
+**Required commit rate:** `P × c + R × 2 + K`, where `P` is payments/s, `c` is commits per payment (2 for a sale, 4 for separate authorize and capture), `R` is refunds/s and `K` is callback commits/s. Add outbox publishing as measured in V9. The spike computes this from the configured mix.
+
+### Failure coverage
+
+Every scenario has a detection signal, automatic behavior, recovery and proof in [Failure scenarios](../../failure-scenarios.md#failure-catalogue). This review added:
+
+| Scenario | Failure | Test | Phase |
+|---|---|---|---|
+| FS-43 | Ambiguous commit | C43 | 1 |
+| FS-44 | False not-found from a PSP | C44 | 2 |
+| FS-45 | Key retention passes while unresolved | C45 | 2 |
+| FS-46 | Crash during callback handling; early callback | C46 | 2 |
+| FS-47 | Mass `UNKNOWN` against PSP quota | C47 | 2 |
+| FS-48 | Callback flood | C48 | 4 |
+| FS-49 | Status-query flood | C49 | 4 |
+| E25-E29 | Cross-route keys, fraud block, unresolved replay, finished replay, refused request | C31a | 1 |
+
+**Known gaps, with no scenario yet:** merchant PSP credential expiry or revocation, if D35 is accepted; failure during partition drop or archive; loss of a large in-flight batch at the broker during a publisher change; client-secret abuse, once designed; and disputes arriving on real payments.
 
 ## Benchmark rules
 
 ### What a run measures
 
-Admitted req/s, rejected req/s and completed payments/s are recorded separately, as the [standard names](../../glossary.md#standard-names) define them. The target applies to **platform overhead**, measured on the server as total time minus PSP wait, because a load generator can't see it. End-to-end latency is recorded against a fixed PSP latency.
+Admitted req/s, rejected req/s and completed payments/s are recorded separately, as the [standard names](../../glossary.md#standard-names) define them. The target applies to **platform overhead**, measured on the server as total time minus PSP wait. End-to-end latency is recorded against a fixed PSP latency.
 
 ### When a result can be trusted
-
-A run is one of three things:
 
 | Result | Meaning | Counts as proof? |
 |---|---|---|
@@ -82,66 +238,78 @@ A run is **invalid** if any of these is true:
 - The completed-payments metric differs from the database count.
 - The git tree was dirty, or the configuration wasn't recorded.
 
-A valid run **fails its gates** on any [gate miss](../../scaling-playbook.md#measures-and-gates), including any failed correctness check. A fast run with wrong money is a failed run.
-
-### Which checks apply
-
-A check that can't apply yet is reported as not applicable, never as passed. Every check must fail on injected corruption and on zero rows, or it isn't evidence.
-
-| Stage | CK1-CK3 | CK4 | CK5 | CK6 | CK7-CK10 |
-|---|---|---|---|---|---|
-| Spike | CK1 and CK3 by SQL | n/a | n/a | n/a | n/a |
-| After Phase 1 | Yes | Every transition has its outbox row | Yes, with no PSP timeouts injected | Without outbox age | Completeness, cross-check |
-| After Phase 2 | Yes | Same as Phase 1 | Yes, with timeouts | Without outbox age | Adds clearing, timeliness |
-| Phase 3 onward | Yes | Full | Yes | Full | Yes |
+A valid run **fails its gates** on any [gate miss](../../scaling-playbook.md#measures-and-gates), including any failed correctness check. A fast run with wrong money is a failed run. [Which checks apply](../../verification.md#correctness-checks) depends on the stage, and an inapplicable check is reported as not applicable, never as passed.
 
 ### Test conditions
 
 - **Arrival model:** open, at a fixed rate, so a slow system can't reduce its own load.
-- **Workload:** the [example mix](../../scaling-playbook.md#workload-and-load-generation), replaced by a real one when known. Merchant traffic is skewed 80/20, since uniform traffic hides hot rows.
+- **Workload:** the [example mix](../../scaling-playbook.md#workload-and-load-generation), with stated shares of sale and two-call capture, plus callbacks. Merchant traffic is skewed 80/20, since uniform traffic hides hot rows.
 - **Data:** prefilled before measuring, starting at 100M payments on Linux, with the size recorded. An empty database flatters every number.
-- **Environment:** Linux with NVMe, WAL on its own volume, quorum replication across zones, and generators on separate machines. Exact machine sizes are recorded per run.
-- **PSP:** fixed latency for comparable runs, with separate runs for variable latency and failures. The mock PSP must be shown to carry at least 25,000 req/s on the same class of hardware.
-- **Results:** each run keeps its configuration, commit, summary and check output in `benchmarks/`, using the [results log](../../scaling-playbook.md#results-log).
+- **Environment:** Linux with NVMe, WAL on its own volume, quorum replication across zones, and generators on separate machines. Machine sizes are recorded per run.
+- **PSP:** fixed latency for comparable runs, with separate runs for variable latency and failures. The mock must be shown to carry at least 25,000 req/s on the same class of hardware, and must model each recovery mode and a delayed request landing late.
 
 ### What the spike must answer
 
-The spike uses the real transaction shape on the revised schema, and reports sustained commits/s at 60% primary CPU or less against the rate the mix requires.
-
-| Question | Answers |
-|---|---|
-| What does quorum commit cost? | G3, provisional |
-| What does the balance trigger cost? | G4, provisional |
-| What does row-level security cost? | Tenant backstop |
-| Does the connection pool or PgBouncer limit first? | Connection budget |
-| Which partitioning scheme holds up? | D25 |
-| Does pipelining statements help? | Transaction design |
-| Can idempotency keys expire by batched delete under load? | [D19](../../decisions.md#d19) |
-| How many refunds/s can one merchant sustain under the advisory lock? | [D9](../../decisions.md#d9) |
+| Variant | Question | Answers |
+|---|---|---|
+| V1 | What does quorum commit cost? | G3, provisional |
+| V2, V12 | What does the balance check cost, as a row trigger, a statement trigger or none? | G4, provisional |
+| V3 | What does row-level security cost? | Tenant backstop |
+| V4 | Does the pool or a PgBouncer process limit first? | Connection budget |
+| V5 | Which partitioning scheme holds up? | D25 |
+| V6 | Does pipelining statements help? | Transaction design |
+| V7 | Can keys expire by batched delete under load? | [D19](../../decisions.md#d19) |
+| V8 | How many refunds/s can one merchant sustain under the lock? | [D38](../../decisions.md#d38) |
+| V9 | Marking rows, a progress marker or log capture for the outbox? | Publisher design |
+| V10 | What do callbacks cost, one per transaction or batched? | Capacity model |
+| V11 | What does a sale save against two calls? | [D29](../../decisions.md#d29), required rate |
 
 ## Stop conditions
 
 Stop and bring the evidence to the owner when:
 
 - G1 says one primary isn't enough. Cells change the roadmap.
-- G2 says the PSP can't reach the target. More engineering won't fix a contract limit ([Assumptions](../../decisions.md#assumptions-and-limits)).
-- Meeting a gate would need asynchronous replication, which gives up RPO 0 and is an owner decision.
+- G2 says the PSP can't reach the target. More engineering won't fix a contract limit.
+- Meeting a gate would need asynchronous replication, which gives up RPO 0.
 - Any run shows a duplicate charge, lost record or imbalance that can't be explained. Correctness work comes before all further load work.
 
-## Owner decisions
+## Unresolved questions
 
-| Decision | Needed by | Recommendation |
-|---|---|---|
-| Where the recorded benchmarks run | The spike's Linux run | Rent Linux machines by the hour, only during runs |
-| Which PSP sandbox to use | Stage 2 | Choose before Stage 2. It must support idempotency keys, inquiry by our ID and 3D Secure |
+**For the owner:** the [eight decisions](#owner-decisions) above, and these:
 
-Settled on 2026-11-05: D21-D24 are accepted. Auto-capture uses a request field, the recommended default, since the contract is still a draft.
+1. Does v1 carry real money, or is it a reference implementation? If real, disputes need at least recording, and legal and banking work starts. The docs currently treat disputes as `Proposed` and legal work as out of scope.
+2. Who owns the fraud fallback policy and the shed order?
+3. What is the retention period for payments and ledger data? G6 can't be answered without it.
 
-## Open items
+**For design, at the stage shown:**
 
-These don't block the first result, and stay `Open` until their stage:
+| Question | When |
+|---|---|
+| Client-side access: client secret format, scopes and lifetime | Stage 4 |
+| Test mode isolation mechanism | Stage 5 |
+| Manual review tooling for `REVIEW` and stuck attempts | Stage 2 |
+| Settlement files that net fees, and fee ledger treatment | With fees |
+| Refunds after `SETTLED`, and disputes after a partial refund | With settlement and disputes |
+| Automatic void of a late approval, if D37 is accepted | Stage 2 |
+| Data movement between cells | Only if G1 requires cells |
 
-- The [fraud fallback policy and shed order](../../decisions.md#open-questions) need a business owner before Stage 4.
-- The test-mode isolation mechanism is decided in Stage 5 ([D20](../../decisions.md#d20)).
-- Thin or full merchant events is decided in the event catalog.
-- Machine sizes and costs are unknown until the environment is chosen.
+**For measurement:** every `MEASURE-FIRST` row in the [readiness table](#design-readiness).
+
+**Not verified by this review:** our reading of cancel during the synchronous wait comes from PostgreSQL's mailing lists and a committer's post, so C43 confirms it on our version. Adyen's rate limit and lookup behavior weren't confirmed. The PCI points come from vendor sources and need an assessor. Licensing depends on jurisdiction and needs legal advice.
+
+## Evidence
+
+Read 2026-11-05. Provider details change, so recheck them at adapter time.
+
+| Source | Used for |
+|---|---|
+| [Stripe rate limits](https://docs.stripe.com/rate-limits) | Finding 12 |
+| [Stripe idempotent requests](https://docs.stripe.com/api/idempotent_requests), [advanced error handling](https://docs.stripe.com/error-low-level) | Findings 2, 3 |
+| [Stripe Search](https://docs.stripe.com/search) | Finding 2 |
+| [Adyen API idempotency](https://docs.adyen.com/development-resources/api-idempotency), [cancels](https://docs.adyen.com/api-explorer/Checkout/latest/post/payments/_paymentPspReference_/cancels), [payments lifecycle](https://docs.adyen.com/account/payments-lifecycle) | Findings 2, 3, 6 |
+| [Visa fiscal 2025 annual report](https://s29.q4cdn.com/385744025/files/doc_downloads/2025/Visa-Fiscal-2025-Annual-Report.pdf) | Finding 13. The figure comes through a search summary of the report |
+| [Synchronous commit cancel, Michael Paquier](https://paquier.xyz/postgresql-2/track-commit-synchronous/), [pgsql-hackers thread](https://www.postgresql.org/message-id/CALj2ACUO6oz-43ryqfMOVZ_Q-N10C5tkzKku12%2BQV02NnXsDrw%40mail.gmail.com) | Finding 4 |
+| [PgBouncer manual](https://manpages.ubuntu.com/manpages/questing/man1/pgbouncer.1.html), [ClickHouse benchmark](https://clickhouse.com/blog/pgbouncer-clickhouse-managed-postgres.md) (vendor) | Variant V4 |
+| [Conduktor outbox guide](https://www.conduktor.io/blog/transactional-outbox-pattern-database-kafka.md) (vendor) | Finding 11 |
+| [SecurityMetrics on hosted fields](https://www.securitymetrics.com/blog/ultimate-cheat-sheet-making-online-pci-compliance-work-you) (vendor) | Finding 16 |
+| [Hyperswitch](https://hyperswitch.io/blog/building-hyperswitch-the-world-s-first-open-source-payments-platform) | Finding 19 |
