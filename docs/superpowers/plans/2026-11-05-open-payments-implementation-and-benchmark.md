@@ -16,10 +16,10 @@
 
 | # | Decision | Blocks | Recommendation |
 |---|---|---|---|
-| A | Accept the Task 1 design changes: accounts and fund flows, pure `Decide`, CK7-CK10, canonical log line, corrected phase gates | Task 2 onward | Accept. The Stripe research says the accounts and lifecycle choices must precede the first migration |
+| A | Accept the Task 1 design changes | Task 2 onward | Done: accepted 2026-11-05 |
 | B | Where the benchmarks that count will run | Task 6 answers, Task 17 onward | Rent Linux machines by the hour, only during runs. A laptop can't answer G1 ([playbook](../../scaling-playbook.md#workload-and-load-generation)), and no cloud CLI is installed here |
 | C | Which PSP sandbox to use | Stage 2 (C39, G2), and freezing the API | Choose before Stage 2 starts. It must support idempotency keys, inquiry by our ID and 3D Secure in its sandbox. You sign up, not an agent |
-| D | Auto-capture as a request field or a merchant setting ([lifecycle question 3](../../payment-lifecycle.md#open-questions)) | Task 2 | Request field `capture_mode` (`auto` or `manual`), since the benchmark mix needs both |
+| D | Auto-capture as a request field or a merchant setting | Task 2 | Done: request field `capture_mode`, the recommended default |
 
 ## Problems found in the docs
 

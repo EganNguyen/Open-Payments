@@ -1,0 +1,447 @@
+openapi: 3.1.0
+info:
+  title: Open Payments API
+  version: 0.1.0
+  description: >
+    Draft until C39 passes. One real 3D Secure flow must run on a PSP sandbox
+    before this contract is frozen (D17), so anything here may still change.
+    Amounts are integers in minor units. New enum values may be added, so clients
+    must tolerate values they do not recognize.
+servers:
+  - url: http://localhost:8080
+    description: Local development
+security:
+  - apiKey: []
+tags:
+  - name: Payments
+    description: Create, attempt, cancel, capture and read payments.
+  - name: Refunds
+    description: Refund captured amounts and read refund status.
+paths:
+  /v1/payments:
+    post:
+      tags: [Payments]
+      operationId: createPayment
+      summary: Create a payment, with or without a payment method
+      description: Without a method, the payment waits in AWAITING_METHOD. With one, the first attempt runs.
+      parameters:
+        - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreatePayment'
+      responses:
+        '200':
+          $ref: '#/components/responses/Payment'
+        '202':
+          $ref: '#/components/responses/PaymentStillChecking'
+        '402':
+          $ref: '#/components/responses/Declined'
+        '401':
+          $ref: '#/components/responses/Problem'
+        '409':
+          $ref: '#/components/responses/Conflict'
+        '422':
+          $ref: '#/components/responses/Problem'
+        '429':
+          $ref: '#/components/responses/Busy'
+        '503':
+          $ref: '#/components/responses/Busy'
+  /v1/payments/{id}:
+    get:
+      tags: [Payments]
+      operationId: getPayment
+      summary: Read a payment's current status
+      parameters:
+        - $ref: '#/components/parameters/Id'
+      responses:
+        '200':
+          $ref: '#/components/responses/Payment'
+        '401':
+          $ref: '#/components/responses/Problem'
+        '404':
+          $ref: '#/components/responses/Problem'
+        '429':
+          $ref: '#/components/responses/Busy'
+        '503':
+          $ref: '#/components/responses/Busy'
+  /v1/payments/{id}/attempts:
+    post:
+      tags: [Payments]
+      operationId: createAttempt
+      summary: Try to collect the payment again, with a new key
+      parameters:
+        - $ref: '#/components/parameters/Id'
+        - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateAttempt'
+      responses:
+        '200':
+          $ref: '#/components/responses/Payment'
+        '202':
+          $ref: '#/components/responses/PaymentStillChecking'
+        '402':
+          $ref: '#/components/responses/Declined'
+        '401':
+          $ref: '#/components/responses/Problem'
+        '404':
+          $ref: '#/components/responses/Problem'
+        '409':
+          $ref: '#/components/responses/Conflict'
+        '422':
+          $ref: '#/components/responses/Problem'
+        '429':
+          $ref: '#/components/responses/Busy'
+        '503':
+          $ref: '#/components/responses/Busy'
+  /v1/payments/{id}/cancel:
+    post:
+      tags: [Payments]
+      operationId: cancelPayment
+      summary: Cancel a payment that has no successful attempt
+      parameters:
+        - $ref: '#/components/parameters/Id'
+        - $ref: '#/components/parameters/IdempotencyKey'
+      responses:
+        '200':
+          $ref: '#/components/responses/Payment'
+        '401':
+          $ref: '#/components/responses/Problem'
+        '404':
+          $ref: '#/components/responses/Problem'
+        '409':
+          $ref: '#/components/responses/Conflict'
+        '429':
+          $ref: '#/components/responses/Busy'
+        '503':
+          $ref: '#/components/responses/Busy'
+  /v1/payments/{id}/capture:
+    post:
+      tags: [Payments]
+      operationId: capturePayment
+      summary: Capture an authorized payment in full
+      description: Partial capture is Proposed, so an amount that differs from the authorized amount gets 422.
+      parameters:
+        - $ref: '#/components/parameters/Id'
+        - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/Capture'
+      responses:
+        '200':
+          $ref: '#/components/responses/Payment'
+        '202':
+          $ref: '#/components/responses/PaymentStillChecking'
+        '401':
+          $ref: '#/components/responses/Problem'
+        '404':
+          $ref: '#/components/responses/Problem'
+        '409':
+          $ref: '#/components/responses/Conflict'
+        '422':
+          $ref: '#/components/responses/Problem'
+        '429':
+          $ref: '#/components/responses/Busy'
+        '503':
+          $ref: '#/components/responses/Busy'
+  /v1/payments/{id}/refunds:
+    post:
+      tags: [Refunds]
+      operationId: createRefund
+      summary: Refund part or all of the captured amount
+      parameters:
+        - $ref: '#/components/parameters/Id'
+        - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateRefund'
+      responses:
+        '200':
+          $ref: '#/components/responses/Refund'
+        '202':
+          $ref: '#/components/responses/Refund'
+        '401':
+          $ref: '#/components/responses/Problem'
+        '404':
+          $ref: '#/components/responses/Problem'
+        '409':
+          $ref: '#/components/responses/Conflict'
+        '422':
+          $ref: '#/components/responses/Problem'
+        '429':
+          $ref: '#/components/responses/Busy'
+        '503':
+          $ref: '#/components/responses/Busy'
+  /v1/refunds/{id}:
+    get:
+      tags: [Refunds]
+      operationId: getRefund
+      summary: Read a refund's current status
+      parameters:
+        - $ref: '#/components/parameters/Id'
+      responses:
+        '200':
+          $ref: '#/components/responses/Refund'
+        '401':
+          $ref: '#/components/responses/Problem'
+        '404':
+          $ref: '#/components/responses/Problem'
+        '429':
+          $ref: '#/components/responses/Busy'
+        '503':
+          $ref: '#/components/responses/Busy'
+components:
+  securitySchemes:
+    apiKey:
+      type: http
+      scheme: bearer
+      description: A live or test API key. The key's mode decides which data it reaches (D20).
+  parameters:
+    Id:
+      name: id
+      in: path
+      required: true
+      schema:
+        type: string
+        format: uuid
+    IdempotencyKey:
+      name: Idempotency-Key
+      in: header
+      required: true
+      description: >
+        Same key and body returns the stored answer, including a decline. Same key
+        with a different body gets 422. A new try needs a new key.
+      schema:
+        type: string
+        minLength: 1
+        maxLength: 255
+  headers:
+    RetryAfter:
+      description: Seconds to wait before retrying with the same key.
+      schema:
+        type: integer
+  responses:
+    Payment:
+      description: The payment's state. Check `state`, since ACTION_REQUIRED also answers 200.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Payment'
+    PaymentStillChecking:
+      description: The outcome is not known yet. It arrives by webhook or polling. This is not a failure.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Payment'
+    Declined:
+      description: The attempt failed. The payment can be tried again with a new key.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Payment'
+    Refund:
+      description: The refund's state. A 202 means it is still unresolved, and the amount stays reserved.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Refund'
+    Problem:
+      description: The request was refused.
+      content:
+        application/problem+json:
+          schema:
+            $ref: '#/components/schemas/Problem'
+    Conflict:
+      description: >
+        Another request or attempt is running or has already succeeded, or the state
+        forbids this. Codes include `request_in_flight`, `attempt_live`, `capture_live`,
+        `attempt_cap_reached` and `invalid_state`.
+      headers:
+        Retry-After:
+          $ref: '#/components/headers/RetryAfter'
+      content:
+        application/problem+json:
+          schema:
+            $ref: '#/components/schemas/Problem'
+    Busy:
+      description: Shed by a limit, with nothing changed. Retry later with the same key.
+      headers:
+        Retry-After:
+          $ref: '#/components/headers/RetryAfter'
+      content:
+        application/problem+json:
+          schema:
+            $ref: '#/components/schemas/Problem'
+  schemas:
+    AmountMinor:
+      type: integer
+      format: int64
+      minimum: 1
+      maximum: 99999999999
+      description: Minor units of the currency, so 2400 is 24.00 USD and 2400 is 2,400 JPY. The maximum is a starting value.
+    Currency:
+      type: string
+      pattern: '^[A-Z]{3}$'
+    Method:
+      type: object
+      description: How to pay, by reference. Never card data, which stays in the vault.
+      required: [type, ref]
+      properties:
+        type:
+          type: string
+          description: Cards first. Later methods add values here.
+          examples: [card]
+        ref:
+          type: string
+          description: A token for the method.
+        details:
+          type: object
+          description: Typed by `type`.
+          additionalProperties: true
+    CreatePayment:
+      type: object
+      required: [amount_minor, currency]
+      additionalProperties: false
+      properties:
+        amount_minor:
+          $ref: '#/components/schemas/AmountMinor'
+        currency:
+          $ref: '#/components/schemas/Currency'
+        method:
+          $ref: '#/components/schemas/Method'
+        capture_mode:
+          type: string
+          enum: [auto, manual]
+          default: manual
+        error_on_action:
+          type: boolean
+          default: false
+          description: Answer with a failed attempt instead of ACTION_REQUIRED.
+    CreateAttempt:
+      type: object
+      required: [method]
+      additionalProperties: false
+      properties:
+        method:
+          $ref: '#/components/schemas/Method'
+        error_on_action:
+          type: boolean
+          default: false
+    Capture:
+      type: object
+      required: [amount_minor]
+      additionalProperties: false
+      properties:
+        amount_minor:
+          $ref: '#/components/schemas/AmountMinor'
+    CreateRefund:
+      type: object
+      required: [amount_minor]
+      additionalProperties: false
+      properties:
+        amount_minor:
+          $ref: '#/components/schemas/AmountMinor'
+    Action:
+      type: object
+      description: What the customer must do.
+      required: [type, expires_at]
+      properties:
+        type:
+          type: string
+          examples: [three_d_secure, redirect]
+        url:
+          type: string
+          format: uri
+        expires_at:
+          type: string
+          format: date-time
+    Attempt:
+      type: object
+      required: [id, state]
+      properties:
+        id:
+          type: string
+          format: uuid
+        state:
+          type: string
+          enum: [PENDING, ACTION_REQUIRED, UNKNOWN, SUCCEEDED, FAILED, REVIEW]
+        failure_code:
+          type: string
+        action:
+          $ref: '#/components/schemas/Action'
+    Payment:
+      type: object
+      required: [id, state, amount_minor, currency, captured_minor, refunded_minor, refund_pending_minor, expires_at, created_at]
+      properties:
+        id:
+          type: string
+          format: uuid
+        state:
+          type: string
+          enum: [AWAITING_METHOD, PSP_PENDING, ACTION_REQUIRED, UNKNOWN, REVIEW, AUTHORIZED, CAPTURED, PARTIALLY_REFUNDED, REFUNDED, CANCELED]
+        amount_minor:
+          $ref: '#/components/schemas/AmountMinor'
+        currency:
+          $ref: '#/components/schemas/Currency'
+        captured_minor:
+          type: integer
+          format: int64
+        refunded_minor:
+          type: integer
+          format: int64
+        refund_pending_minor:
+          type: integer
+          format: int64
+        latest_attempt:
+          $ref: '#/components/schemas/Attempt'
+        expires_at:
+          type: string
+          format: date-time
+        created_at:
+          type: string
+          format: date-time
+    Refund:
+      type: object
+      required: [id, payment_id, amount_minor, state, created_at]
+      properties:
+        id:
+          type: string
+          format: uuid
+        payment_id:
+          type: string
+          format: uuid
+        amount_minor:
+          $ref: '#/components/schemas/AmountMinor'
+        state:
+          type: string
+          enum: [PENDING, UNKNOWN, SUCCEEDED, FAILED, REVIEW]
+        created_at:
+          type: string
+          format: date-time
+    Problem:
+      type: object
+      required: [title, status, code]
+      properties:
+        type:
+          type: string
+        title:
+          type: string
+        status:
+          type: integer
+        code:
+          type: string
+          description: Stable across versions. Match on this, not on `title`.
+        payment:
+          $ref: '#/components/schemas/Payment'

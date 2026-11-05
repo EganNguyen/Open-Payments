@@ -2,7 +2,7 @@
 
 What this build effort delivers, what counts as done, and the rules that make a benchmark result trustworthy.
 
-Status: Draft, awaiting owner review · Last updated: 2026-11-05
+Status: Accepted by the owner · Last updated: 2026-11-05
 
 The system itself is defined in the [design docs](../../../README.md#documents), and this spec doesn't restate it. Where a value already has a home in those docs, this spec links to it. The [implementation plan](../plans/2026-11-05-open-payments-implementation-and-benchmark.md) holds the tasks.
 
@@ -42,7 +42,7 @@ Each stage produces something measured before the next begins.
 
 ## Design changes this effort needs
 
-Each is recorded in [Decisions](../../decisions.md) once accepted. Nothing here changes the design until then.
+D21-D24 are accepted and recorded in [Decisions](../../decisions.md). D25 and D26 follow the spike.
 
 | Record | Change | Reason |
 |---|---|---|
@@ -132,10 +132,10 @@ Stop and bring the evidence to the owner when:
 
 | Decision | Needed by | Recommendation |
 |---|---|---|
-| Accept D21-D24 | Before any build work | Accept |
 | Where the recorded benchmarks run | The spike's Linux run | Rent Linux machines by the hour, only during runs |
 | Which PSP sandbox to use | Stage 2 | Choose before Stage 2. It must support idempotency keys, inquiry by our ID and 3D Secure |
-| Auto-capture as a request field or merchant setting | The API contract | Request field |
+
+Settled on 2026-11-05: D21-D24 are accepted. Auto-capture uses a request field, the recommended default, since the contract is still a draft.
 
 ## Open items
 

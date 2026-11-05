@@ -345,7 +345,7 @@ Other unusual cases are [edge cases](failure-scenarios.md#edge-cases) E6, E7, E8
 
 1. Which `Proposed` states to build first, and which wait for the settlement and payout phase.
 2. Authorization window per card scheme and per PSP.
-3. Whether auto-capture is a flag on the payment or a merchant setting.
+3. Decided: auto-capture is a request field, `capture_mode`, in the [draft API](../api/openapi.yaml).
 4. How long a payment may stay `UNKNOWN` before manual review.
 5. Whether `PAID_OUT` and `CHARGED_BACK` belong in the payment record or a separate settlement record.
 6. Which markets need 3D Secure in production, and each PSP's action window.

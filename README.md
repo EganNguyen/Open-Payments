@@ -62,6 +62,8 @@ Read them in this order if you are new.
 | [Failure scenarios](docs/failure-scenarios.md) | 42 failures, 24 edge cases, 7 runbooks, drills | You plan for things going wrong |
 | [Scaling playbook](docs/scaling-playbook.md) | Ramp plan, sizing, decision gates, results log | You plan benchmarks |
 | [Verification](docs/verification.md) | Test IDs, 108 production problems, 25 readiness items, build phases | You need to prove a claim or plan a build phase |
+| [API contract](api/openapi.yaml) | Draft routes and fields, frozen only after C39 ([draft guides](docs/integration-guides-draft.md)) | You call or build the API |
+| [Event catalog](docs/event-catalog.md) | Shape and contents of published events | You publish or consume events |
 | [Implementation guide](docs/implementation-guide.md) | How to build and benchmark it, with links to the spec and plan | You start building or run a benchmark |
 | [Decisions](docs/decisions.md) | Why key choices were made, assumptions, open questions | You question a choice |
 | [Stripe research](docs/stripe-research.md) | What Stripe has published, proposed design changes, what not to copy | Before accepting the design or starting Phase 0 |
@@ -86,9 +88,10 @@ The clickable UX prototype and case study for the merchant dashboard and checkou
 **Suggested next steps:**
 
 1. Run a 2-3 day database spike to measure how many payment transactions one PostgreSQL primary sustains. This answers [gate G1](docs/scaling-playbook.md#decision-gates).
-2. Write the API contract and event catalog.
-3. Write about 10 acceptance tests that fail first.
-4. Start [Phase 0](docs/verification.md#build-phases): mock PSP, load scripts, automatic correctness checks. Then build the payments core.
+2. Start [Phase 0](docs/verification.md#build-phases): mock PSP, load scripts, automatic correctness checks.
+3. Build the payments core test first, then run the first benchmark steps.
+
+The [implementation guide](docs/implementation-guide.md) has the details.
 
 ## Limits
 

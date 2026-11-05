@@ -237,4 +237,4 @@ All values are starting points until measured. Other docs state the resulting ru
 - **Shed order** in [Rules for every failure](failure-scenarios.md#rules-for-every-failure) needs owner confirmation.
 - **Repeated order references.** An optional warning for edge case E5 is not designed.
 - **Settlement and refunds.** Refunds after `SETTLED` and disputes after a partial refund are undecided. See [lifecycle open questions](payment-lifecycle.md#open-questions).
-- **Near-term documents.** An API contract, event catalog and acceptance tests are still to be written.
+- **Near-term documents.** The [API contract](../api/openapi.yaml) and [event catalog](event-catalog.md) are drafts. The contract freezes after C39, and thin or full events needs owner confirmation. Acceptance tests are written with the code.

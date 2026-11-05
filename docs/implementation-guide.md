@@ -25,8 +25,6 @@ Work can't pass these points without an answer. The recommendations are in the [
 
 | Decision | Blocks |
 |---|---|
-| Accept D21-D24 | Everything after Task 1 |
-| Auto-capture as a request field or merchant setting | Task 2 |
 | Where recorded benchmarks run | The Linux runs in Tasks 6 and 17 |
 | Which PSP sandbox to use | Stage 2 |
 
