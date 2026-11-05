@@ -33,6 +33,12 @@ check "quorum standbys" "$DB_ADMIN_URL" \
   "select count(*) from pg_stat_replication where sync_state = 'quorum' and application_name in ('standby1','standby2')" "2"
 check "deadlock_timeout" "$DB_ADMIN_URL" "show deadlock_timeout" "100ms"
 check "log_lock_waits" "$DB_ADMIN_URL" "show log_lock_waits" "on"
+check "transaction_timeout" "$DB_ADMIN_URL" \
+  "select case when current_setting('transaction_timeout', true) in ('', '0') then 'unset' else current_setting('transaction_timeout') end" \
+  "unset"
+check "PgBouncer query_timeout" \
+  "${PGBOUNCER_ADMIN_URL:-postgres://postgres:op_local_only@127.0.0.1:16432/pgbouncer}" \
+  "show query_timeout" "0"
 
 for path in direct pgbouncer; do
   url=$DB_DIRECT_URL

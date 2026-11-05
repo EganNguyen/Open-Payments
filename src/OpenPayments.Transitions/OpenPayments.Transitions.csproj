@@ -1,0 +1,12 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <RootNamespace>OpenPayments.Transitions</RootNamespace>
+    <AssemblyName>OpenPayments.Transitions</AssemblyName>
+  </PropertyGroup>
+  <ItemGroup>
+    <ProjectReference Include="../OpenPayments.Domain/OpenPayments.Domain.csproj" />
+    <PackageReference Include="Npgsql" />
+    <PackageReference Include="Microsoft.CodeAnalysis.BannedApiAnalyzers" PrivateAssets="all" />
+    <AdditionalFiles Include="$(MSBuildThisFileDirectory)../../BannedSymbols.txt" />
+  </ItemGroup>
+</Project>

@@ -50,12 +50,15 @@ The client was told the commit succeeded. The server log shows that Npgsql sent 
 
 This is the exact failure D28 was written to prevent: a normal success is returned while no standby has the row, so a failover could lose it.
 
+This first probe also reported that `CommandTimeout` did not cover `COMMIT`. That was wrong. The follow-up [Npgsql commit probe](npgsql-commit-probe/README.md) measured it directly: `Command Timeout=1` covers `COMMIT` and sends a cancel, and `Cancellation Timeout=-1` still sends the cancel. The first probe did not exercise that setting.
+
 ## Conclusion
 
 With Npgsql 10.0.3 and the public API:
 
 - Passing a cancellation token to `NpgsqlTransaction.CommitAsync` sends a cancel to PostgreSQL and reports success even though the synchronous wait was cancelled. This violates D28 and RPO 0.
-- `NpgsqlConnection.CloseAsync`/`DisposeAsync` cannot drop the connection during the commit. There is no supported way to abandon the commit without sending a cancel.
-- `statement_timeout` and `CommandTimeout` do not cover the synchronous commit wait.
+- `NpgsqlConnection.CloseAsync`/`DisposeAsync` cannot drop the connection during the commit, and dropping it would not stop the backend anyway.
+- `Command Timeout` covers `COMMIT` and sends a cancel; the runner's data source must set it to 0.
+- A commit can be abandoned without a cancel by calling `CommitAsync(CancellationToken.None)` and then `WaitAsync(limit)`. The commit keeps running, the row stays invisible until a standby confirms, and the connection becomes usable again after the commit finishes. This is the amended D28 mechanism, measured in the [follow-up probe](npgsql-commit-probe/README.md).
 
-This is the escalation trigger in Task 13. The runner must not choose a workaround itself; see `docs/gates/stage-1-escalations.md`.
+The original escalation was answered by the owner on 2026-11-05; see [E1](../docs/gates/stage-1-escalations.md#e1-task-13-npgsql-commit-cancellation-breaks-d28).
