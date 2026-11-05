@@ -2,7 +2,7 @@
 
 The approval record for Stage 1: what the owner has approved, and what must finish before the build starts.
 
-Status: **Open** · Last updated: 2026-11-05
+Status: **Closed, 2026-11-05** · The build starts from `6cc5f8c` · Last updated: 2026-11-05
 
 Stage 1 is the spike, test tools, payment core and first ramp steps. The rules are in [Delivery workflow](../delivery-workflow.md#design-gate).
 
@@ -52,7 +52,7 @@ Stage 1 is the spike, test tools, payment core and first ramp steps. The rules a
 | ☑ | Task 6, as far as the owner chose: [MacBook spike](../benchmarks/spike/macbook-2026-11-05/summary.md), with database-only runs stopped on 2026-11-05 to benchmark the full platform once built. [D25](../decisions.md#d25) and [D26](../decisions.md#d26) approved, and `db/migrations/0001_initial.sql` passes `scripts/check-migration.sh` | Done |
 | ☑ | G1 stays open, and closes on Linux before Stage 4 ([D26](../decisions.md#d26)) | Accepted by the owner, 2026-11-05 |
 | ☐ | Install .NET 10 | Owner, before Task 7 |
-| ☐ | Sign below, naming the build's starting commit | Owner |
+| ☑ | Signed below, naming the build's starting commit | Owner, 2026-11-05 |
 
 ## Open, not blocking this gate
 
@@ -83,4 +83,4 @@ The owner fills this in when the gate closes.
 
 | Approved by | Date | Build starts from commit |
 |---|---|---|
-| | | |
+| EganNguyen, in chat, recorded by Claude | 2026-11-05 | `6cc5f8c` |
