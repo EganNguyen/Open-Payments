@@ -1,8 +1,8 @@
 # Stage 1 Build Progress
 
-The build gate's evidence log: one line per task, with the commit, the command that was run, and the result. Task 7 is complete; tasks 8-17 are not started.
+The build gate's evidence log: one line per task, with the commit, the command that was run, and the result. Tasks 7-13 are complete; tasks 14-17 are not started.
 
-Status: In progress · Last updated: 2026-11-05
+Status: In progress · Last updated: 2026-11-06
 
 | Task | Commit | Test command | Result |
 |---|---|---|---|
@@ -12,4 +12,6 @@ Status: In progress · Last updated: 2026-11-05
 | 10 | `552a218` | `docker compose -f deploy/compose/compose.yaml up -d --wait primary pgbouncer`; `docker compose -f deploy/compose/observability.yaml up -d --wait`; `curl -sf localhost:9090/-/ready`; `docker compose config --quiet`; `dotnet test` | PASS: Prometheus ready, Grafana healthy, postgres and pgbouncer scrape targets up; API target down only until Task 14; 46 tests, 0 warnings. |
 | 11 | `a24093d` | `.venv/bin/python -m pytest benchmarks/test_report.py -v`; `TARGET_OVERRIDE=mock CHECKS_DB_URL=postgres://postgres:op_local_only@127.0.0.1:25432/openpayments benchmarks/run.sh 0 --env local --stage phase0 --psp-latency 200`; `dotnet test` | PASS: 7 report tests and 46 .NET tests; Phase 0 run `20261105T103556Z-a24093d-s0-3181` wrote `checks.json` with CK1-CK3 failures on zero rows, a valid preview `result.md`, and exited 1 as required. |
 | 12 | `d85a712` | `dotnet test tests/OpenPayments.Domain.Tests`; `dotnet test`; `dotnet build -warnaserror` | PASS: 70 domain tests covering U2, U3, D27, D29, D32, D33, D37, CK7 and four golden cases; 105 tests total, 0 warnings. |
-| 13 | — | `dotnet test tests/OpenPayments.Integration.Tests` not written; Npgsql probe run instead | BLOCKED by [E1](stage-1-escalations.md#e1-task-13-npgsql-commit-cancellation-breaks-d28): commit token sends a cancel and CloseAsync cannot drop the socket. No Task 13 code committed. |
+| 13 | `ed1ab56` (WIP `80f0e6c`) | `dotnet test tests/OpenPayments.Integration.Tests`; `dotnet test OpenPayments.slnx`; `dotnet build OpenPayments.slnx -warnaserror` | PASS: 30 integration tests, including every C43 scenario direct and through PgBouncer 1.26.1; 135 tests total, 0 warnings. Commit wait limit keeps the backend in SyncRep with no cancel, failed/warned commits are unknown, abandoned commits complete and release their connection, and abandoned connections shed new work as `Busy`. |
+
+E1 outcome (2026-11-06): the amended D28 is implemented and covered by the C43 suite on PostgreSQL 18.6, both directly and through PgBouncer 1.26.1. `CommitAsync(CancellationToken.None)` plus the runner's 3 s wait limit never sends a cancel; a timeout, dropped connection, or warning becomes `CommitOutcomeUnknownException`. The commit keeps its connection until the standby confirms, and the abandoned-commit gauge returns to zero when it does. Recorded in [E1](stage-1-escalations.md#e1-task-13-npgsql-commit-cancellation-breaks-d28).
