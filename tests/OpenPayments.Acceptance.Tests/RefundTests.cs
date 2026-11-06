@@ -110,22 +110,71 @@ public sealed class RefundTests(AcceptanceFixture db)
     }
 
     [Fact]
+    public async Task C6_declined_refund_releases_the_reservation_and_allows_retry()
+    {
+        await db.ResetAsync();
+        using var client = Authorized("live_key_a");
+        var paymentId = await CapturedPaymentAsync(client, "refund-release", 1000);
+        db.Psp.Next(new PspResult.Declined("declined"));
+
+        using var declined = await PostAsync(client, $"/v1/payments/{paymentId}/refunds", "refund-decline", new { amount_minor = 1000 });
+        Assert.Equal(HttpStatusCode.PaymentRequired, declined.StatusCode);
+        var afterDecline = await GetPaymentAsync(client, paymentId);
+        Assert.Equal(0, afterDecline.GetProperty("refund_pending_minor").GetInt64());
+        Assert.Equal(0, afterDecline.GetProperty("refunded_minor").GetInt64());
+
+        db.Psp.Next(new PspResult.Approved("refund_ok"));
+        using var retried = await PostAsync(client, $"/v1/payments/{paymentId}/refunds", "refund-retry", new { amount_minor = 1000 });
+        Assert.Equal(HttpStatusCode.OK, retried.StatusCode);
+        var afterRetry = await GetPaymentAsync(client, paymentId);
+        Assert.Equal("REFUNDED", afterRetry.GetProperty("state").GetString());
+    }
+
+    [Fact]
     public async Task C6_50_concurrent_refunds_over_captured_never_exceed_and_decline_releases()
     {
         await db.ResetAsync();
         using var client = Authorized("live_key_a");
         var paymentId = await CapturedPaymentAsync(client, "refund-race", 10000);
 
-        var responses = await Task.WhenAll(Enumerable.Range(0, 50).Select(index =>
-            PostAsync(client, $"/v1/payments/{paymentId}/refunds", $"refund-race-{index}", new { amount_minor = 1000 })));
+        var outcomes = new System.Collections.Concurrent.ConcurrentBag<HttpStatusCode>();
+        await Task.WhenAll(Enumerable.Range(0, 50).Select(async index =>
+        {
+            for (var attempt = 0; attempt < 100; attempt++)
+            {
+                using var response = await PostAsync(
+                    client,
+                    $"/v1/payments/{paymentId}/refunds",
+                    $"refund-race-{index}",
+                    new { amount_minor = 1000 });
+                if (response.StatusCode == HttpStatusCode.OK)
+                {
+                    outcomes.Add(HttpStatusCode.OK);
+                    return;
+                }
 
-        Assert.DoesNotContain(responses, response => response.StatusCode == HttpStatusCode.InternalServerError);
+                var code = await ProblemCodeAsync(response);
+                if (response.StatusCode == HttpStatusCode.UnprocessableEntity && code == "refund_exceeds_captured")
+                {
+                    outcomes.Add(HttpStatusCode.UnprocessableEntity);
+                    return;
+                }
+
+                await Task.Delay(20);
+            }
+
+            outcomes.Add(HttpStatusCode.Conflict);
+        }));
+
+        Assert.Equal(10, outcomes.Count(status => status == HttpStatusCode.OK));
+        Assert.Equal(40, outcomes.Count(status => status == HttpStatusCode.UnprocessableEntity));
+        Assert.DoesNotContain(outcomes, status => status == HttpStatusCode.InternalServerError);
         var payment = await GetPaymentAsync(client, paymentId);
         var captured = payment.GetProperty("captured_minor").GetInt64();
         var refunded = payment.GetProperty("refunded_minor").GetInt64();
         var pending = payment.GetProperty("refund_pending_minor").GetInt64();
+        Assert.Equal(10000, refunded + pending);
         Assert.True(refunded + pending <= captured);
-        Assert.True(refunded >= 0);
     }
 
     [Fact]
@@ -163,6 +212,19 @@ public sealed class RefundTests(AcceptanceFixture db)
         });
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);
         return (await ReadAsync(response)).GetProperty("id").GetString()!;
+    }
+
+    private static async Task<string?> ProblemCodeAsync(HttpResponseMessage response)
+    {
+        try
+        {
+            using var document = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+            return document.RootElement.TryGetProperty("code", out var code) ? code.GetString() : null;
+        }
+        catch (JsonException)
+        {
+            return null;
+        }
     }
 
     private async Task<JsonElement> GetPaymentAsync(HttpClient client, string paymentId)

@@ -4,6 +4,7 @@ using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Mvc.Testing;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
+using Microsoft.Extensions.Logging;
 using Npgsql;
 using OpenPayments.Api;
 using OpenPayments.Domain;
@@ -24,6 +25,10 @@ public sealed class AcceptanceFixture : IAsyncLifetime
     public TestPsp Psp { get; } = new();
 
     public TestFraud Fraud { get; } = new();
+
+    public LogCapture Logs { get; } = new();
+
+    public QueryCounter Queries { get; } = new();
 
     public string AdminConnectionString => _container.GetConnectionString();
 
@@ -71,8 +76,12 @@ public sealed class AcceptanceFixture : IAsyncLifetime
         {
             builder.UseSetting("DATABASE_URL", AppConnectionString);
             builder.UseSetting("INFLIGHT_CAP", "500");
+            builder.ConfigureLogging(logging => logging.AddProvider(Logs));
             builder.ConfigureServices(services =>
             {
+                services.RemoveAll<TxRunner>();
+                services.AddSingleton(_ => new TxRunner(
+                    AppConnectionString, loggerFactory: Queries));
                 services.RemoveAll<IPspAdapterFactory>();
                 services.AddSingleton<IPspAdapterFactory>(Psp);
                 services.RemoveAll<IFraudCheck>();
@@ -92,6 +101,8 @@ public sealed class AcceptanceFixture : IAsyncLifetime
         PspAccountA = await PspAccountAsync(MerchantA);
         Psp.Reset();
         Fraud.Reset();
+        Logs.Clear();
+        Queries.Reset();
         if (Factory is not null)
         {
             var store = Factory.Services.GetRequiredService<PaymentStore>();
@@ -236,6 +247,89 @@ public sealed class AcceptanceFixture : IAsyncLifetime
     }
 }
 
+public sealed class QueryCounter : ILoggerProvider, ILoggerFactory
+{
+    private long _count;
+
+    public long Count => Interlocked.Read(ref _count);
+
+    public void Reset() => Interlocked.Exchange(ref _count, 0);
+
+    public ILogger CreateLogger(string categoryName) => new CountingLogger(this);
+
+    public void AddProvider(ILoggerProvider provider)
+    {
+    }
+
+    public void Dispose()
+    {
+    }
+
+    private void Add() => Interlocked.Increment(ref _count);
+
+    private sealed class CountingLogger(QueryCounter owner) : ILogger
+    {
+        public IDisposable? BeginScope<TState>(TState state) where TState : notnull => null;
+
+        public bool IsEnabled(LogLevel logLevel) => logLevel >= LogLevel.Debug;
+
+        public void Log<TState>(
+            LogLevel logLevel,
+            EventId eventId,
+            TState state,
+            Exception? exception,
+            Func<TState, Exception?, string> formatter)
+        {
+            if (formatter(state, exception).Contains("Executing command", StringComparison.Ordinal))
+            {
+                owner.Add();
+            }
+        }
+    }
+}
+
+public sealed class LogCapture : ILoggerProvider
+{
+    private readonly System.Collections.Concurrent.ConcurrentQueue<string> _lines = new();
+
+    public IReadOnlyList<string> Lines => [.. _lines];
+
+    public void Clear()
+    {
+        while (_lines.TryDequeue(out _))
+        {
+        }
+    }
+
+    public ILogger CreateLogger(string categoryName) => new CaptureLogger(this, categoryName);
+
+    public void Dispose()
+    {
+    }
+
+    private void Add(string line) => _lines.Enqueue(line);
+
+    private sealed class CaptureLogger(LogCapture owner, string category) : ILogger
+    {
+        public IDisposable? BeginScope<TState>(TState state) where TState : notnull => null;
+
+        public bool IsEnabled(LogLevel logLevel) => logLevel >= LogLevel.Information;
+
+        public void Log<TState>(
+            LogLevel logLevel,
+            EventId eventId,
+            TState state,
+            Exception? exception,
+            Func<TState, Exception?, string> formatter)
+        {
+            if (IsEnabled(logLevel))
+            {
+                owner.Add(category + ": " + formatter(state, exception));
+            }
+        }
+    }
+}
+
 public sealed class TestFraud : IFraudCheck
 {
     private int _checks;
@@ -309,7 +403,7 @@ public sealed class TestPsp : IPspAdapterFactory, IPspAdapter
 
     public void Delay(TimeSpan delay) => _delay = delay;
 
-    public void Timeout() => _timeout = true;
+    public void Timeout(bool value = true) => _timeout = value;
 
     public bool SupportsSale
     {

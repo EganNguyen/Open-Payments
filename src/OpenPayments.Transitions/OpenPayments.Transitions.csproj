@@ -6,6 +6,7 @@
   <ItemGroup>
     <ProjectReference Include="../OpenPayments.Domain/OpenPayments.Domain.csproj" />
     <PackageReference Include="Npgsql" />
+    <PackageReference Include="Microsoft.Extensions.Logging.Abstractions" />
     <PackageReference Include="Microsoft.CodeAnalysis.BannedApiAnalyzers" PrivateAssets="all" />
     <AdditionalFiles Include="$(MSBuildThisFileDirectory)../../BannedSymbols.txt" />
   </ItemGroup>

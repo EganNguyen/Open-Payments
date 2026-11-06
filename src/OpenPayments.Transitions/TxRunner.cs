@@ -1,4 +1,5 @@
 using System.Diagnostics;
+using Microsoft.Extensions.Logging;
 using Npgsql;
 using OpenPayments.Domain;
 
@@ -67,7 +68,8 @@ public sealed class TxRunner : IAsyncDisposable
     public TxRunner(
         string connectionString,
         TimeSpan? commitWaitLimit = null,
-        TransitionMetrics? metrics = null)
+        TransitionMetrics? metrics = null,
+        ILoggerFactory? loggerFactory = null)
     {
         var builder = new NpgsqlConnectionStringBuilder(connectionString);
         if (builder.CommandTimeout != 0)
@@ -82,7 +84,13 @@ public sealed class TxRunner : IAsyncDisposable
             builder.TcpKeepAliveTime = 30;
         }
 
-        _dataSource = NpgsqlDataSource.Create(builder.ConnectionString);
+        var dataSourceBuilder = new NpgsqlDataSourceBuilder(builder.ConnectionString);
+        if (loggerFactory is not null)
+        {
+            dataSourceBuilder.UseLoggerFactory(loggerFactory);
+        }
+
+        _dataSource = dataSourceBuilder.Build();
         _commitWaitLimit = commitWaitLimit ?? TimeSpan.FromSeconds(3);
         _metrics = metrics ?? new TransitionMetrics();
     }

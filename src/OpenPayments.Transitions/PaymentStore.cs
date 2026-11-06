@@ -1186,9 +1186,22 @@ public sealed class PaymentStore
 
                 var applied = await PersistAsync(
                     connection, transaction, view, command, accepted, null, ct);
-                    return applied is ApplyResult.Applied done
-                        ? new BeginOperationResult.Started(done.Payment)
-                        : new BeginOperationResult.Rejected("already_moved", view);
+                    if (applied is ApplyResult.Applied done)
+                    {
+                        return new BeginOperationResult.Started(done.Payment);
+                    }
+
+                    await using (var delete = new NpgsqlCommand(
+                        "delete from idempotency_keys where merchant_id = @merchant and key = @key",
+                        connection,
+                        transaction))
+                    {
+                        delete.Parameters.AddWithValue("merchant", merchant.Value);
+                        delete.Parameters.AddWithValue("key", key);
+                        await delete.ExecuteNonQueryAsync(ct);
+                    }
+
+                    return new BeginOperationResult.Rejected("already_moved", view);
                 },
                 cancellationToken);
         }
