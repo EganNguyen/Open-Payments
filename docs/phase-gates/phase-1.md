@@ -46,7 +46,6 @@ C31b in Phase 2, so C31a is complete without a fake callback route or expiry job
   search. Its results stay previews and can't close Task 17.
 - Task 17: steps 4-5 need a Linux host and remain unrun. No `C` or `N` is recorded. See
   [E4](../gates/stage-1-escalations.md#e4-task-17-has-no-linux-host-for-steps-4-5-escalation-e4).
-- E2 and E3 remain open by owner instruction; the build is not review-ready.
 - C31a has no open design gap after D46; edge case E4 and E9 are C31b tests, not Stage 1 evidence.
 
 ## Task 17 local preparation and preview
