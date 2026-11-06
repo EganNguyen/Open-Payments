@@ -108,20 +108,65 @@ C31b's E4 test must run the real job and assert:
 - A resolved key just inside retention still replays with no PSP call.
 - A key with `resolved_at is null` is kept, whatever its age.
 
-## E4: Task 17 has no Linux host for steps 4-5
+## E4: Task 17 has no Linux host for steps 4-5 (escalation E4)
 
 **State:** Open · Raised 2026-11-06
 
-**Task:** 17, the first ramp. Steps 0-3 are local previews; steps 4-5 and the first `C` require a Linux host.
+**Task:** 17, the first ramp. Steps 0-3 are local previews; steps 4-5 and the first `C` require a Linux host. This is escalation E4; edge case E4 is the key-retention case moved to C31b by [D46](../decisions.md#d46).
 
-**What blocks:** The available machine is the owner's MacBook. The playbook and Task 17 both say laptop numbers are comparative only and cannot answer G1. No Linux host has been provided, so steps 4-5 have not run and no `C` or `N` exists. Reporting the laptop's step-3 result as `C` would be false.
+**What blocks:** The available machine is the owner's MacBook. The playbook and Task 17 both say laptop numbers are comparative only and cannot answer G1. The host must provide all of the following before steps 4-5 can produce a trustworthy `C`:
+
+- The mock PSP repeated at 25,000 req/s on benchmark-class hardware, with less than 5 ms added p99. Task 8 Step 5 is still unproven; the laptop's valid 10,000 req/s preview is not enough.
+- A measured `MOCK_ADDED_P99_MS` for the run, not a default of zero.
+- Load generators on separate machines from the system under test.
+- NVMe storage, with WAL on its own volume.
+- Quorum replication across availability zones.
+- Data prefilled to 100M payments before the run.
+
+A Phase 1 Linux run is still labelled **preview** under the trust rules, because `Recorded` starts at Phase 3. That label does not make a laptop number acceptable as `C`.
 
 **Options seen:**
 
-1. Provide a Linux host for Task 17 steps 4-5, with the generator separate from the system under test. This is the only option that produces a real `C`.
+1. Provide a Linux host meeting the list above for Task 17 steps 4-5, with the generator separate from the system under test. This is the only option that produces a real `C`.
 2. Mark Task 17 partial and leave `C` unset; carry the Linux run into the review gate or Stage 2 preparation. This keeps the evidence honest but does not close Task 17.
 3. Use the MacBook number as `C`. Rejected: it is a laptop preview and the baseline says so.
 
 **Recommendation:** Option 1. Until a host exists, keep Task 17 PARTIAL and do not report the build as ready for review.
 
-**Impact:** Task 17 steps 4-5 and `BASELINE.md`'s capacity section are incomplete. The Phase 1 gate stays open. The local steps 0-3 are valid previews under the gates and are recorded in [BASELINE](../../benchmarks/BASELINE.md).
+**Impact:** Task 17 steps 4-5 and `BASELINE.md`'s capacity section are incomplete. The Phase 1 gate stays open. The local steps 0-3 are valid previews only and are recorded in [BASELINE](../../benchmarks/BASELINE.md).
+
+## E5: Task 17 workload mix has no agreed sale/two-call shares
+
+**State:** Open · Raised 2026-11-06
+
+**Task:** 17 and the benchmark mix. The plan says "60% create and pay, with a configured share of sale and two-call capture", but the checked-in `mix.js` sends only create and authorise/sale; it never sends a standalone capture. The design session must say what share of the 60% is one-call sale and what share is authorize-then-capture.
+
+**What conflicts:** The target `T` depends on the mix: about 8,300 req/s if each payment is a one-call sale, or about 16,700 if every payment needs a separate capture. The existing local previews use neither stated split. Choosing 50% auto capture in `AUTO_CAPTURE_SHARE` is not the same as specifying the share of two-call capture, and it does not add capture requests.
+
+**Options seen:**
+
+1. Design session supplies the intended share of one-call sale and two-call capture, and the matching `T` (8,300 or 16,700 or a measured combination).
+2. Use only one-call sale and set `T` to 8,300. This is a design choice, not a builder default.
+3. Add two-call capture for a stated share and recompute `T` from the measured commits per payment.
+
+**Recommendation:** Option 1. Do not report `C` or `T` until the design session answers; `C` and `T` must come from the same mix.
+
+**Impact:** Task 17's local previews remain comparative. The existing mix understates the manual path and cannot support the capacity target.
+
+## E6: S3 query-count budgets have no design source
+
+**State:** Open · Raised 2026-11-06
+
+**Task:** 16, S3 endpoint query counts. The current test uses create ≤40, read ≤10, capture ≤40 and refund ≤50 commands. Those numbers were chosen by the builder; a search of the design and verification documents found no equivalent budget.
+
+**What is measured:** On the acceptance fixture the actual counts are create 29, read 4, capture 37 and refund 37 commands. The test prints these and still enforces the builder-chosen ceilings. A request that touches one payment cannot demonstrate an N+1 pattern, so even an exact count is not a substitute for a design budget or a bounded query plan.
+
+**Options seen:**
+
+1. The design session sets per-endpoint command budgets or a query-plan rule, and S3 tests against it.
+2. Keep the current builder-chosen ceilings as provisional limits, mark S3 PARTIAL, and revisit at the review gate. This does not make them design values.
+3. Remove the budgets and record only the actual counts. This would make regressions invisible.
+
+**Recommendation:** Option 1. Until a design number exists, keep S3 PARTIAL and do not mark it settled or use it to close Task 16.
+
+**Impact:** S3 remains open evidence. No gate value or test was weakened; the test now records the actual counts.
