@@ -3,7 +3,8 @@
 Status: **not achieved** · Last updated: 2026-11-06
 
 The build and its tests pass, but the Phase 1 checklist is not complete. The remaining gaps
-are the independent S5 review and Task 17's Linux capacity run; the gate stays open until they
+are the independent S5 review, S3's query rules ([D48](../decisions.md#d48)), the benchmark mix
+([D47](../decisions.md#d47)) and Task 17's Linux capacity run; the gate stays open until they
 are closed. C31a's scope was corrected by [D46](../decisions.md#d46): E4 and E9 now belong to
 C31b in Phase 2, so C31a is complete without a fake callback route or expiry job.
 
@@ -30,15 +31,20 @@ C31b in Phase 2, so C31a is complete without a fake callback route or expiry job
 | C31a | PASS: E1-E3, E5-E8, E11-E13, E16-E18, E21 and E25-E29 have API-level coverage. E4 and E9 moved to C31b by [D46](../decisions.md#d46); no callback route or expiry job was added and no test was faked. |
 | C43 | PASS: all eight runner scenarios directly and through PgBouncer 1.26.1, on PostgreSQL 18.6. |
 | S1 | PASS: the solution builds with the banned-API analyzer; the analyzer probe test passes. |
-| S3 | PASS: `EXPLAIN` confirms the merchant/created index. `S3_each_endpoint_within_query_count` counts Npgsql commands for create (≤40), read (≤10), capture (≤40) and refund (≤50). Review: 29 hand-written commands, 113 bound parameters, no `select *`, no string-built SQL and no EF/DbContext tracking. |
+| S3 | PARTIAL: the test must meet [D48](../decisions.md#d48). `EXPLAIN` confirms the merchant/created index. `S3_each_endpoint_within_query_count` counts Npgsql commands for create (≤40), read (≤10), capture (≤40) and refund (≤50), but those limits have no design source and one payment with no related rows can't show an N+1 pattern. Review: 29 hand-written commands, 113 bound parameters, no `select *`, no string-built SQL and no EF/DbContext tracking. |
 | S5 | PARTIAL: analyzers are errors and the request-path projects have the banned-symbol file. The review checklist was run on 2026-11-06: no `Task.Run`, `.Result`, `.Wait()` or `GetAwaiter().GetResult()` in `src/`; no `lock` spans an `await`; only bounded `Task.WhenAll` over the abandoned-commit list; no `DbContext`. The independent review is still required at the review gate. |
 | S6 | PASS: `dotnet list package --vulnerable --include-transitive` found no vulnerable packages. `nuget-license` 4.0.18 (Apache-2.0) is pinned in `.config/dotnet-tools.json`; `dotnet tool restore` and `dotnet tool run nuget-license -i OpenPayments.slnx -t` exited 0. `gitleaks 8.30.1 dir .` and `gitleaks git .` both exited 0 with no leaks across the working tree and git history. |
 
 ## Named gaps
 
 - S5: independent review at the review gate; the self-review recorded above is not a substitute.
+- S3: growth checks, measured ceilings and per-transaction counts, as answered in
+  [E6](../gates/stage-1-escalations.md#e6-s3-query-count-budgets-have-no-design-source).
+- Benchmark mix: `mix.js` sends no standalone capture. The change is specified in
+  [E5](../gates/stage-1-escalations.md#e5-task-17-workload-mix-has-no-agreed-saletwo-call-shares),
+  and steps 0-3 must be rerun at the new mix.
 - Task 17: the local preview steps 0-3 pass, but steps 4-5 need a Linux host. No `C` or `N` is
-  recorded. See [E4](../gates/stage-1-escalations.md#e4-task-17-has-no-linux-host-for-steps-4-5).
+  recorded. See [E4](../gates/stage-1-escalations.md#e4-task-17-has-no-linux-host-for-steps-4-5-escalation-e4).
 - C31a has no open design gap after D46; E4 and E9 are C31b tests, not Stage 1 evidence.
 
 ## Task 17 local preparation and preview
@@ -58,4 +64,4 @@ failed optional Prometheus query no longer aborts the report.
 
 Steps 0-3 are valid previews under the gates: CK1-CK5, CK9 and CK10 pass, and CK6/CK7/CK8
 are not applicable. Their run IDs and numbers are in [BASELINE](../../benchmarks/BASELINE.md).
-No laptop number is reported as `C`. Linux steps 4-5 are open ([E4](../gates/stage-1-escalations.md#e4-task-17-has-no-linux-host-for-steps-4-5)).
+No laptop number is reported as `C`. Linux steps 4-5 are open ([E4](../gates/stage-1-escalations.md#e4-task-17-has-no-linux-host-for-steps-4-5-escalation-e4)).

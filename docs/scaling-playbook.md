@@ -33,7 +33,7 @@ A step that misses the final SLO is a finding to fix, not a threshold to relax.
 
 Do not move to the next row until the current row meets its gates and you have written down the bottleneck you found.
 
-Steps 0-8 are set by offered load. Steps 9 and 10 are gated on 5,000 completed payments/s. With the [example mix](#workload-and-load-generation), that takes about 8,300 req/s if the 60% share uses auto-capture, so each of those requests completes a payment ([D3](decisions.md#d3)). If authorize and capture are separate requests, only half that share starts a payment, and the target doubles to about 16,700 req/s. Recalculate this from your real mix.
+Steps 0-8 are set by offered load. Steps 9 and 10 are gated on 5,000 completed payments/s. With the [benchmark mix](#workload-and-load-generation), half of all requests start a payment, so that takes 10,000 req/s ([D3](decisions.md#d3), [D47](decisions.md#d47)). In general, with `x` as the share of payments that use a separate capture request, `T = 8,333 × (1 + x)`: about 8,300 req/s at 0%, and about 16,700 at 100%. Recalculate this from your real mix.
 
 | Step | Load | Duration | Purpose | What to inspect |
 |---|---|---|---|---|
@@ -70,11 +70,15 @@ Use a mix, not only payment creation. These percentages are example assumptions,
 
 | Operation | Share |
 |---|---|
-| Payment authorization and capture | 60% |
+| One-call sale | 40% |
+| Authorization, to be captured later | 10% |
+| Standalone capture | 10% |
 | Payment status queries | 15% |
 | Refunds | 10% |
 | Retries (same idempotency key) | 10% |
 | Other operations | 5% |
+
+So 80% of payments are one-call sales and 20% are two-call ([D47](decisions.md#d47)). A capture doesn't count as a second completed payment.
 
 **PSP callbacks come on top of this mix** ([D30](decisions.md#d30)). The mock PSP sends up to one for each operation, with a configurable delay, because they use API capacity and commits that the percentages don't show. State the share of auto-capture and the callback rate in every run's configuration.
 
@@ -145,20 +149,20 @@ N = ceil( T / (C × U) )
 - `C`: capacity of one instance, **measured** in step 5 while meeting the gates.
 - `U`: maximum utilization you allow, for example 0.7.
 
-Illustration only: if one instance proves 500 req/s, at 70% utilization and `T` of 8,300, `N = ceil(8300 / (500 × 0.7)) = 24`. Add at least one more (N+1) if the target must hold after an instance fails.
+Illustration only: if one instance proves 500 req/s, at 70% utilization and `T` of 10,000, `N = ceil(10000 / (500 × 0.7)) = 29`. Add at least one more (N+1) if the target must hold after an instance fails.
 
 More instances do not raise database capacity. Benchmark the database alone (step 4), then the whole system.
 
 **Concurrency (Little's Law):** `L = λ × W`, so concurrent requests equal throughput times average time in the system.
 
-| Average duration at 8,300 req/s | In-flight requests |
+| Average duration at 10,000 req/s | In-flight requests |
 |---|---|
-| 20 ms | 166 |
-| 50 ms | 415 |
-| 100 ms | 830 |
-| 200 ms | 1,660 |
-| 500 ms | 4,150 |
-| 1 s | 8,300 |
+| 20 ms | 200 |
+| 50 ms | 500 |
+| 100 ms | 1,000 |
+| 200 ms | 2,000 |
+| 500 ms | 5,000 |
+| 1 s | 10,000 |
 
 Divide by the instance count to set the [per-instance in-flight cap](engineering-standards.md#load-control), and check that the cap and timeouts hold. Never solve this with unbounded tasks.
 

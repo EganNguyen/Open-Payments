@@ -209,7 +209,7 @@ Each is checked by a named test with a recorded run. **Exact values are from the
 | Reads and callbacks | Floods of each: create-payment keeps its SLO | C48, C49 |
 | PSP | G2 is answered in writing by the chosen PSP, or by its sandbox and contract | G2 |
 
-**Required commit rate:** `P × c + R × 2 + K`, where `P` is payments/s, `c` is commits per payment (2 for a sale, 4 for separate authorize and capture), `R` is refunds/s and `K` is callback commits/s. Add outbox publishing as measured in V9. The spike computes this from the configured mix.
+**Required commit rate:** `P × c + R × 2 + K`, where `P` is payments/s, `c` is commits per payment (2 for a sale, 4 for separate authorize and capture), `R` is refunds/s and `K` is callback commits/s. Add outbox publishing as measured in V9. The spike computes this from the configured mix. The benchmark mix is set by [D47](../../decisions.md#d47).
 
 ### Failure coverage
 

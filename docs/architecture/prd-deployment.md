@@ -2,9 +2,11 @@
 
 The expected Kubernetes deployment for 5,000 completed payments/s, and the estimate behind it. The measurements come from the [MacBook summary](../benchmarks/spike/macbook-2026-11-05/summary.md).
 
-Status: Planning estimate · **Not deployed, and not proven** · Last updated: 2026-11-05
+Status: Planning estimate · **Not deployed, and not proven** · Last updated: 2026-11-06
 
 **Labels:** **M** measured on the MacBook · **X** extrapolated from a measurement · **A** assumption · **D** design requirement.
+
+**Update for [D47](../decisions.md#d47):** the tables and totals below use 3.5 commits per payment, which assumes no separate capture requests. At the approved mix it is 4.2: 21,000 commits/s, or 23,100-26,250 with the 10-25% allowance. That needs 5 active cells plus the spare, at 1,000 payments/s and 4,200 commits/s (4,620-5,250 with the allowance) per cell. Refunds become 1,000/s and callbacks 7,000/s. The vCPU total and the rest of the sizing have not been recomputed, so expect them to rise.
 
 ## Estimate at 5,000 payments/s
 
@@ -168,7 +170,7 @@ In this order, since a failure early on changes everything after it.
 |---|---|---|---|
 | 1 | Durable flush on the real disks, using `pg_test_fsync` | In the range of 50-200 µs (A) | Fast-flush results don't apply. Re-estimate, likely with more cells |
 | 2 | Linux spike: commits/s at real flush and zone delay, 100M rows | One cell's 5,500 commits/s at 60% CPU or less | Lower the per-cell rate and add cells |
-| 3 | Full mix, V13 on Linux | Replaces 3.5 commits per payment | Re-estimate |
+| 3 | Full mix, V13 on Linux | Replaces 4.2 commits per payment | Re-estimate |
 | 4 | One cell through the real API, at 1,250 and then 2,000 payments/s | SLOs and checks pass (L1) | Fix the bottleneck found, or lower the per-cell rate |
 | 5 | Two or more cells, on their own disks | Near-linear gain | Re-estimate the cell count |
 | 6 | 5,000 payments/s for 60 min | L5 | Not ready |

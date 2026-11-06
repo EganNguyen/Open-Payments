@@ -137,7 +137,7 @@ A Phase 1 Linux run is still labelled **preview** under the trust rules, because
 
 ## E5: Task 17 workload mix has no agreed sale/two-call shares
 
-**State:** Open · Raised 2026-11-06
+**State:** Answered 2026-11-06 ([D47](../decisions.md#d47)), builder work open · Raised 2026-11-06
 
 **Task:** 17 and the benchmark mix. The plan says "60% create and pay, with a configured share of sale and two-call capture", but the checked-in `mix.js` sends only create and authorise/sale; it never sends a standalone capture. The design session must say what share of the 60% is one-call sale and what share is authorize-then-capture.
 
@@ -153,9 +153,44 @@ A Phase 1 Linux run is still labelled **preview** under the trust rules, because
 
 **Impact:** Task 17's local previews remain comparative. The existing mix understates the manual path and cannot support the capacity target.
 
+**Answer (design session, approved by the owner, 2026-11-06):** a variant of Option 3. 20% of payments are two-call, as an assumption until real merchant data exists, and `T` is 10,000 req/s ([D47](../decisions.md#d47)). "Two-call" here means two requests: a merchant authorizes, then sends a separate capture.
+
+| Request | Share of all requests |
+|---|---:|
+| One-call sale | 40% |
+| Authorize | 10% |
+| Standalone capture | 10% |
+| Status | 15% |
+| Refund | 10% |
+| Retry | 10% |
+| Other | 5% |
+
+| Two-call share | `T` (req/s) | Commits/s at target | Active cells needed |
+|---:|---:|---:|---:|
+| 0% | 8,333 | 17,500 | 4 |
+| **20%** | **10,000** | **21,000** | **5** |
+| 50% | 12,500 | 26,250 | 6 |
+| 100% | 16,667 | 35,000 | 8 |
+
+These are estimates, with callbacks at their upper limit. Active cells are the number that keeps each cell under the 5,500 commits/s check in [Production Deployment](../architecture/prd-deployment.md#what-must-be-validated), after adding its 25% allowance for writes the spike leaves out.
+
+**Required from the builder:**
+
+1. Replace `AUTO_CAPTURE_SHARE` with `TWO_CALL_SHARE`, default 0.2, and record it in `config.json`. Update `benchmarks/README.md`.
+2. In `mix.js`, roll the shares above. A capture takes a payment from a per-VU queue of authorized payments. If the queue is empty, send an authorize instead and count the substitution. A declined or canceled payment leaves the queue.
+3. Report the shares achieved. A run is invalid if any share misses its target by more than 2 percentage points.
+4. In `steps.json`, set steps 9 and 10 to 10,000 req/s and step 11 to 20,000. Steps 9 and 10 are still judged on completed payments/s.
+5. Add a test that a standalone capture does not raise the completed-payment count.
+6. Rerun the local preview steps 0-3 at the new mix and update [BASELINE](../../benchmarks/BASELINE.md). Earlier runs stay on record as comparative only, under their old mix.
+7. Report `C` and `N` only at this mix. Compare measured commits per payment with 2.8, since Phase 1 has no callbacks.
+
+The mock's 25,000 req/s floor is unchanged. The mix needs about 7,000 PSP calls/s at target, so the floor is more than three times that.
+
+**Escalate again if** the achieved shares can't stay within the limit, or if a capture needs to count as a completed payment for the numbers to reconcile.
+
 ## E6: S3 query-count budgets have no design source
 
-**State:** Open · Raised 2026-11-06
+**State:** Answered 2026-11-06 ([D48](../decisions.md#d48)), builder work open · Raised 2026-11-06
 
 **Task:** 16, S3 endpoint query counts. The current test uses create ≤40, read ≤10, capture ≤40 and refund ≤50 commands. Those numbers were chosen by the builder; a search of the design and verification documents found no equivalent budget.
 
@@ -170,3 +205,18 @@ A Phase 1 Linux run is still labelled **preview** under the trust rules, because
 **Recommendation:** Option 1. Until a design number exists, keep S3 PARTIAL and do not mark it settled or use it to close Task 16.
 
 **Impact:** S3 remains open evidence. No gate value or test was weakened; the test now records the actual counts.
+
+**Answer (design session, approved by the owner, 2026-11-06):** Option 1, with the budget set by rule ([D48](../decisions.md#d48)). One correction to the entry above: two design sources do apply. The [engineering standards](../engineering-standards.md#database) require tests that catch N+1 patterns, and the plan's global constraints said "at most about 5 statements per transaction". The current test checks neither.
+
+**Required from the builder:**
+
+1. **No growth:** assert an endpoint's command count is the same with few and with many related rows. At least: a refund with 1 and with 10 prior refunds, a read of those same payments, and an attempt with 1 and with the most prior attempts the cap allows.
+2. **Per-path ceilings:** replace the 40/10/40/50 limits with measured counts. Start from manual create 29, read 4, capture 37 and refund 37, re-measured on the final code. Add one-call sale, void, cancel, attempts and idempotent replay, which are not measured today.
+3. **Per-transaction counts:** record statements and round trips for each transaction on those paths, and set ceilings from the measurements.
+4. Lowering a ceiling needs no approval. Raising one is an escalation with the reason and the commands added.
+
+Do not rewrite the store or add batching in Stage 1. Reading the code suggests the apply transaction runs about 12-14 commands, which is not measured yet. Step 3 records the real number.
+
+S3 stays PARTIAL until these pass. Revisit the statement count after Linux step 5: if pool wait or lock waits limit capacity, batching is the first fix to try.
+
+**Escalate again if** a command count grows with related rows, or a transaction's count varies between runs of the same path for reasons other than a documented retry.

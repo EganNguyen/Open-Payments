@@ -3,6 +3,10 @@
 Status: **local preview only**. This is a laptop run for comparison, not a capacity result.
 No `C` is recorded from it, and no number here should be used for capacity sizing.
 
+These runs predate [D47](../docs/decisions.md#d47): half their payments are authorized and never
+captured, and every one counts as completed. The ramp profile in them was also later corrected.
+They must be replaced by a rerun of steps 0-3 at the new mix.
+
 ## Configuration
 
 | Item | Value |

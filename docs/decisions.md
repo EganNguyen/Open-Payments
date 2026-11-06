@@ -30,7 +30,7 @@ All values are starting points until measured. Other docs state the resulting ru
 
 - **Decision:** Ramp steps 9 and 10 and the final report are gated on 5,000 completed payments/s. Offered req/s is derived from the workload mix.
 - **Why:** The goal is completed payments, but the old final gate was 5,000 req/s, of which only 60% were payments in the example mix.
-- **Consequence:** With the example mix and auto-capture, the target needs about 8,300 req/s, or about 16,700 with separate capture requests, so capacity estimates rise. "Completed" is [defined](glossary.md#standard-names) as a final committed answer to an attempt's request, since [D16](#d16).
+- **Consequence:** The offered target depends on the share of two-call payments. It is 10,000 req/s at the mix set by [D47](#d47), from about 8,300 with no separate captures to about 16,700 when every payment has one. "Completed" is [defined](glossary.md#standard-names) as a final committed answer to an attempt's request, since [D16](#d16).
 
 ### D4
 
@@ -395,6 +395,22 @@ All values are starting points until measured. Other docs state the resulting ru
 - **Decision:** C31a becomes E1-E3, E5-E8, E11-E13, E16-E18, E21 and E25-E29. C31b becomes E4, E9, E10, E19, E20 and E22-E24.
 - **Why:** E9 needs the callback receiver and E4 needs the expiry job, and both are Phase 2 work. Their tests can't exercise real behavior before then. See [E2 and E3](gates/stage-1-escalations.md#e2-task-16-late-declined-callback-has-no-receiver).
 - **Consequence:** Stage 1 results don't include the cost of expiring keys, and `idempotency_keys` only grows during Stage 1 runs. `BASELINE.md` must say so. V7 must be measured at Stage 2's design gate.
+
+### D47
+
+**The benchmark mix has 20% two-call payments.** Status: `Committed`, owner decision 2026-11-06. The 20% is an assumption, to be replaced by real merchant data.
+
+- **Decision:** 80% of payments are one-call sales and 20% are authorize, then a separate capture request. Across all requests: 40% sale, 10% authorize, 10% capture, 15% status, 10% refund, 10% retry and 5% other. The target `T` is 10,000 req/s. A capture does not count as a second completed payment.
+- **Why:** With no separate captures, capture never runs under load, although it is a committed mode. At 50% or more, the expected load needs at least one more active cell, with nothing to justify it. No merchant data exists to choose a more exact share. See [E5](gates/stage-1-escalations.md#e5-task-17-workload-mix-has-no-agreed-saletwo-call-shares).
+- **Consequence:** With `x` as the two-call share, `T = 8,333 × (1 + x)`, and commits per payment are `3.5 × (1 + x)` with callbacks at their upper limit, or `2.33 × (1 + x)` without callbacks. That gives 4.2 and 2.8 here, and 21,000 commits/s at target. The production estimate moves from 4 active cells to 5, plus the spare. `C` and `T` must come from the same mix, so changing the share means rerunning step 5. Auto-capture on a PSP with no sale call takes 4 commits and adds no requests. It stays out of this mix and gets its own run when the first such PSP is added.
+
+### D48
+
+**S3 checks query growth and measured ceilings.** Status: `Committed`, owner decision 2026-11-06.
+
+- **Decision:** S3 has three query rules. An endpoint's command count must not grow with related rows. Each path has a ceiling set to its measured count. Statements and round trips are recorded per transaction, with ceilings set from those measurements. Lowering a ceiling needs no approval, and raising one needs a design review. These per-transaction ceilings replace the plan's "at most about 5 statements per transaction" for Stage 1.
+- **Why:** The standards require tests that catch N+1 patterns, and a request on one payment with no related rows can't show one. The builder's limits had no design source. Reading the code suggests the apply transaction runs about 12-14 commands, because each ledger line is its own command, so a limit of about 5 would force a rewrite before there is evidence it limits capacity. See [E6](gates/stage-1-escalations.md#e6-s3-query-count-budgets-have-no-design-source).
+- **Consequence:** S3 stays PARTIAL until the test meets these rules. The statement count is a likely bottleneck, to be revisited after Linux step 5. If pool wait or lock waits limit capacity, batching is the first fix to try.
 
 ## Assumptions and limits
 

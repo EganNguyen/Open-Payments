@@ -25,7 +25,7 @@ Stack: C# / .NET 10, ASP.NET Core, PostgreSQL, Kafka-compatible broker, Kubernet
 **Derived load (to validate in L1):**
 
 - Our estimates, to be replaced by the spike ([D24](decisions.md#d24)). An auto-captured payment takes 2 commits and about 11-13 row writes as one PSP call ([D29](decisions.md#d29)), or up to 4 commits and about 20-22 row writes as two. Refunds add 2 commits each, and each PSP callback can add 1 ([D30](decisions.md#d30)).
-- At target with the [example mix](scaling-playbook.md#workload-and-load-generation), that is about 12k commits/s with one-call capture, or about 22k with two, plus up to 6-11k/s for callbacks. Publishing the outbox adds more. With 4 active cells, it is about a quarter of that per cell.
+- At target with the [benchmark mix](scaling-playbook.md#workload-and-load-generation) ([D47](decisions.md#d47)), that is about 14k commits/s, plus up to 7k/s for callbacks. Publishing the outbox adds more. The estimate is 5 active cells, so about a fifth of that per cell.
 - PSP latency of 200 ms to 2 s means about 5,000 requests in flight at a 1 s average (Little's Law).
 
 ## Principles

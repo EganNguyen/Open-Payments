@@ -227,7 +227,7 @@ benchmarks/run.sh 3 --env local --stage phase1 --psp-latency 200
 
 **4. Know what you're holding.** Before Phase 3, or on a laptop, a result is a *preview*: useful for comparison, and no proof. The [spec](superpowers/specs/2026-11-05-implementation-and-benchmark-design.md#when-a-result-can-be-trusted) defines all three result types.
 
-**5. Compute capacity once step 5 has run on Linux,** using `N = ceil(T / (C × U))` from [Capacity sizing](scaling-playbook.md#capacity-sizing). `T` is about 8,300 req/s with auto-capture at the example mix, and about 16,700 with separate capture requests.
+**5. Compute capacity once step 5 has run on Linux,** using `N = ceil(T / (C × U))` from [Capacity sizing](scaling-playbook.md#capacity-sizing). `T` is 10,000 req/s at the [benchmark mix](decisions.md#d47), and `C` must be measured at that same mix.
 
 ## Finishing a stage
 

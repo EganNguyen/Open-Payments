@@ -64,7 +64,7 @@ A run from before Phase 3 can't satisfy L1. It's recorded as a *preview*, and no
 - Target `net10.0`. Warnings are errors. Analyzer CA2016 is on.
 - Money is `bigint` minor units with a currency. No `double`, `float` or `decimal` for amounts.
 - Only `OpenPayments.Transitions` writes money state ([D2](../../decisions.md#d2)). Hot path uses Dapper and parameterized SQL. No EF Core in Phases 0-1.
-- No PSP, HTTP or broker call inside a transaction. At most about 5 statements per transaction.
+- No PSP, HTTP or broker call inside a transaction. Statements per transaction stay within the measured ceilings set by [D48](../../decisions.md#d48).
 - Database settings: `deadlock_timeout` 100 ms; role `lock_timeout` 200 ms, `statement_timeout` 1 s, `idle_in_transaction_session_timeout` 2 s. Retry only `40001` and `40P01`, at most twice with jitter. `55P03` returns 503 with `Retry-After`.
 - Request budget 5 s: fraud 50 ms, PSP 2.5 s, each database call 200 ms. Body limit 64 KB. In-flight cap 500 per instance, with no queue.
 - Idempotency: unique `(merchant_id, key)`; same hash returns stored result; different hash 422; in flight 409 with `Retry-After`. Retention at least 24 h after resolve, never while unresolved.
@@ -412,7 +412,7 @@ Expected: FAIL to compile.
 Run: `dotnet test tests/OpenPayments.MockPsp.Tests`
 Expected: PASS.
 
-- [ ] **Step 5: Prove the mock isn't the limit.** With k6 at 25,000 req/s (three times the target's 8,300) and 200 ms latency, added latency p99 is under 5 ms. Record it in `benchmarks/mock-psp-capacity.md`. If it falls short, run one instance per shard by key hash. This must be run on benchmark-class hardware before any Linux run is trusted. On the laptop, record what was reached.
+- [ ] **Step 5: Prove the mock isn't the limit.** With k6 at 25,000 req/s (more than three times the 7,000 PSP calls/s needed at target under [D47](../../decisions.md#d47)) and 200 ms latency, added latency p99 is under 5 ms. Record it in `benchmarks/mock-psp-capacity.md`. If it falls short, run one instance per shard by key hash. This must be run on benchmark-class hardware before any Linux run is trusted. On the laptop, record what was reached.
 - [ ] **Step 6: Commit** with message `feat: add mock PSP with effect log`.
 
 ### Task 9: Correctness check runner
@@ -512,7 +512,7 @@ def test_preview_label_before_phase3():
 Run: `python3 -m pytest benchmarks/test_report.py -v`
 Expected: FAIL on missing `validity`.
 
-- [ ] **Step 3: Write `mix.js`.** Use one `ramping-arrival-rate` scenario per operation at the [example mix](../../scaling-playbook.md#workload-and-load-generation): 60% create and pay, with a configured share of sale and two-call capture, 15% status, 10% refund, 10% retry with a recent key, 5% other. Callbacks come from the mock, not from k6. Merchants come from an 80/20 skewed list. Retried keys come from a per-VU ring buffer, and refund targets from a seeded `SharedArray`, so generators need no shared state. Vendor any k6 helper locally rather than importing from a URL at run time. `steps.json` holds steps 0-11 from the [ramp plan](../../scaling-playbook.md#ramp-plan). 429 and 503 are counted separately from errors.
+- [ ] **Step 3: Write `mix.js`.** Use one `ramping-arrival-rate` scenario per operation at the [example mix](../../scaling-playbook.md#workload-and-load-generation): 40% sale, 10% authorize and 10% standalone capture ([D47](../../decisions.md#d47)), 15% status, 10% refund, 10% retry with a recent key, 5% other. Callbacks come from the mock, not from k6. Merchants come from an 80/20 skewed list. Retried keys come from a per-VU ring buffer, and refund targets from a seeded `SharedArray`, so generators need no shared state. Vendor any k6 helper locally rather than importing from a URL at run time. `steps.json` holds steps 0-11 from the [ramp plan](../../scaling-playbook.md#ramp-plan). 429 and 503 are counted separately from errors.
 - [ ] **Step 4: Write `run.sh`.** Record commit and configuration, reset to the prefilled snapshot, set the mock, run k6, wait for the drain, run `op-checks`, then fill the Results log into `result.md`. Refuse to run on a dirty git tree, ignoring `benchmarks/runs/`.
 - [ ] **Step 5: Run to verify they pass**
 
@@ -800,7 +800,7 @@ Preview runs only ([why](#problems-found-in-the-docs)). The laptop gives compara
 Run: `for s in 0 1 2 3; do benchmarks/run.sh $s --env local --stage phase1 --psp-latency 200 || break; done`
 Expected: each `result.md` is valid with gates met and is labelled preview. If a gate fails, stop and use superpowers:systematic-debugging with the [bottleneck runbook](../../scaling-playbook.md#bottleneck-runbook). Don't relax the gate.
 
-- [ ] **Step 3: On Linux, run steps 4 and 5.** Record `C`, then compute `N = ceil(T / (C × U))` with `T` of 8,300, and note the 16,700 case. Compare measured commits per payment with the Task 6 estimate.
+- [ ] **Step 3: On Linux, run steps 4 and 5.** Record `C`, then compute `N = ceil(T / (C × U))` with `T` of 10,000 and `C` measured at the same mix ([D47](../../decisions.md#d47)). Compare measured commits per payment with the D47 estimate of 2.8, since Phase 1 has no callbacks.
 - [ ] **Step 4: Write `BASELINE.md`:** per-request latency breakdown, the first bottleneck at each step, `C`, and whether the 5,000 target still looks reachable on one cell. State plainly anything that doesn't support the goal.
 - [ ] **Step 5: Commit** the results with message `test: record first ramp baseline`.
 - [ ] **Step 6: Hand over to the review gate.** Confirm every task has a progress line and no escalation is open, then tell the owner the build is ready for an [independent review](../../delivery-workflow.md#review-gate) of everything since `6680a7e`.
