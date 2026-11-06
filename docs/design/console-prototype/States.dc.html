@@ -1,0 +1,66 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Payment state reference</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600&display=swap">
+<style>
+body{margin:0}
+</style>
+</helmet>
+<div style="width: 820px; height: 900px; box-sizing: border-box; padding: 28px 32px; display: flex; flex-direction: column; gap: 14px; background: {{t.page}}; color: {{t.text}}; font-family: 'IBM Plex Sans', sans-serif; font-size: 13px; line-height: 1.4;">
+<h1 style="margin: 0; font-size: 22px; font-weight: 600;">How each payment state appears</h1>
+<div style="flex-grow: 1; background: {{t.surface}}; border: 1px solid {{t.border}}; border-radius: 8px; overflow: hidden;">
+<div style="display: grid; grid-template-columns: 170px minmax(0, 1fr) 170px; gap: 16px; padding: 9px 16px; border-bottom: 1px solid {{t.border}}; font-size: 12px; font-weight: 600; color: {{t.muted}};">
+<span>Label</span><span>What staff read</span><span>What staff can do</span>
+</div>
+<sc-for list="{{states}}" as="s" hint-placeholder-count="12">
+<div style="display: grid; grid-template-columns: 170px minmax(0, 1fr) 170px; gap: 16px; align-items: center; min-height: 56px; padding: 7px 16px; box-sizing: border-box; border-bottom: 1px solid {{t.soft}};">
+<span style="display: inline-flex; width: fit-content; align-items: center; gap: 5px; padding: 3px 7px; border-radius: 5px; font-size: 12px; font-weight: 500; background: {{s.bg}}; color: {{s.text}};"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="{{s.icon}}"></path></svg>{{s.label}}</span>
+<span>{{s.wording}}</span>
+<span style="color: {{t.muted}};">{{s.actions}}</span>
+</div>
+</sc-for>
+</div>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"theme":{"editor":"enum","options":["Light","Dark"],"default":"Light"},"$preview":{"width":820,"height":900}}'>
+const I = {
+  help: 'M12 21a9 9 0 1 0 0-18 9 9 0 0 0 0 18zM9.5 9a2.5 2.5 0 1 1 3.5 2.3c-.7.3-1 .8-1 1.7M12 17h.01',
+  alert: 'M12 9v4M12 17h.01M10.3 3.9 2.4 18a2 2 0 0 0 1.7 3h15.8a2 2 0 0 0 1.7-3L13.7 3.9a2 2 0 0 0-3.4 0z',
+  check: 'M20 6 9 17l-5-5',
+  clock: 'M12 21a9 9 0 1 0 0-18 9 9 0 0 0 0 18zM12 7v5l3 2',
+  lock: 'M6 11h12v9H6zM8 11V7a4 4 0 0 1 8 0v4',
+  x: 'M18 6 6 18M6 6l12 12',
+  undo: 'M9 14 4 9l5-5M4 9h10a6 6 0 0 1 0 12h-3'
+};
+const LIGHT = { page: '#F7F8FA', surface: '#FFFFFF', text: '#172033', muted: '#45516A', border: '#D5DAE3', soft: '#EDF0F5', neutral: ['#EEF0F4', '#3A4559'], warning: ['#FCEFD2', '#6B4600'], danger: ['#FBE4E2', '#8E1F1A'], accent: ['#E3EDFB', '#174C9C'], success: ['#DFF3E6', '#16603A'] };
+const DARK = { page: '#11161F', surface: '#1A212D', text: '#EEF2F8', muted: '#A8B4C7', border: '#334055', soft: '#263040', neutral: ['#2A3342', '#D5DCE8'], warning: ['#4A3708', '#FFD97A'], danger: ['#521B18', '#FFB9B2'], accent: ['#16335E', '#B6D2FB'], success: ['#123F27', '#95E3B4'] };
+class Component extends DCLogic {
+  renderVals() {
+    const t = (this.props.theme ?? 'Light') === 'Dark' ? DARK : LIGHT;
+    const row = (label, tone, icon, wording, actions) => ({ label, bg: t[tone][0], text: t[tone][1], icon: I[icon], wording, actions });
+    return { t, states: [
+      row('Waiting for payment', 'neutral', 'clock', 'No charge has been made.', 'Cancel'),
+      row('Sent to PSP', 'neutral', 'clock', 'Waiting for the PSP to answer.', 'Nothing'),
+      row('Waiting for customer', 'neutral', 'clock', 'The customer needs to finish a step such as 3D Secure.', 'Nothing'),
+      row('Outcome unknown', 'warning', 'help', "We don't yet know if the customer was charged. We're checking automatically. Don't charge again.", 'Nothing, and never a retry'),
+      row('Needs review', 'danger', 'alert', "The PSP's answer disagrees with our record. A person must compare them.", 'Propose a resolution, approve'),
+      row('Authorized', 'accent', 'lock', 'Funds are reserved, not taken.', 'Capture in full, void'),
+      row('Captured', 'success', 'check', 'Funds were taken from the customer.', 'Refund'),
+      row('Partly refunded', 'success', 'undo', 'Part of the captured amount was returned.', 'Refund the rest or part of it'),
+      row('Refunded', 'neutral', 'undo', 'The full captured amount was returned.', 'Nothing'),
+      row('Canceled', 'neutral', 'x', 'Ended with no successful attempt. No charge was made.', 'Nothing'),
+      row('Voided', 'neutral', 'x', 'The reservation was released before capture.', 'Nothing'),
+      row('Expired', 'neutral', 'x', 'The authorization window ended without capture.', 'Nothing')
+    ] };
+  }
+}
+</script>
+</body>
+</html>

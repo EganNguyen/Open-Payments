@@ -1,0 +1,803 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Open Payments Console</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans:wght@400;500;600&display=swap">
+<style>
+body{margin:0}
+button,input,select,textarea{font:inherit;color:inherit}
+button{cursor:pointer}
+button:focus-visible,input:focus-visible,select:focus-visible,textarea:focus-visible{outline:2px solid #5B8FDF;outline-offset:2px}
+.row:hover,.nav:hover,.ghost:hover{background:rgba(127,127,127,.14) !important}
+.primary:hover{filter:brightness(.9)}
+@media (prefers-reduced-motion:no-preference){.row,.nav,.ghost,.primary{transition:background-color 120ms ease-out}}
+</style>
+</helmet>
+<div style="display: flex; flex-wrap: wrap; align-items: stretch; width: 100%; height: {{rootHeight}}; min-height: {{rootMin}}; overflow: {{rootOverflow}}; position: relative; color-scheme: {{colorScheme}}; background: {{t.page}}; color: {{t.text}}; font-family: 'IBM Plex Sans', sans-serif; font-size: 14px; line-height: 1.45; font-variant-numeric: lining-nums tabular-nums;">
+
+<sc-if value="{{isDesktop}}" hint-placeholder-val="{{true}}">
+<nav aria-label="Main" style="flex: 1 1 220px; max-width: 100%; box-sizing: border-box; padding: 20px 12px; background: {{t.surface}}; border-right: 1px solid {{t.border}}; display: flex; flex-direction: column; gap: 4px;">
+<div style="padding: 0 12px 16px; font-weight: 600; font-size: 15px;">Open Payments</div>
+<sc-for list="{{navItems}}" as="n" hint-placeholder-count="4">
+<button type="button" class="nav" onClick="{{n.go}}" aria-current="{{n.current}}" style="display: flex; align-items: center; gap: 10px; min-height: 44px; padding: 0 12px; border: 0; border-radius: 6px; text-align: left; background: {{n.bg}}; color: {{n.color}}; font-weight: {{n.weight}};">
+<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="{{n.icon}}"></path></svg>
+<span style="flex-grow: 1;">{{n.label}}</span>
+<sc-if value="{{n.hasCount}}" hint-placeholder-val="{{false}}"><span style="font-size: 12px; font-weight: 600; padding: 1px 7px; border-radius: 10px; background: {{t.dangerBg}}; color: {{t.dangerText}};">{{n.count}}</span></sc-if>
+</button>
+</sc-for>
+<div style="margin-top: auto; padding: 16px 12px 0; border-top: 1px solid {{t.border}}; font-size: 13px;">
+<div style="font-weight: 500;">Alex Chen</div>
+<div style="color: {{t.muted}};">{{roleLabel}}</div>
+</div>
+</nav>
+</sc-if>
+
+<main style="flex: 999 1 560px; min-width: 0; box-sizing: border-box; padding: {{mainPad}}; overflow-y: {{mainOverflow}}; height: {{mainHeight}};">
+<div style="max-width: 1040px; margin: 0 auto; display: flex; flex-direction: column; gap: 16px;">
+
+<sc-if value="{{showLag}}" hint-placeholder-val="{{false}}">
+<div role="status" style="display: flex; gap: 8px; align-items: center; padding: 8px 12px; border-radius: 6px; background: {{t.warningBg}}; color: {{t.warningText}}; font-size: 13px;">
+<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 21a9 9 0 1 0 0-18 9 9 0 0 0 0 18zM12 7v5l3 2"></path></svg>
+<span>Data as of 14:02:31. New activity may take a moment to appear.</span>
+</div>
+</sc-if>
+
+<sc-if value="{{hasNotice}}" hint-placeholder-val="{{false}}">
+<div role="status" style="display: flex; gap: 8px; align-items: center; padding: 10px 12px; border-radius: 6px; background: {{noticeBg}}; color: {{noticeText}}; font-size: 13px;">
+<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="{{noticeIcon}}"></path></svg>
+<span style="flex-grow: 1;">{{notice}}</span>
+<button type="button" class="ghost" onClick="{{clearNotice}}" aria-label="Dismiss" style="width: 32px; height: 32px; border: 0; background: transparent; border-radius: 6px; color: inherit;">×</button>
+</div>
+</sc-if>
+
+<sc-if value="{{isAttention}}" hint-placeholder-val="{{true}}">
+<h1 style="margin: 0; font-size: 22px; font-weight: 600;">Needs attention</h1>
+<sc-for list="{{queues}}" as="q" hint-placeholder-count="5">
+<section style="background: {{t.surface}}; border: 1px solid {{t.border}}; border-radius: 8px; overflow: hidden;">
+<div style="padding: 12px 16px; border-bottom: 1px solid {{t.border}};">
+<div style="display: flex; gap: 8px; align-items: baseline;"><h2 style="margin: 0; font-size: 15px; font-weight: 600;">{{q.title}}</h2><span style="color: {{t.muted}}; font-size: 13px;">{{q.count}}</span></div>
+<div style="color: {{t.muted}}; font-size: 13px;">{{q.help}}</div>
+</div>
+<sc-for list="{{q.rows}}" as="r" hint-placeholder-count="1">
+<button type="button" class="row" onClick="{{r.open}}" style="display: flex; flex-wrap: wrap; align-items: center; gap: 4px 16px; width: 100%; min-height: 52px; box-sizing: border-box; padding: 10px 16px; border: 0; border-bottom: 1px solid {{t.soft}}; background: transparent; text-align: left;">
+<span style="flex: 0 0 130px; font-weight: 600;">{{r.amount}}</span>
+<span style="flex: 1 1 200px; color: {{t.muted}};">{{r.detail}}</span>
+<span style="font-family: 'IBM Plex Mono', monospace; font-size: 12px; color: {{t.muted}};">{{r.id}}</span>
+</button>
+</sc-for>
+<sc-if value="{{q.empty}}" hint-placeholder-val="{{false}}"><p style="margin: 0; padding: 14px 16px; color: {{t.muted}};">Nothing here needs you right now.</p></sc-if>
+</section>
+</sc-for>
+</sc-if>
+
+<sc-if value="{{isPayments}}" hint-placeholder-val="{{false}}">
+<h1 style="margin: 0; font-size: 22px; font-weight: 600;">Payments</h1>
+<div style="display: flex; flex-wrap: wrap; gap: 12px; align-items: flex-end;">
+<div style="flex: 1 1 240px; display: flex; flex-direction: column; gap: 4px;">
+<label for="search" style="font-size: 13px; font-weight: 500;">Find a payment</label>
+<input id="search" type="search" value="{{search}}" onChange="{{setSearch}}" placeholder="Payment ID" style="height: 44px; box-sizing: border-box; padding: 0 12px; border: 1px solid {{t.input}}; border-radius: 6px; background: {{t.surface}};">
+</div>
+<div style="flex: 0 1 150px; display: flex; flex-direction: column; gap: 4px;">
+<label for="range" style="font-size: 13px; font-weight: 500;">Date range</label>
+<select id="range" value="{{range}}" onChange="{{setRange}}" style="height: 44px; padding: 0 8px; border: 1px solid {{t.input}}; border-radius: 6px; background: {{t.surface}};"><option value="7">Last 7 days</option><option value="14">Last 14 days</option><option value="31">Last 31 days</option></select>
+</div>
+<div style="flex: 0 1 180px; display: flex; flex-direction: column; gap: 4px;">
+<label for="stateFilter" style="font-size: 13px; font-weight: 500;">Status</label>
+<select id="stateFilter" value="{{stateFilter}}" onChange="{{setStateFilter}}" style="height: 44px; padding: 0 8px; border: 1px solid {{t.input}}; border-radius: 6px; background: {{t.surface}};"><option value="">All statuses</option><sc-for list="{{stateOptions}}" as="o" hint-placeholder-count="5"><option value="{{o.value}}">{{o.label}}</option></sc-for></select>
+</div>
+<div style="flex: 0 1 100px; display: flex; flex-direction: column; gap: 4px;">
+<label for="minAmount" style="font-size: 13px; font-weight: 500;">Min amount</label>
+<input id="minAmount" inputmode="decimal" value="{{minAmount}}" onChange="{{setMin}}" style="width: 100%; height: 44px; box-sizing: border-box; padding: 0 10px; border: 1px solid {{t.input}}; border-radius: 6px; background: {{t.surface}};">
+</div>
+<div style="flex: 0 1 100px; display: flex; flex-direction: column; gap: 4px;">
+<label for="maxAmount" style="font-size: 13px; font-weight: 500;">Max amount</label>
+<input id="maxAmount" inputmode="decimal" value="{{maxAmount}}" onChange="{{setMax}}" style="width: 100%; height: 44px; box-sizing: border-box; padding: 0 10px; border: 1px solid {{t.input}}; border-radius: 6px; background: {{t.surface}};">
+</div>
+</div>
+<p style="margin: 0; color: {{t.muted}}; font-size: 13px;">Lists show up to 31 days at a time. For anything older, search by the payment ID.</p>
+
+<sc-if value="{{hasFoundOutside}}" hint-placeholder-val="{{false}}"><p role="status" style="margin: 0; padding: 8px 12px; border-radius: 6px; background: {{t.accentBg}}; color: {{t.accentText}}; font-size: 13px;">Found by ID, outside the date range.</p></sc-if>
+
+<sc-if value="{{hasSearchProblem}}" hint-placeholder-val="{{false}}">
+<div role="alert" style="padding: 20px 16px; border: 1px solid {{t.border}}; border-radius: 8px; background: {{t.surface}};"><div style="font-weight: 600;">{{searchProblemTitle}}</div><div style="color: {{t.muted}};">{{searchProblemText}}</div></div>
+</sc-if>
+
+<sc-if value="{{showList}}" hint-placeholder-val="{{true}}">
+<sc-if value="{{isDesktop}}" hint-placeholder-val="{{true}}">
+<div style="background: {{t.surface}}; border: 1px solid {{t.border}}; border-radius: 8px; overflow-x: auto;">
+<div style="display: grid; grid-template-columns: 150px minmax(0, 1fr) 190px 150px; gap: 16px; min-width: 680px; padding: 10px 16px; border-bottom: 1px solid {{t.border}}; font-size: 12px; font-weight: 600; color: {{t.muted}};">
+<span>Status</span><span>Payment</span><span>Created</span><span style="text-align: right;">Amount</span>
+</div>
+<sc-for list="{{rows}}" as="p" hint-placeholder-count="8">
+<button type="button" class="row" onClick="{{p.open}}" style="display: grid; grid-template-columns: 150px minmax(0, 1fr) 190px 150px; gap: 16px; align-items: center; width: 100%; min-width: 680px; min-height: 48px; padding: 8px 16px; border: 0; border-bottom: 1px solid {{t.soft}}; background: transparent; text-align: left;">
+<span style="display: inline-flex; width: fit-content; align-items: center; gap: 5px; padding: 3px 7px; border-radius: 5px; font-size: 12px; font-weight: 500; background: {{p.toneBg}}; color: {{p.toneText}};"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="{{p.icon}}"></path></svg>{{p.label}}</span>
+<span style="font-family: 'IBM Plex Mono', monospace; font-size: 13px;">{{p.id}}</span>
+<span style="color: {{t.muted}};">{{p.created}}</span>
+<span style="text-align: right; font-weight: 500;">{{p.amount}}</span>
+</button>
+</sc-for>
+<sc-if value="{{noRows}}" hint-placeholder-val="{{false}}"><p style="margin: 0; padding: 20px 16px; color: {{t.muted}};">{{noRowsText}}</p></sc-if>
+</div>
+</sc-if>
+
+<sc-if value="{{isPhone}}" hint-placeholder-val="{{false}}">
+<div style="display: flex; flex-direction: column; gap: 8px;">
+<sc-for list="{{rows}}" as="p" hint-placeholder-count="8">
+<button type="button" onClick="{{p.open}}" style="display: flex; flex-direction: column; gap: 6px; padding: 12px; border: 1px solid {{t.border}}; border-radius: 8px; background: {{t.surface}}; text-align: left;">
+<span style="display: flex; justify-content: space-between; align-items: center; gap: 8px; width: 100%;"><span style="font-size: 17px; font-weight: 600;">{{p.amount}}</span><span style="display: inline-flex; align-items: center; gap: 5px; padding: 3px 7px; border-radius: 5px; font-size: 12px; font-weight: 500; background: {{p.toneBg}}; color: {{p.toneText}};"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="{{p.icon}}"></path></svg>{{p.label}}</span></span>
+<span style="display: flex; justify-content: space-between; gap: 8px; width: 100%; color: {{t.muted}}; font-size: 12px;"><span style="font-family: 'IBM Plex Mono', monospace;">{{p.id}}</span><span>{{p.created}}</span></span>
+</button>
+</sc-for>
+<sc-if value="{{noRows}}" hint-placeholder-val="{{false}}"><p style="margin: 0; padding: 12px 0; color: {{t.muted}};">{{noRowsText}}</p></sc-if>
+</div>
+</sc-if>
+</sc-if>
+</sc-if>
+
+<sc-if value="{{isDetail}}" hint-placeholder-val="{{false}}">
+<button type="button" class="ghost" onClick="{{goPayments}}" style="align-self: flex-start; display: inline-flex; align-items: center; gap: 6px; min-height: 44px; padding: 0 10px 0 4px; border: 0; border-radius: 6px; background: transparent; color: {{t.muted}};"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M19 12H5M12 19l-7-7 7-7"></path></svg>Payments</button>
+<div style="display: flex; flex-wrap: wrap; gap: 8px 16px; align-items: center;">
+<h1 style="margin: 0; font-size: 28px; line-height: 1.2; font-weight: 600;">{{cur.amount}}</h1>
+<span style="display: inline-flex; align-items: center; gap: 6px; padding: 4px 9px; border-radius: 6px; font-size: 13px; font-weight: 500; background: {{cur.toneBg}}; color: {{cur.toneText}};"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="{{cur.icon}}"></path></svg>{{cur.label}}</span>
+<span style="font-family: 'IBM Plex Mono', monospace; font-size: 13px; color: {{t.muted}};">{{cur.id}}</span>
+</div>
+<div style="padding: 14px 16px; border: 1px solid {{t.border}}; border-radius: 8px; background: {{t.surface}};">
+<p style="margin: 0; font-size: 15px; font-weight: 500;">{{cur.wording}}</p>
+<sc-if value="{{cur.hasExtra}}" hint-placeholder-val="{{false}}"><p style="margin: 6px 0 0; color: {{t.muted}};">{{cur.extra}}</p></sc-if>
+</div>
+
+<sc-if value="{{cur.hasCase}}" hint-placeholder-val="{{false}}">
+<section style="padding: 14px 16px; border-radius: 8px; background: {{t.dangerBg}}; color: {{t.dangerText}}; display: flex; flex-direction: column; gap: 8px;">
+<h2 style="margin: 0; font-size: 15px; font-weight: 600;">{{cur.caseTitle}}</h2>
+<p style="margin: 0;">{{cur.caseText}}</p>
+<sc-if value="{{cur.canPropose}}" hint-placeholder-val="{{false}}"><button type="button" class="ghost" onClick="{{proposeCase}}" style="align-self: flex-start; min-height: 44px; padding: 0 16px; border: 1px solid {{t.dangerText}}; border-radius: 6px; background: transparent; color: inherit; font-weight: 500;">Propose a resolution</button></sc-if>
+</section>
+</sc-if>
+
+<sc-if value="{{cur.hasOrphan}}" hint-placeholder-val="{{false}}">
+<section style="padding: 14px 16px; border-radius: 8px; background: {{t.warningBg}}; color: {{t.warningText}}; display: flex; flex-direction: column; gap: 8px;">
+<h2 style="margin: 0; font-size: 15px; font-weight: 600;">Action with no recorded result</h2>
+<p style="margin: 0;">{{cur.orphan}} Check the payment below. If the action ran, it appears in What happened.</p>
+<sc-if value="{{cur.canAct}}" hint-placeholder-val="{{false}}"><button type="button" class="ghost" onClick="{{clearOrphan}}" style="align-self: flex-start; min-height: 44px; padding: 0 16px; border: 1px solid {{t.warningText}}; border-radius: 6px; background: transparent; color: inherit; font-weight: 500;">Mark as checked</button></sc-if>
+</section>
+</sc-if>
+
+<sc-if value="{{cur.hasChecking}}" hint-placeholder-val="{{false}}">
+<div style="display: flex; flex-wrap: wrap; gap: 8px 12px; align-items: center; padding: 12px 16px; border-radius: 8px; background: {{t.warningBg}}; color: {{t.warningText}};">
+<span style="flex: 1 1 240px; font-weight: 500;">{{cur.checking}}: still checking. The result will appear here. Don't repeat this action.</span>
+<button type="button" class="ghost" onClick="{{resolveChecking}}" style="min-height: 44px; padding: 0 12px; border: 1px solid {{t.warningText}}; border-radius: 6px; background: transparent; color: inherit; font-size: 13px;">Prototype only: result arrives</button>
+</div>
+</sc-if>
+
+<sc-if value="{{cur.hasActions}}" hint-placeholder-val="{{false}}">
+<div style="display: flex; flex-wrap: wrap; gap: 8px;">
+<sc-for list="{{cur.actions}}" as="a" hint-placeholder-count="2">
+<button type="button" class="ghost" onClick="{{a.start}}" style="min-height: 44px; padding: 0 16px; border: 1px solid {{t.input}}; border-radius: 6px; background: {{t.surface}}; font-weight: 500;">{{a.label}}</button>
+</sc-for>
+</div>
+</sc-if>
+<sc-if value="{{cur.viewerNote}}" hint-placeholder-val="{{false}}"><p style="margin: 0; color: {{t.muted}}; font-size: 13px;">Your role can view this payment but can't change it.</p></sc-if>
+
+<sc-if value="{{cur.hasPending}}" hint-placeholder-val="{{false}}">
+<div style="display: flex; flex-wrap: wrap; gap: 8px 12px; align-items: center; padding: 12px 16px; border-radius: 8px; background: {{t.accentBg}}; color: {{t.accentText}};">
+<span style="flex: 1 1 240px; font-weight: 500;">Refund of {{cur.pending}}: In progress, amount reserved</span>
+<sc-if value="{{cur.pendingConfirmable}}" hint-placeholder-val="{{true}}"><button type="button" class="ghost" onClick="{{confirmRefund}}" style="min-height: 44px; padding: 0 12px; border: 1px solid {{t.accentText}}; border-radius: 6px; background: transparent; color: inherit; font-size: 13px;">Prototype only: PSP confirms</button></sc-if>
+</div>
+</sc-if>
+
+<sc-if value="{{cur.hasProposal}}" hint-placeholder-val="{{false}}">
+<section style="padding: 14px 16px; border: 1px solid {{t.border}}; border-radius: 8px; background: {{t.surface}}; display: flex; flex-direction: column; gap: 10px;">
+<h2 style="margin: 0; font-size: 15px; font-weight: 600;">Waiting for a second person</h2>
+<dl style="margin: 0; display: grid; grid-template-columns: minmax(110px, 160px) minmax(0, 1fr); gap: 6px 12px;">
+<dt style="color: {{t.muted}};">Proposed by</dt><dd style="margin: 0;">{{cur.proposal.by}}</dd>
+<dt style="color: {{t.muted}};">Proposed outcome</dt><dd style="margin: 0;">{{cur.proposal.outcomeLabel}}</dd>
+<dt style="color: {{t.muted}};">PSP's answer</dt><dd style="margin: 0;">{{cur.proposal.answer}}</dd>
+<dt style="color: {{t.muted}};">Evidence</dt><dd style="margin: 0;">{{cur.proposal.evidence}}</dd>
+</dl>
+<sc-if value="{{cur.canDecide}}" hint-placeholder-val="{{false}}">
+<div style="display: flex; flex-wrap: wrap; gap: 8px;">
+<button type="button" class="primary" onClick="{{approve}}" style="min-height: 44px; padding: 0 16px; border: 0; border-radius: 6px; background: {{t.accent}}; color: {{t.onAccent}}; font-weight: 500;">Approve</button>
+<button type="button" class="ghost" onClick="{{reject}}" style="min-height: 44px; padding: 0 16px; border: 1px solid {{t.input}}; border-radius: 6px; background: {{t.surface}}; font-weight: 500;">Reject</button>
+</div>
+</sc-if>
+<sc-if value="{{cur.ownProposal}}" hint-placeholder-val="{{false}}">
+<p style="margin: 0; color: {{t.muted}};">You proposed this, so a different approver must decide.</p>
+<button type="button" class="ghost" onClick="{{secondApproves}}" style="align-self: flex-start; min-height: 44px; padding: 0 12px; border: 1px solid {{t.input}}; border-radius: 6px; background: transparent; font-size: 13px;">Prototype only: Sam Rivera approves</button>
+</sc-if>
+<sc-if value="{{cur.cannotApprove}}" hint-placeholder-val="{{false}}"><p style="margin: 0; color: {{t.muted}};">Only an Approver can decide this.</p></sc-if>
+</section>
+</sc-if>
+
+<div style="display: flex; flex-wrap: wrap; gap: 16px; align-items: flex-start;">
+<section style="flex: 1 1 260px; box-sizing: border-box; padding: 14px 16px; border: 1px solid {{t.border}}; border-radius: 8px; background: {{t.surface}};">
+<h2 style="margin: 0 0 10px; font-size: 15px; font-weight: 600;">Where the money is</h2>
+<dl style="margin: 0; display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 8px 12px;">
+<dt style="color: {{t.muted}};">Payment amount</dt><dd style="margin: 0; text-align: right;">{{cur.amount}}</dd>
+<dt style="color: {{t.muted}};">Captured</dt><dd style="margin: 0; text-align: right;">{{cur.captured}}</dd>
+<dt style="color: {{t.muted}};">Refunded</dt><dd style="margin: 0; text-align: right;">{{cur.refunded}}</dd>
+<dt style="color: {{t.muted}};">Refund in progress</dt><dd style="margin: 0; text-align: right;">{{cur.pending}}</dd>
+<dt style="font-weight: 600; padding-top: 8px; border-top: 1px solid {{t.border}};">Can still be refunded</dt><dd style="margin: 0; text-align: right; font-weight: 600; padding-top: 8px; border-top: 1px solid {{t.border}};">{{cur.refundable}}</dd>
+</dl>
+</section>
+<section style="flex: 2 1 340px; box-sizing: border-box; padding: 14px 16px; border: 1px solid {{t.border}}; border-radius: 8px; background: {{t.surface}};">
+<h2 style="margin: 0 0 10px; font-size: 15px; font-weight: 600;">What happened</h2>
+<ol style="margin: 0; padding: 0; list-style: none; display: flex; flex-direction: column; gap: 10px;">
+<sc-for list="{{cur.timeline}}" as="e" hint-placeholder-count="3">
+<li style="display: flex; flex-wrap: wrap; gap: 2px 12px;"><span style="flex: 0 0 104px; color: {{t.muted}}; font-size: 13px;">{{e.at}}</span><span style="flex: 1 1 200px;">{{e.text}}</span></li>
+</sc-for>
+</ol>
+<p style="margin: 12px 0 0; color: {{t.muted}}; font-size: 13px;">PSP reference {{cur.psp}}. Check the PSP's dashboard for its full record.</p>
+</section>
+</div>
+</sc-if>
+
+<sc-if value="{{isAction}}" hint-placeholder-val="{{false}}">
+<button type="button" class="ghost" onClick="{{cancelAction}}" style="align-self: flex-start; display: inline-flex; align-items: center; gap: 6px; min-height: 44px; padding: 0 10px 0 4px; border: 0; border-radius: 6px; background: transparent; color: {{t.muted}};"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M19 12H5M12 19l-7-7 7-7"></path></svg>Back to payment</button>
+<div style="max-width: 560px; width: 100%; box-sizing: border-box; padding: 20px; border: 1px solid {{t.border}}; border-radius: 8px; background: {{t.surface}}; display: flex; flex-direction: column; gap: 14px;">
+<h1 style="margin: 0; font-size: 20px; font-weight: 600;">{{actionTitle}}</h1>
+<sc-if value="{{isActionForm}}" hint-placeholder-val="{{true}}">
+<p style="margin: 0; color: {{t.muted}};">{{actionHelp}}</p>
+<sc-if value="{{isRefund}}" hint-placeholder-val="{{false}}">
+<div style="display: flex; flex-direction: column; gap: 4px;">
+<label for="amount" style="font-weight: 500;">Refund amount ({{curCurrency}})</label>
+<input id="amount" inputmode="decimal" value="{{amountText}}" onChange="{{setAmount}}" aria-describedby="amountHelp" style="height: 44px; box-sizing: border-box; padding: 0 12px; border: 1px solid {{t.input}}; border-radius: 6px; background: {{t.surface}};">
+<span id="amountHelp" style="font-size: 13px; color: {{t.muted}};">Up to {{cur.refundable}}</span>
+<sc-if value="{{hasAmountError}}" hint-placeholder-val="{{false}}"><span role="alert" style="font-size: 13px; color: {{t.dangerText}}; font-weight: 500;">{{amountError}}</span></sc-if>
+</div>
+</sc-if>
+<div style="display: flex; flex-direction: column; gap: 4px;">
+<label for="reason" style="font-weight: 500;">Reason</label>
+<textarea id="reason" rows="3" value="{{reason}}" onChange="{{setReason}}" placeholder="Customer returned the item" style="box-sizing: border-box; padding: 10px 12px; border: 1px solid {{t.input}}; border-radius: 6px; background: {{t.surface}}; resize: vertical;"></textarea>
+<sc-if value="{{hasReasonError}}" hint-placeholder-val="{{false}}"><span role="alert" style="font-size: 13px; color: {{t.dangerText}}; font-weight: 500;">Enter a reason. It's saved in the audit log.</span></sc-if>
+</div>
+<button type="button" class="primary" onClick="{{toConfirm}}" style="align-self: flex-start; min-height: 44px; padding: 0 18px; border: 0; border-radius: 6px; background: {{t.accent}}; color: {{t.onAccent}}; font-weight: 500;">Continue</button>
+</sc-if>
+<sc-if value="{{isActionConfirm}}" hint-placeholder-val="{{false}}">
+<div style="padding: 14px; border-radius: 6px; background: {{t.sunken}}; display: flex; flex-direction: column; gap: 4px;">
+<div style="font-size: 22px; font-weight: 600;">{{confirmAmount}}</div>
+<div>{{confirmEffect}}</div>
+<div style="font-family: 'IBM Plex Mono', monospace; font-size: 12px; color: {{t.muted}};">{{cur.id}}</div>
+</div>
+<div><span style="color: {{t.muted}};">Reason: </span>{{reason}}</div>
+<sc-if value="{{busyError}}" hint-placeholder-val="{{false}}"><div role="alert" style="padding: 10px 12px; border-radius: 6px; background: {{t.warningBg}}; color: {{t.warningText}};">The system is busy, so nothing has happened yet. Your details are kept. Try again in 30 seconds. It's safe to retry, because this can't run twice.</div></sc-if>
+<p style="margin: 0; color: {{t.muted}}; font-size: 13px;">You'll verify it's you next. Tapping twice can't repeat this action.</p>
+<div style="display: flex; flex-wrap: wrap; gap: 8px;">
+<button type="button" class="primary" onClick="{{commit}}" style="min-height: 44px; padding: 0 18px; border: 0; border-radius: 6px; background: {{t.accent}}; color: {{t.onAccent}}; font-weight: 500;">{{commitLabel}}</button>
+<button type="button" class="ghost" onClick="{{backToForm}}" style="min-height: 44px; padding: 0 16px; border: 1px solid {{t.input}}; border-radius: 6px; background: {{t.surface}}; font-weight: 500;">Change</button>
+</div>
+</sc-if>
+</div>
+</sc-if>
+
+<sc-if value="{{isVerify}}" hint-placeholder-val="{{false}}">
+<div style="max-width: 460px; width: 100%; margin: 24px auto 0; box-sizing: border-box; padding: 24px; border: 1px solid {{t.border}}; border-radius: 8px; background: {{t.surface}}; display: flex; flex-direction: column; gap: 14px;">
+<svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="{{t.accent}}" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6 11h12v9H6zM8 11V7a4 4 0 0 1 8 0v4"></path></svg>
+<h1 style="margin: 0; font-size: 20px; font-weight: 600;">Verify it's you</h1>
+<p style="margin: 0; color: {{t.muted}};">Your sign-in provider will confirm it's you before this runs. On iPhone, this can be Face ID.</p>
+<div style="padding: 12px 14px; border-radius: 6px; background: {{t.sunken}}; font-weight: 500;">{{verifySummary}}</div>
+<div style="display: flex; flex-wrap: wrap; gap: 8px;">
+<button type="button" class="primary" onClick="{{verifyGo}}" style="min-height: 44px; padding: 0 18px; border: 0; border-radius: 6px; background: {{t.accent}}; color: {{t.onAccent}}; font-weight: 500;">Continue to sign-in provider</button>
+<button type="button" class="ghost" onClick="{{verifyBack}}" style="min-height: 44px; padding: 0 16px; border: 1px solid {{t.input}}; border-radius: 6px; background: {{t.surface}}; font-weight: 500;">Go back</button>
+</div>
+</div>
+</sc-if>
+
+<sc-if value="{{isPropose}}" hint-placeholder-val="{{false}}">
+<button type="button" class="ghost" onClick="{{cancelAction}}" style="align-self: flex-start; display: inline-flex; align-items: center; gap: 6px; min-height: 44px; padding: 0 10px 0 4px; border: 0; border-radius: 6px; background: transparent; color: {{t.muted}};"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M19 12H5M12 19l-7-7 7-7"></path></svg>Back to payment</button>
+<div style="max-width: 620px; width: 100%; box-sizing: border-box; padding: 20px; border: 1px solid {{t.border}}; border-radius: 8px; background: {{t.surface}}; display: flex; flex-direction: column; gap: 14px;">
+<h1 style="margin: 0; font-size: 20px; font-weight: 600;">Propose a resolution</h1>
+<p style="margin: 0; color: {{t.muted}};">Compare our record with the PSP's. A second person must approve what you propose.</p>
+<div style="padding: 12px 14px; border-radius: 6px; background: {{t.sunken}};"><span style="color: {{t.muted}};">Our record: </span>{{cur.amount}}<br><span style="color: {{t.muted}};">The disagreement: </span>{{proposeText}}</div>
+<sc-if value="{{isReversalCase}}" hint-placeholder-val="{{false}}"><div style="padding: 12px 14px; border-radius: 6px; background: {{t.warningBg}}; color: {{t.warningText}};"><b style="font-weight: 600;">Reverse this at the PSP first.</b> A late-approved sale can't be voided from here. The console only records what you did, and moves no money.</div></sc-if>
+<div style="display: flex; flex-direction: column; gap: 4px;">
+<label for="answer" style="font-weight: 500;">What the PSP's record says</label>
+<input id="answer" value="{{answer}}" onChange="{{setAnswer}}" placeholder="Captured 301.50 USD" style="height: 44px; box-sizing: border-box; padding: 0 12px; border: 1px solid {{t.input}}; border-radius: 6px; background: {{t.surface}};">
+</div>
+<div style="display: flex; flex-direction: column; gap: 4px;">
+<label for="evidence" style="font-weight: 500;">Evidence</label>
+<textarea id="evidence" rows="3" value="{{evidence}}" onChange="{{setEvidence}}" placeholder="Link or reference to the PSP record" style="box-sizing: border-box; padding: 10px 12px; border: 1px solid {{t.input}}; border-radius: 6px; background: {{t.surface}}; resize: vertical;"></textarea>
+</div>
+<fieldset style="margin: 0; padding: 0; border: 0; display: flex; flex-direction: column; gap: 6px;">
+<legend style="padding: 0 0 6px; font-weight: 500;">Proposed outcome</legend>
+<sc-for list="{{outcomes}}" as="o" hint-placeholder-count="3">
+<label style="display: flex; gap: 10px; align-items: center; min-height: 44px; padding: 0 12px; border: {{o.border}}; border-radius: 6px;"><input type="radio" name="outcome" checked="{{o.checked}}" onChange="{{o.pick}}"><span>{{o.label}}</span></label>
+</sc-for>
+</fieldset>
+<sc-if value="{{hasProposeError}}" hint-placeholder-val="{{false}}"><span role="alert" style="font-size: 13px; color: {{t.dangerText}}; font-weight: 500;">Enter the PSP's answer and the evidence, and choose an outcome.</span></sc-if>
+<button type="button" class="primary" onClick="{{submitProposal}}" style="align-self: flex-start; min-height: 44px; padding: 0 18px; border: 0; border-radius: 6px; background: {{t.accent}}; color: {{t.onAccent}}; font-weight: 500;">Continue</button>
+</div>
+</sc-if>
+
+<sc-if value="{{isAudit}}" hint-placeholder-val="{{false}}">
+<h1 style="margin: 0; font-size: 22px; font-weight: 600;">Audit log</h1>
+<p style="margin: 0; color: {{t.muted}};">Every staff action, with who did it and why. Entries can't be changed.</p>
+<div style="display: flex; flex-wrap: wrap; gap: 12px; align-items: flex-end;">
+<div style="flex: 1 1 200px; display: flex; flex-direction: column; gap: 4px;"><label for="auditPayment" style="font-size: 13px; font-weight: 500;">Payment ID</label><input id="auditPayment" value="{{auditPayment}}" onChange="{{setAuditPayment}}" style="height: 44px; box-sizing: border-box; padding: 0 12px; border: 1px solid {{t.input}}; border-radius: 6px; background: {{t.surface}};"></div>
+<div style="flex: 1 1 150px; display: flex; flex-direction: column; gap: 4px;"><label for="auditPerson" style="font-size: 13px; font-weight: 500;">Person</label><select id="auditPerson" value="{{auditPerson}}" onChange="{{setAuditPerson}}" style="height: 44px; padding: 0 8px; border: 1px solid {{t.input}}; border-radius: 6px; background: {{t.surface}};"><option value="">Everyone</option><option value="Alex Chen">Alex Chen</option><option value="Sam Rivera">Sam Rivera</option><option value="Priya Nair">Priya Nair</option><option value="Morgan Diaz">Morgan Diaz</option></select></div>
+<div style="flex: 1 1 130px; display: flex; flex-direction: column; gap: 4px;"><label for="auditRange" style="font-size: 13px; font-weight: 500;">Date</label><select id="auditRange" value="{{auditRange}}" onChange="{{setAuditRange}}" style="height: 44px; padding: 0 8px; border: 1px solid {{t.input}}; border-radius: 6px; background: {{t.surface}};"><option value="7">Last 7 days</option><option value="31">Last 31 days</option><option value="9999">All time</option></select></div>
+</div>
+<div style="background: {{t.surface}}; border: 1px solid {{t.border}}; border-radius: 8px;">
+<sc-for list="{{audit}}" as="e" hint-placeholder-count="5">
+<div style="display: flex; flex-wrap: wrap; gap: 2px 16px; padding: 12px 16px; border-bottom: 1px solid {{t.soft}};">
+<span style="flex: 0 0 110px; color: {{t.muted}}; font-size: 13px;">{{e.at}}</span>
+<span style="flex: 0 0 110px; font-weight: 500;">{{e.who}}</span>
+<span style="flex: 1 1 240px;">{{e.what}}</span>
+</div>
+</sc-for>
+<sc-if value="{{auditEmpty}}" hint-placeholder-val="{{false}}"><p style="margin: 0; padding: 16px; color: {{t.muted}};">No entries match these filters.</p></sc-if>
+</div>
+<sc-if value="{{auditHasMore}}" hint-placeholder-val="{{false}}"><button type="button" class="ghost" onClick="{{auditMore}}" style="align-self: flex-start; min-height: 44px; padding: 0 16px; border: 1px solid {{t.input}}; border-radius: 6px; background: {{t.surface}}; font-weight: 500;">Show more</button></sc-if>
+</sc-if>
+
+<sc-if value="{{isStaff}}" hint-placeholder-val="{{false}}">
+<h1 style="margin: 0; font-size: 22px; font-weight: 600;">Staff</h1>
+<sc-if value="{{isPhone}}" hint-placeholder-val="{{false}}"><p style="margin: 0; padding: 14px; border: 1px solid {{t.border}}; border-radius: 8px; background: {{t.surface}};">Open this on a desktop to manage staff and roles.</p></sc-if>
+<sc-if value="{{isDesktop}}" hint-placeholder-val="{{true}}">
+<p style="margin: 0; color: {{t.muted}};">People sign in through your company's identity provider. Roles are set here.</p>
+<sc-if value="{{isNotAdmin}}" hint-placeholder-val="{{true}}"><p style="margin: 0; padding: 10px 12px; border-radius: 6px; background: {{t.sunken}}; font-size: 13px;">Only an Admin can change staff.</p></sc-if>
+<sc-if value="{{isAdmin}}" hint-placeholder-val="{{false}}">
+<form onSubmit="{{addStaff}}" style="display: flex; flex-wrap: wrap; gap: 12px; align-items: flex-end; padding: 14px 16px; border: 1px solid {{t.border}}; border-radius: 8px; background: {{t.surface}};">
+<div style="flex: 2 1 240px; display: flex; flex-direction: column; gap: 4px;"><label for="newEmail" style="font-size: 13px; font-weight: 500;">Work email</label><input id="newEmail" type="email" value="{{newEmail}}" onChange="{{setNewEmail}}" placeholder="name@company.com" style="height: 44px; box-sizing: border-box; padding: 0 12px; border: 1px solid {{t.input}}; border-radius: 6px; background: {{t.surface}};"></div>
+<div style="flex: 1 1 140px; display: flex; flex-direction: column; gap: 4px;"><label for="newRole" style="font-size: 13px; font-weight: 500;">Role</label><select id="newRole" value="{{newRole}}" onChange="{{setNewRole}}" style="height: 44px; padding: 0 8px; border: 1px solid {{t.input}}; border-radius: 6px; background: {{t.surface}};"><option value="Viewer">Viewer</option><option value="Operator">Operator</option><option value="Approver">Approver</option><option value="Admin">Admin</option></select></div>
+<button type="submit" class="primary" style="min-height: 44px; padding: 0 18px; border: 0; border-radius: 6px; background: {{t.accent}}; color: {{t.onAccent}}; font-weight: 500;">Add person</button>
+<sc-if value="{{hasStaffAddError}}" hint-placeholder-val="{{false}}"><span role="alert" style="flex: 1 0 100%; font-size: 13px; color: {{t.dangerText}}; font-weight: 500;">Enter a work email.</span></sc-if>
+</form>
+</sc-if>
+<sc-if value="{{hasStaffError}}" hint-placeholder-val="{{false}}"><div role="alert" style="padding: 10px 12px; border-radius: 6px; background: {{t.dangerBg}}; color: {{t.dangerText}}; font-size: 13px;">{{staffError}}</div></sc-if>
+<div style="background: {{t.surface}}; border: 1px solid {{t.border}}; border-radius: 8px; overflow-x: auto;">
+<sc-for list="{{staff}}" as="p" hint-placeholder-count="5">
+<div style="display: grid; grid-template-columns: minmax(170px, 1.2fr) minmax(170px, 1fr) 140px 110px; gap: 16px; align-items: center; min-width: 660px; min-height: 56px; box-sizing: border-box; padding: 6px 16px; border-bottom: 1px solid {{t.soft}};">
+<span><span style="display: block; font-weight: 500;">{{p.name}}</span><span style="display: block; font-size: 12px; color: {{t.muted}};">{{p.email}}</span></span>
+<span style="color: {{t.muted}};">{{p.can}}</span>
+<sc-if value="{{p.editable}}" hint-placeholder-val="{{false}}"><span><label for="{{p.selectId}}" style="position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%);">Role for {{p.name}}</label><select id="{{p.selectId}}" value="{{p.role}}" onChange="{{p.setRole}}" style="width: 100%; height: 44px; padding: 0 8px; border: 1px solid {{t.input}}; border-radius: 6px; background: {{t.surface}};"><option value="Viewer">Viewer</option><option value="Operator">Operator</option><option value="Approver">Approver</option><option value="Admin">Admin</option></select></span></sc-if>
+<sc-if value="{{p.readOnly}}" hint-placeholder-val="{{true}}"><span>{{p.statusText}}</span></sc-if>
+<sc-if value="{{p.canToggle}}" hint-placeholder-val="{{false}}"><button type="button" class="ghost" onClick="{{p.toggle}}" style="min-height: 44px; padding: 0 12px; border: 1px solid {{t.input}}; border-radius: 6px; background: {{t.surface}};">{{p.toggleLabel}}</button></sc-if>
+</div>
+</sc-for>
+</div>
+</sc-if>
+</sc-if>
+
+<sc-if value="{{isMore}}" hint-placeholder-val="{{false}}">
+<h1 style="margin: 0; font-size: 22px; font-weight: 600;">More</h1>
+<div style="background: {{t.surface}}; border: 1px solid {{t.border}}; border-radius: 8px;">
+<button type="button" onClick="{{goAudit}}" style="display: flex; justify-content: space-between; align-items: center; width: 100%; min-height: 52px; padding: 0 16px; border: 0; border-bottom: 1px solid {{t.soft}}; background: transparent; text-align: left;">Audit log<span aria-hidden="true" style="color: {{t.muted}};">›</span></button>
+<button type="button" onClick="{{goStaff}}" style="display: flex; justify-content: space-between; align-items: center; width: 100%; min-height: 52px; padding: 0 16px; border: 0; background: transparent; text-align: left;">Staff<span aria-hidden="true" style="color: {{t.muted}};">›</span></button>
+</div>
+<div style="padding: 0 4px; font-size: 13px; color: {{t.muted}};">Signed in as Alex Chen, {{roleLabel}}</div>
+</sc-if>
+
+</div>
+</main>
+
+<sc-if value="{{isPhone}}" hint-placeholder-val="{{false}}">
+<nav aria-label="Main" style="flex: 0 0 100%; box-sizing: border-box; height: 72px; padding: 6px 8px 14px; display: flex; background: {{t.surface}}; border-top: 1px solid {{t.border}};">
+<sc-for list="{{tabs}}" as="n" hint-placeholder-count="3">
+<button type="button" onClick="{{n.go}}" aria-current="{{n.current}}" style="flex: 1 1 0; min-height: 44px; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 2px; border: 0; background: transparent; color: {{n.color}}; font-size: 11px; font-weight: {{n.weight}};">
+<svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="{{n.icon}}"></path></svg>
+{{n.label}}
+</button>
+</sc-for>
+</nav>
+</sc-if>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"layout":{"editor":"enum","options":["desktop","phone"],"default":"desktop"},"role":{"editor":"enum","options":["Viewer","Operator","Approver","Admin"],"default":"Approver"},"theme":{"editor":"enum","options":["Light","Dark","Device"],"default":"Light"},"actionResult":{"editor":"enum","options":["Done","Still checking","State changed","Busy"],"default":"Done"},"searchStatus":{"editor":"enum","options":["Normal","Unavailable","Timed out"],"default":"Normal"},"replicaBehind":{"editor":"boolean","default":false},"$preview":{"width":1360,"height":900}}'>
+const ICONS = {
+  help: 'M12 21a9 9 0 1 0 0-18 9 9 0 0 0 0 18zM9.5 9a2.5 2.5 0 1 1 3.5 2.3c-.7.3-1 .8-1 1.7M12 17h.01',
+  alert: 'M12 9v4M12 17h.01M10.3 3.9 2.4 18a2 2 0 0 0 1.7 3h15.8a2 2 0 0 0 1.7-3L13.7 3.9a2 2 0 0 0-3.4 0z',
+  check: 'M20 6 9 17l-5-5',
+  clock: 'M12 21a9 9 0 1 0 0-18 9 9 0 0 0 0 18zM12 7v5l3 2',
+  lock: 'M6 11h12v9H6zM8 11V7a4 4 0 0 1 8 0v4',
+  x: 'M18 6 6 18M6 6l12 12',
+  undo: 'M9 14 4 9l5-5M4 9h10a6 6 0 0 1 0 12h-3',
+  bell: 'M6 8a6 6 0 1 1 12 0c0 7 3 8 3 8H3s3-1 3-8M10 20a2 2 0 0 0 4 0',
+  receipt: 'M6 3h12v18l-3-2-3 2-3-2-3 2zM9 8h6M9 12h6',
+  menu: 'M4 7h16M4 12h16M4 17h16',
+  list: 'M8 6h12M8 12h12M8 18h12M4 6h.01M4 12h.01M4 18h.01',
+  users: 'M16 19a4 4 0 0 0-8 0M12 11a3 3 0 1 0 0-6 3 3 0 0 0 0 6z'
+};
+const LIGHT = { page: '#F7F8FA', surface: '#FFFFFF', sunken: '#F2F4F8', text: '#172033', muted: '#45516A', border: '#D5DAE3', soft: '#EDF0F5', input: '#8A94A8', accent: '#1F5FBF', onAccent: '#FFFFFF', neutralBg: '#EEF0F4', neutralText: '#3A4559', warningBg: '#FCEFD2', warningText: '#6B4600', dangerBg: '#FBE4E2', dangerText: '#8E1F1A', accentBg: '#E3EDFB', accentText: '#174C9C', successBg: '#DFF3E6', successText: '#16603A' };
+const DARK = { page: '#11161F', surface: '#1A212D', sunken: '#222B39', text: '#EEF2F8', muted: '#A8B4C7', border: '#334055', soft: '#263040', input: '#6C7A91', accent: '#7FB0F5', onAccent: '#0B1930', neutralBg: '#2A3342', neutralText: '#D5DCE8', warningBg: '#4A3708', warningText: '#FFD97A', dangerBg: '#521B18', dangerText: '#FFB9B2', accentBg: '#16335E', accentText: '#B6D2FB', successBg: '#123F27', successText: '#95E3B4' };
+const STATES = {
+  AWAITING_METHOD: { label: 'Waiting for payment', tone: 'neutral', icon: 'clock', wording: 'No charge has been made.', actions: ['cancel'] },
+  PSP_PENDING: { label: 'Sent to PSP', tone: 'neutral', icon: 'clock', wording: 'Waiting for the PSP to answer.', actions: [] },
+  ACTION_REQUIRED: { label: 'Waiting for customer', tone: 'neutral', icon: 'clock', wording: 'The customer needs to finish a step such as 3D Secure.', actions: [] },
+  UNKNOWN: { label: 'Outcome unknown', tone: 'warning', icon: 'help', wording: "We don't yet know if the customer was charged. We're checking automatically. Don't charge again.", actions: [] },
+  REVIEW: { label: 'Needs review', tone: 'danger', icon: 'alert', wording: "The PSP's answer disagrees with our record. A person must compare them.", actions: ['propose'] },
+  AUTHORIZED: { label: 'Authorized', tone: 'accent', icon: 'lock', wording: 'Funds are reserved, not taken.', actions: ['capture', 'void'] },
+  CAPTURED: { label: 'Captured', tone: 'success', icon: 'check', wording: 'Funds were taken from the customer.', actions: ['refund'] },
+  PARTIALLY_REFUNDED: { label: 'Partly refunded', tone: 'success', icon: 'undo', wording: 'Part of the captured amount was returned.', actions: ['refund'] },
+  REFUNDED: { label: 'Refunded', tone: 'neutral', icon: 'undo', wording: 'The full captured amount was returned.', actions: [] },
+  CANCELED: { label: 'Canceled', tone: 'neutral', icon: 'x', wording: 'Ended with no successful attempt. No charge was made.', actions: [] },
+  VOIDED: { label: 'Voided', tone: 'neutral', icon: 'x', wording: 'The reservation was released before capture.', actions: [] },
+  EXPIRED: { label: 'Expired', tone: 'neutral', icon: 'x', wording: 'The authorization window ended without capture.', actions: [] }
+};
+const ACTIONS = {
+  refund: { label: 'Refund', title: 'Refund this payment', help: 'The amount is reserved until the PSP confirms the refund.', effect: 'will be returned to the customer.', commit: 'Refund' },
+  capture: { label: 'Capture in full', title: 'Capture this payment', help: 'This takes the reserved funds from the customer.', effect: 'will be taken from the customer.', commit: 'Capture' },
+  void: { label: 'Void', title: 'Void this authorization', help: "This releases the reserved funds. It can't be captured afterwards.", effect: 'will be released back to the customer.', commit: 'Void' },
+  cancel: { label: 'Cancel payment', title: 'Cancel this payment', help: "No charge has been made. The customer won't be able to pay this payment afterwards.", effect: 'will not be charged.', commit: 'Cancel payment' },
+  propose: { label: 'Propose a resolution' }
+};
+const OUTCOMES = {
+  authorize: { label: 'Keep it authorized', state: 'AUTHORIZED' },
+  awaiting: { label: 'Not charged, back to waiting for payment', state: 'AWAITING_METHOD' },
+  capture: { label: 'Captured, as the PSP reports', state: 'CAPTURED' },
+  confirm: { label: 'The refund went through. Confirm it' },
+  release: { label: "The refund didn't happen. Release the reserved amount" },
+  reversed: { label: 'I reversed this at the PSP' }
+};
+const DECIMALS = { USD: 2, EUR: 2, JPY: 0 };
+const SYMBOLS = { USD: '$', EUR: '€', JPY: '¥' };
+const CAN = { Viewer: 'Search and read', Operator: 'Actions and proposals', Approver: 'Actions and approvals', Admin: 'Staff and roles' };
+
+function money(minor, cur) {
+  const d = DECIMALS[cur];
+  const scale = Math.pow(10, d);
+  const whole = Math.floor(minor / scale).toLocaleString('en-US');
+  const frac = d ? '.' + String(minor % scale).padStart(d, '0') : '';
+  return SYMBOLS[cur] + whole + frac + ' ' + cur;
+}
+function parseMoney(text, cur) {
+  const d = DECIMALS[cur];
+  const clean = String(text).replace(/,/g, '').trim();
+  if (!/^\d+(\.\d+)?$/.test(clean)) return null;
+  const parts = clean.split('.');
+  const fraction = parts[1] || '';
+  if (fraction.length > d) return null;
+  const scale = Math.pow(10, d);
+  return Number(parts[0]) * scale + Number((fraction + '000').slice(0, d) || 0);
+}
+function seed() {
+  return [
+    { id: 'pay_8f3a…c21d', state: 'UNKNOWN', minor: 2400, cur: 'USD', captured: 0, refunded: 0, pending: 0, created: '6 Nov, 10:50', days: 0, psp: 'not returned', extra: 'The PSP timed out 3 h 12 min ago. No new attempt can start until this is settled.', queue: 'unresolved', queueDetail: 'Outcome unknown for 3 h 12 min', timeline: [{ at: '6 Nov, 10:50', text: 'Sale attempt sent to the PSP' }, { at: '6 Nov, 10:50', text: 'The PSP timed out, so the outcome is unknown' }] },
+    { id: 'pay_41be…07fa', state: 'REVIEW', minor: 31050, cur: 'USD', captured: 0, refunded: 0, pending: 0, created: '6 Nov, 09:14', days: 0, psp: 'psp_ch_7c21', extra: 'We expected 310.50 USD. The PSP answered 301.50 USD.', queue: 'review', queueDetail: 'PSP answered $301.50, we expected $310.50', outcomes: ['authorize', 'awaiting', 'capture'], kind: 'payment', timeline: [{ at: '6 Nov, 09:14', text: 'Authorize attempt sent to the PSP' }, { at: '6 Nov, 09:14', text: 'The PSP answered with a different amount, so no ledger entry was made' }] },
+    { id: 'pay_d14f…8a07', state: 'CAPTURED', minor: 15000, cur: 'USD', captured: 15000, refunded: 0, pending: 5000, pendingLocked: true, created: '4 Nov, 13:05', days: 2, psp: 'psp_ch_c7e0', queue: 'review', queueDetail: 'Refund of $50.00: PSP answered $55.00', kind: 'refund', outcomes: ['confirm', 'release'], caseTitle: 'A refund on this payment needs review', caseText: 'We asked the PSP to refund 50.00 USD and it answered 55.00 USD. The payment itself is still captured, and the 50.00 USD stays reserved until this is decided.', timeline: [{ at: '4 Nov, 13:05', text: 'Sale approved by the PSP' }, { at: '6 Nov, 08:31', text: 'Refund of $50.00 USD started by Priya Nair' }, { at: '6 Nov, 08:31', text: "The PSP's refund amount didn't match, so the refund moved to review" }] },
+    { id: 'pay_f37b…e190', state: 'CAPTURED', minor: 6400, cur: 'USD', captured: 6400, refunded: 0, pending: 0, created: '5 Nov, 20:44', days: 1, psp: 'psp_ch_e118', queue: 'review', queueDetail: 'Late approval: customer may be charged twice', kind: 'attempt', outcomes: ['reversed'], caseTitle: 'An earlier attempt needs review', caseText: 'An attempt that failed was later approved by the PSP. This payment was already captured by a newer attempt, so the customer may have been charged twice.', timeline: [{ at: '5 Nov, 20:41', text: 'First sale attempt failed' }, { at: '5 Nov, 20:44', text: 'Second sale attempt approved by the PSP' }, { at: '5 Nov, 20:52', text: 'A late approval arrived for the first attempt' }] },
+    { id: 'pay_b81e…3f52', state: 'REVIEW', minor: 7200, cur: 'USD', captured: 0, refunded: 0, pending: 0, created: '5 Nov, 17:22', days: 1, psp: 'psp_ch_31af', extra: 'A late approval arrived after this attempt had failed.', queue: 'approval', queueDetail: 'Proposed by Sam Rivera', kind: 'payment', outcomes: ['awaiting', 'capture'], proposal: { by: 'Sam Rivera', own: false, outcome: 'capture', outcomeLabel: OUTCOMES.capture.label, answer: 'Approved 72.00 USD', evidence: 'PSP dashboard record psp_ch_31af' }, timeline: [{ at: '5 Nov, 17:22', text: 'Sale attempt failed' }, { at: '5 Nov, 17:41', text: 'A late approval arrived from the PSP' }, { at: '5 Nov, 18:05', text: 'Sam Rivera proposed a resolution' }] },
+    { id: 'pay_c07d…92e1', state: 'AUTHORIZED', minor: 125000, cur: 'USD', captured: 0, refunded: 0, pending: 0, created: '30 Oct, 12:00', days: 7, psp: 'psp_ch_a410', extra: 'This authorization ends in 9 hours if it is not captured.', queue: 'expiring', queueDetail: 'Authorization ends in 9 hours', timeline: [{ at: '30 Oct, 12:00', text: 'Authorized by the PSP' }] },
+    { id: 'pay_7a12…e4b0', state: 'CAPTURED', minor: 8900, cur: 'USD', captured: 8900, refunded: 0, pending: 0, created: '5 Nov, 11:30', days: 1, psp: 'psp_ch_55d0', queue: 'orphan', queueDetail: 'Refund by Priya Nair 25 min ago has no recorded result', orphan: 'Priya Nair started a refund of $10.00 USD 25 minutes ago, and the console never recorded how it ended.', timeline: [{ at: '5 Nov, 11:30', text: 'Sale approved by the PSP' }] },
+    { id: 'pay_2d9c…11aa', state: 'PARTIALLY_REFUNDED', minor: 12000, cur: 'JPY', captured: 12000, refunded: 3000, pending: 0, created: '4 Nov, 16:08', days: 2, psp: 'psp_ch_90be', timeline: [{ at: '4 Nov, 16:08', text: 'Sale approved by the PSP' }, { at: '5 Nov, 10:15', text: 'Refund of ¥3,000 JPY confirmed by the PSP' }] },
+    { id: 'pay_e5f0…6c3d', state: 'AWAITING_METHOD', minor: 4500, cur: 'USD', captured: 0, refunded: 0, pending: 0, created: '6 Nov, 08:02', days: 0, psp: 'none yet', timeline: [{ at: '6 Nov, 08:02', text: 'Payment created' }] },
+    { id: 'pay_93ab…d802', state: 'REFUNDED', minor: 1875, cur: 'EUR', captured: 1875, refunded: 1875, pending: 0, created: '2 Nov, 09:40', days: 4, psp: 'psp_ch_18c2', timeline: [{ at: '2 Nov, 09:40', text: 'Sale approved by the PSP' }, { at: '3 Nov, 13:20', text: 'Full refund confirmed by the PSP' }] },
+    { id: 'pay_60cc…47f9', state: 'CANCELED', minor: 56000, cur: 'USD', captured: 0, refunded: 0, pending: 0, created: '17 Oct, 15:11', days: 20, psp: 'none', timeline: [{ at: '17 Oct, 15:11', text: 'Payment created' }, { at: '18 Oct, 15:11', text: 'Payment window ended with no successful attempt' }] },
+    { id: 'pay_11de…0b7c', state: 'REFUNDED', minor: 9900, cur: 'USD', captured: 9900, refunded: 9900, pending: 0, created: '9 Jul, 10:02', days: 120, psp: 'psp_ch_02aa', timeline: [{ at: '9 Jul, 10:02', text: 'Sale approved by the PSP' }, { at: '11 Jul, 09:30', text: 'Full refund confirmed by the PSP' }] }
+  ];
+}
+class Component extends DCLogic {
+  constructor(props) {
+    super(props);
+    this.state = { screen: 'attention', returnTo: 'detail', payments: seed(), curId: null, action: null, step: 'form', amountText: '', reason: '', amountError: '', reasonError: false, busyShown: false, busyError: false, verify: null, answer: '', evidence: '', outcome: null, proposeError: false, notice: '', noticeTone: 'accent', search: '', range: '7', stateFilter: '', minAmount: '', maxAmount: '', auditPayment: '', auditPerson: '', auditRange: '7', auditLimit: 5, newEmail: '', newRole: 'Viewer', staffAddError: false, staffError: '',
+      staff: [
+        { id: 's1', name: 'Alex Chen', email: 'alex@example.com', role: 'Approver', disabled: false },
+        { id: 's2', name: 'Sam Rivera', email: 'sam@example.com', role: 'Approver', disabled: false },
+        { id: 's3', name: 'Priya Nair', email: 'priya@example.com', role: 'Operator', disabled: false },
+        { id: 's4', name: 'Jordan Lee', email: 'jordan@example.com', role: 'Viewer', disabled: false },
+        { id: 's5', name: 'Morgan Diaz', email: 'morgan@example.com', role: 'Admin', disabled: false }
+      ],
+      audit: [
+        { at: '6 Nov, 08:31', days: 0, who: 'Priya Nair', payment: 'pay_d14f…8a07', what: 'Started a refund of $50.00 USD on pay_d14f…8a07. Reason: item damaged.' },
+        { at: '5 Nov, 18:05', days: 1, who: 'Sam Rivera', payment: 'pay_b81e…3f52', what: 'Proposed a resolution for pay_b81e…3f52. Reason: late approval on a failed attempt.' },
+        { at: '5 Nov, 10:14', days: 1, who: 'Priya Nair', payment: 'pay_2d9c…11aa', what: 'Refunded ¥3,000 JPY on pay_2d9c…11aa. Reason: one item returned.' },
+        { at: '4 Nov, 15:40', days: 2, who: 'Morgan Diaz', payment: '', what: 'Changed Jordan Lee from Operator to Viewer.' },
+        { at: '3 Nov, 13:18', days: 3, who: 'Alex Chen', payment: 'pay_93ab…d802', what: 'Refunded €18.75 EUR on pay_93ab…d802. Reason: order canceled by customer.' },
+        { at: '28 Oct, 09:02', days: 9, who: 'Morgan Diaz', payment: '', what: 'Added Priya Nair as an Operator.' },
+        { at: '11 Jul, 09:28', days: 118, who: 'Alex Chen', payment: 'pay_11de…0b7c', what: 'Refunded $99.00 USD on pay_11de…0b7c. Reason: duplicate order.' }
+      ]
+    };
+  }
+  updatePayment(id, change) {
+    this.setState((s) => ({ payments: s.payments.map((p) => p.id === id ? { ...p, ...change(p) } : p) }));
+  }
+  log(what, payment) {
+    this.setState((s) => ({ audit: [{ at: 'Just now', days: 0, who: 'Alex Chen', payment: payment || '', what }, ...s.audit] }));
+  }
+  open(id) {
+    this.setState({ screen: 'detail', curId: id, notice: '', action: null });
+  }
+  go(screen) {
+    this.setState({ screen, curId: null, notice: '', action: null, verify: null, staffError: '' });
+  }
+  startAction(type) {
+    if (type === 'propose') {
+      this.setState({ screen: 'propose', action: type, answer: '', evidence: '', outcome: null, proposeError: false });
+      return;
+    }
+    this.setState({ screen: 'action', action: type, step: 'form', amountText: '', reason: '', amountError: '', reasonError: false, busyShown: false, busyError: false });
+  }
+  decorate(p, t) {
+    const view = STATES[p.state];
+    return { id: p.id, label: view.label, wording: view.wording, icon: ICONS[view.icon], toneBg: t[view.tone + 'Bg'], toneText: t[view.tone + 'Text'], amount: money(p.minor, p.cur), created: p.created, open: () => this.open(p.id) };
+  }
+  curView(p, role, t) {
+    const view = STATES[p.state];
+    const canAct = role === 'Operator' || role === 'Approver';
+    const canApprove = role === 'Approver';
+    const hasProposal = Boolean(p.proposal);
+    const available = hasProposal || p.checking ? [] : view.actions;
+    const actions = canAct ? available.map((a) => ({ label: ACTIONS[a].label, start: () => this.startAction(a) })) : [];
+    return {
+      ...this.decorate(p, t),
+      extra: p.extra || '', hasExtra: Boolean(p.extra),
+      captured: money(p.captured, p.cur), refunded: money(p.refunded, p.cur), pending: money(p.pending, p.cur),
+      refundable: money(p.captured - p.refunded - p.pending, p.cur), hasPending: p.pending > 0, pendingConfirmable: !p.pendingLocked,
+      actions, hasActions: actions.length > 0, viewerNote: !canAct && view.actions.length > 0,
+      canAct,
+      timeline: p.timeline, psp: p.psp,
+      hasCase: Boolean(p.caseTitle) && !hasProposal, caseTitle: p.caseTitle || '', caseText: p.caseText || '', canPropose: canAct,
+      hasOrphan: Boolean(p.orphan), orphan: p.orphan || '',
+      hasChecking: Boolean(p.checking), checking: p.checking ? ACTIONS[p.checking.type].label : '',
+      hasProposal, proposal: p.proposal || {},
+      canDecide: hasProposal && canApprove && !p.proposal.own,
+      ownProposal: hasProposal && p.proposal.own,
+      cannotApprove: hasProposal && !canApprove && !p.proposal.own
+    };
+  }
+  applyAction(id, type, stamp, reason) {
+    const line = { at: 'Just now', text: ACTIONS[type].label + ' by Alex Chen: ' + stamp + '. Reason: ' + reason };
+    if (type === 'capture') {
+      this.updatePayment(id, (p) => ({ state: 'CAPTURED', captured: p.minor, extra: '', queue: null, checking: null, timeline: [...p.timeline, line] }));
+      return 'Payment captured.';
+    }
+    if (type === 'void') {
+      this.updatePayment(id, (p) => ({ state: 'VOIDED', extra: '', queue: null, checking: null, timeline: [...p.timeline, line] }));
+      return 'Authorization voided.';
+    }
+    this.updatePayment(id, (p) => ({ state: 'CANCELED', checking: null, timeline: [...p.timeline, line] }));
+    return 'Payment canceled.';
+  }
+  runAction() {
+    const s = this.state;
+    const cp = s.payments.find((p) => p.id === s.curId);
+    const type = s.action;
+    const result = this.props.actionResult ?? 'Done';
+    const minor = type === 'refund' ? parseMoney(s.amountText, cp.cur) : cp.minor;
+    const stamp = money(minor, cp.cur);
+    const reason = s.reason.trim();
+    if (result === 'Busy' && !s.busyShown) {
+      this.setState({ screen: 'action', step: 'confirm', busyShown: true, busyError: true, verify: null });
+      return;
+    }
+    if (result === 'State changed') {
+      this.log('Tried to ' + ACTIONS[type].label.toLowerCase() + ' ' + stamp + ' on ' + cp.id + ', but the payment had changed. Nothing was done.', cp.id);
+      this.setState({ screen: 'detail', action: null, verify: null, notice: 'This payment changed while you were working, so nothing was done. Check its current status below before trying again.', noticeTone: 'warning' });
+      return;
+    }
+    this.log(ACTIONS[type].label + ' ' + stamp + ' on ' + cp.id + '. Reason: ' + reason, cp.id);
+    if (type === 'refund') {
+      this.updatePayment(cp.id, (p) => ({ pending: p.pending + minor, pendingLocked: false, timeline: [...p.timeline, { at: 'Just now', text: 'Refund of ' + stamp + ' started by Alex Chen. Reason: ' + reason }] }));
+      this.setState({ screen: 'detail', action: null, verify: null, notice: 'Refund started. It shows as in progress until the PSP confirms it.', noticeTone: 'accent' });
+      return;
+    }
+    if (result === 'Still checking') {
+      this.updatePayment(cp.id, () => ({ checking: { type, stamp, reason } }));
+      this.setState({ screen: 'detail', action: null, verify: null, notice: 'Sent. The PSP hasn\'t answered yet, so this payment shows as still checking.', noticeTone: 'warning' });
+      return;
+    }
+    const notice = this.applyAction(cp.id, type, stamp, reason);
+    this.setState({ screen: 'detail', action: null, verify: null, notice, noticeTone: 'accent' });
+  }
+  applyResolution(p, approver) {
+    const outcome = p.proposal.outcome;
+    const line = { at: 'Just now', text: approver + ' approved the resolution: ' + OUTCOMES[outcome].label };
+    if (outcome === 'confirm') {
+      this.updatePayment(p.id, (x) => { const refunded = x.refunded + x.pending; return { refunded, pending: 0, pendingLocked: false, state: refunded === x.captured ? 'REFUNDED' : 'PARTIALLY_REFUNDED', queue: null, caseTitle: null, proposal: null, timeline: [...x.timeline, line] }; });
+      return 'Resolution applied. The refund is confirmed.';
+    }
+    if (outcome === 'release') {
+      this.updatePayment(p.id, (x) => ({ pending: 0, pendingLocked: false, queue: null, caseTitle: null, proposal: null, timeline: [...x.timeline, line] }));
+      return 'Resolution applied. The reserved amount was released.';
+    }
+    if (outcome === 'reversed') {
+      this.updatePayment(p.id, (x) => ({ queue: null, caseTitle: null, proposal: null, timeline: [...x.timeline, line, { at: 'Just now', text: 'Reversal at the PSP recorded. The console moved no money.' }] }));
+      return "Recorded. The console didn't move any money.";
+    }
+    const next = OUTCOMES[outcome].state;
+    this.updatePayment(p.id, (x) => ({ state: next, captured: next === 'CAPTURED' ? x.minor : x.captured, queue: null, extra: '', proposal: null, timeline: [...x.timeline, line] }));
+    return 'Resolution applied.';
+  }
+  renderVals() {
+    const layout = this.props.layout ?? 'desktop';
+    const role = this.props.role ?? 'Approver';
+    const themeName = this.props.theme ?? 'Light';
+    let dark = themeName === 'Dark';
+    if (themeName === 'Device') {
+      try { dark = window.matchMedia('(prefers-color-scheme: dark)').matches; } catch (e) { dark = false; }
+    }
+    const t = dark ? DARK : LIGHT;
+    const isPhone = layout === 'phone';
+    const s = this.state;
+    const cp = s.payments.find((p) => p.id === s.curId);
+    const queueRows = (key) => s.payments.filter((p) => p.queue === key).map((p) => ({ amount: money(p.minor, p.cur), detail: p.queueDetail, id: p.id, open: () => this.open(p.id) }));
+    const queueDefs = [
+      { key: 'review', title: 'Needs review', help: "The PSP's answer disagrees with our record, on a payment, refund or attempt." },
+      { key: 'approval', title: 'Waiting for approval', help: 'Someone proposed a resolution. A second person must decide.' },
+      { key: 'orphan', title: 'Actions with no recorded result', help: 'A staff action started, but its result was never saved. Check each one.' },
+      { key: 'unresolved', title: 'Unresolved too long', help: "We're still checking with the PSP. These can't be changed by hand yet." },
+      { key: 'expiring', title: 'Authorizations ending soon', help: 'Capture these within 24 hours or the funds are released.' }
+    ];
+    const queues = queueDefs.map((q) => { const rows = queueRows(q.key); return { title: q.title, help: q.help, rows, count: rows.length, empty: rows.length === 0 }; });
+    const attentionCount = queues.reduce((n, q) => n + q.count, 0);
+    const nav = (key, label, icon, count) => {
+      const active = s.screen === key || (key === 'payments' && ['detail', 'action', 'propose', 'verify'].includes(s.screen)) || (key === 'more' && ['audit', 'staff', 'more'].includes(s.screen));
+      return { label, icon: ICONS[icon], go: () => this.go(key), current: active ? 'page' : undefined, bg: active ? t.accentBg : 'transparent', color: active ? t.accentText : t.muted, weight: active ? 600 : 500, hasCount: Boolean(count), count };
+    };
+    const q = s.search.trim().toLowerCase();
+    const major = (p) => p.minor / Math.pow(10, DECIMALS[p.cur]);
+    const minV = s.minAmount.trim() === '' ? null : Number(s.minAmount.replace(/,/g, ''));
+    const maxV = s.maxAmount.trim() === '' ? null : Number(s.maxAmount.replace(/,/g, ''));
+    const matched = s.payments
+      .filter((p) => q ? p.id.toLowerCase().includes(q) : p.days <= Number(s.range))
+      .filter((p) => !s.stateFilter || p.state === s.stateFilter)
+      .filter((p) => minV === null || isNaN(minV) || major(p) >= minV)
+      .filter((p) => maxV === null || isNaN(maxV) || major(p) <= maxV);
+    const rows = matched.map((p) => this.decorate(p, t));
+    const searchStatus = this.props.searchStatus ?? 'Normal';
+    const searchBlocked = searchStatus !== 'Normal' && !q;
+    const looksLikeId = q.startsWith('pay_');
+    const act = ACTIONS[s.action] || {};
+    const confirmMinor = s.action === 'refund' && cp ? parseMoney(s.amountText, cp.cur) : (cp ? cp.minor : 0);
+    const outcomeKeys = cp && cp.outcomes ? cp.outcomes : [];
+    const noticeTone = s.noticeTone === 'warning' ? 'warning' : 'accent';
+    const auditQ = s.auditPayment.trim().toLowerCase();
+    const auditMatched = s.audit
+      .filter((e) => e.days <= Number(s.auditRange))
+      .filter((e) => !s.auditPerson || e.who === s.auditPerson)
+      .filter((e) => !auditQ || e.payment.toLowerCase().includes(auditQ));
+    const isAdmin = role === 'Admin';
+    const activeAdmins = s.staff.filter((x) => x.role === 'Admin' && !x.disabled).length;
+    const askVerify = (summary, back, run) => this.setState({ screen: 'verify', verify: { summary, back, run } });
+    return {
+      t, colorScheme: dark ? 'dark' : 'light',
+      isDesktop: !isPhone, isPhone,
+      rootHeight: isPhone ? '844px' : 'auto', rootMin: isPhone ? '0' : '900px', rootOverflow: isPhone ? 'hidden' : 'visible',
+      mainPad: isPhone ? '16px' : '28px 32px', mainOverflow: isPhone ? 'auto' : 'visible', mainHeight: isPhone ? '772px' : 'auto',
+      roleLabel: role,
+      navItems: [nav('attention', 'Needs attention', 'bell', attentionCount), nav('payments', 'Payments', 'receipt', 0), nav('audit', 'Audit log', 'list', 0), nav('staff', 'Staff', 'users', 0)],
+      tabs: [nav('attention', 'Attention', 'bell', 0), nav('payments', 'Payments', 'receipt', 0), nav('more', 'More', 'menu', 0)],
+      showLag: Boolean(this.props.replicaBehind),
+      hasNotice: Boolean(s.notice), notice: s.notice, clearNotice: () => this.setState({ notice: '' }),
+      noticeBg: t[noticeTone + 'Bg'], noticeText: t[noticeTone + 'Text'], noticeIcon: noticeTone === 'warning' ? ICONS.alert : ICONS.check,
+      isAttention: s.screen === 'attention', isPayments: s.screen === 'payments', isDetail: s.screen === 'detail' && Boolean(cp), isAction: s.screen === 'action', isVerify: s.screen === 'verify', isPropose: s.screen === 'propose', isAudit: s.screen === 'audit', isStaff: s.screen === 'staff', isMore: s.screen === 'more',
+      queues, rows, showList: !searchBlocked, noRows: rows.length === 0,
+      noRowsText: looksLikeId ? 'No payment found with that ID. Check it and try again.' : 'No payments match. Try a longer range or a different status.',
+      hasFoundOutside: Boolean(q) && matched.some((p) => p.days > Number(s.range)),
+      hasSearchProblem: searchBlocked,
+      searchProblemTitle: searchStatus === 'Timed out' ? 'That search took too long' : 'Search is unavailable right now',
+      searchProblemText: searchStatus === 'Timed out' ? 'Narrow the date range or add a status, then try again.' : 'You can still open a payment by entering its ID above.',
+      search: s.search, setSearch: (e) => this.setState({ search: e.target.value }),
+      range: s.range, setRange: (e) => this.setState({ range: e.target.value }),
+      stateFilter: s.stateFilter, setStateFilter: (e) => this.setState({ stateFilter: e.target.value }),
+      minAmount: s.minAmount, setMin: (e) => this.setState({ minAmount: e.target.value }),
+      maxAmount: s.maxAmount, setMax: (e) => this.setState({ maxAmount: e.target.value }),
+      stateOptions: Object.keys(STATES).map((k) => ({ value: k, label: STATES[k].label })),
+      goPayments: () => this.go('payments'), goAudit: () => this.go('audit'), goStaff: () => this.go('staff'),
+      cur: cp ? this.curView(cp, role, t) : { proposal: {}, timeline: [], actions: [] },
+      curCurrency: cp ? cp.cur : '',
+      proposeCase: () => this.startAction('propose'),
+      clearOrphan: () => {
+        this.updatePayment(cp.id, (p) => ({ orphan: null, queue: null, timeline: [...p.timeline, { at: 'Just now', text: 'Alex Chen checked the action with no recorded result' }] }));
+        this.log('Checked the action with no recorded result on ' + cp.id + '.', cp.id);
+        this.setState({ notice: 'Marked as checked.', noticeTone: 'accent' });
+      },
+      resolveChecking: () => {
+        const c = cp.checking;
+        const notice = this.applyAction(cp.id, c.type, c.stamp, c.reason);
+        this.setState({ notice, noticeTone: 'accent' });
+      },
+      actionTitle: act.title || '', actionHelp: act.help || '', commitLabel: s.busyError ? 'Try again' : (act.commit || ''),
+      isRefund: s.action === 'refund', isActionForm: s.step === 'form', isActionConfirm: s.step === 'confirm',
+      amountText: s.amountText, setAmount: (e) => this.setState({ amountText: e.target.value, amountError: '' }),
+      amountError: s.amountError, hasAmountError: Boolean(s.amountError),
+      reason: s.reason, setReason: (e) => this.setState({ reason: e.target.value, reasonError: false }), hasReasonError: s.reasonError,
+      busyError: s.busyError,
+      cancelAction: () => this.setState({ screen: 'detail', action: null }),
+      backToForm: () => this.setState({ step: 'form', busyError: false }),
+      toConfirm: () => {
+        let amountError = '';
+        if (s.action === 'refund') {
+          const minor = parseMoney(s.amountText, cp.cur);
+          const refundable = cp.captured - cp.refunded - cp.pending;
+          if (minor === null || minor <= 0) amountError = DECIMALS[cp.cur] === 0 ? 'Enter a whole amount. ' + cp.cur + ' has no decimals.' : 'Enter an amount like 10.50.';
+          else if (minor > refundable) amountError = 'That is more than the ' + money(refundable, cp.cur) + ' that can still be refunded.';
+        }
+        const reasonError = !s.reason.trim();
+        if (amountError || reasonError) { this.setState({ amountError, reasonError }); return; }
+        this.setState({ step: 'confirm' });
+      },
+      confirmAmount: cp && confirmMinor !== null ? money(confirmMinor, cp.cur) : '',
+      confirmEffect: act.effect ? 'This amount ' + act.effect : '',
+      commit: () => {
+        const amount = s.action === 'refund' ? parseMoney(s.amountText, cp.cur) : cp.minor;
+        if (s.busyError) { this.setState({ busyError: false }); this.runAction(); return; }
+        askVerify((act.commit || '') + ': ' + money(amount, cp.cur), 'action', () => this.runAction());
+      },
+      confirmRefund: () => {
+        this.updatePayment(cp.id, (p) => {
+          const refunded = p.refunded + p.pending;
+          return { refunded, pending: 0, state: refunded === p.captured ? 'REFUNDED' : 'PARTIALLY_REFUNDED', timeline: [...p.timeline, { at: 'Just now', text: 'Refund of ' + money(p.pending, p.cur) + ' confirmed by the PSP' }] };
+        });
+        this.setState({ notice: 'The PSP confirmed the refund.', noticeTone: 'accent' });
+      },
+      verifySummary: s.verify ? s.verify.summary : '',
+      verifyGo: () => { if (s.verify) s.verify.run(); },
+      verifyBack: () => this.setState({ screen: s.verify ? s.verify.back : 'detail', verify: null }),
+      proposeText: cp ? (cp.caseText || cp.extra || '') : '',
+      isReversalCase: Boolean(cp && cp.kind === 'attempt'),
+      answer: s.answer, setAnswer: (e) => this.setState({ answer: e.target.value, proposeError: false }),
+      evidence: s.evidence, setEvidence: (e) => this.setState({ evidence: e.target.value, proposeError: false }),
+      hasProposeError: s.proposeError,
+      outcomes: outcomeKeys.map((k) => ({ label: OUTCOMES[k].label, checked: s.outcome === k, border: s.outcome === k ? '2px solid ' + t.accent : '1px solid ' + t.border, pick: () => this.setState({ outcome: k, proposeError: false }) })),
+      submitProposal: () => {
+        if (!s.answer.trim() || !s.evidence.trim() || !s.outcome) { this.setState({ proposeError: true }); return; }
+        askVerify('Propose: ' + OUTCOMES[s.outcome].label, 'propose', () => {
+          this.updatePayment(cp.id, (p) => ({ queue: 'approval', queueDetail: 'Proposed by you', proposal: { by: 'You (Alex Chen)', own: true, outcome: s.outcome, outcomeLabel: OUTCOMES[s.outcome].label, answer: s.answer.trim(), evidence: s.evidence.trim() }, timeline: [...p.timeline, { at: 'Just now', text: 'Alex Chen proposed a resolution' }] }));
+          this.log('Proposed a resolution for ' + cp.id + '.', cp.id);
+          this.setState({ screen: 'detail', action: null, verify: null, notice: 'Proposal sent. A different approver must decide it.', noticeTone: 'accent' });
+        });
+      },
+      approve: () => {
+        askVerify('Approve: ' + OUTCOMES[cp.proposal.outcome].label, 'detail', () => {
+          const notice = this.applyResolution(cp, 'Alex Chen');
+          this.log('Approved the resolution for ' + cp.id + ': ' + OUTCOMES[cp.proposal.outcome].label + '.', cp.id);
+          this.setState({ screen: 'detail', verify: null, notice, noticeTone: 'accent' });
+        });
+      },
+      secondApproves: () => {
+        const notice = this.applyResolution(cp, 'Sam Rivera');
+        this.setState({ notice, noticeTone: 'accent' });
+      },
+      reject: () => {
+        this.updatePayment(cp.id, (p) => ({ queue: 'review', queueDetail: 'Proposal rejected. Needs a new one.', proposal: null, timeline: [...p.timeline, { at: 'Just now', text: 'Alex Chen rejected the proposed resolution' }] }));
+        this.log('Rejected the proposed resolution for ' + cp.id + '.', cp.id);
+        this.setState({ notice: 'Proposal rejected. This stays in review.', noticeTone: 'accent' });
+      },
+      auditPayment: s.auditPayment, setAuditPayment: (e) => this.setState({ auditPayment: e.target.value, auditLimit: 5 }),
+      auditPerson: s.auditPerson, setAuditPerson: (e) => this.setState({ auditPerson: e.target.value, auditLimit: 5 }),
+      auditRange: s.auditRange, setAuditRange: (e) => this.setState({ auditRange: e.target.value, auditLimit: 5 }),
+      audit: auditMatched.slice(0, s.auditLimit), auditEmpty: auditMatched.length === 0, auditHasMore: auditMatched.length > s.auditLimit,
+      auditMore: () => this.setState({ auditLimit: s.auditLimit + 5 }),
+      isAdmin, isNotAdmin: !isAdmin,
+      newEmail: s.newEmail, setNewEmail: (e) => this.setState({ newEmail: e.target.value, staffAddError: false }),
+      newRole: s.newRole, setNewRole: (e) => this.setState({ newRole: e.target.value }),
+      hasStaffAddError: s.staffAddError,
+      hasStaffError: Boolean(s.staffError), staffError: s.staffError,
+      addStaff: (e) => {
+        e.preventDefault();
+        const email = s.newEmail.trim();
+        if (!email.includes('@')) { this.setState({ staffAddError: true }); return; }
+        const id = 's' + (s.staff.length + 1);
+        this.setState({ staff: [...s.staff, { id, name: email.split('@')[0], email, role: s.newRole, disabled: false }], newEmail: '', staffError: '' });
+        this.log('Added ' + email + ' as ' + s.newRole + '.');
+      },
+      staff: s.staff.map((p) => ({
+        name: p.name, email: p.email, role: p.role, selectId: 'role-' + p.id,
+        can: p.disabled ? "Disabled. Can't sign in." : CAN[p.role],
+        statusText: p.disabled ? 'Disabled' : p.role,
+        editable: isAdmin && !p.disabled, readOnly: !isAdmin || p.disabled, canToggle: isAdmin,
+        toggleLabel: p.disabled ? 'Enable' : 'Disable',
+        setRole: (e) => {
+          const next = e.target.value;
+          if (p.role === 'Admin' && next !== 'Admin' && activeAdmins === 1) { this.setState({ staffError: "You can't change the last Admin. Add another Admin first." }); return; }
+          this.setState({ staffError: '', staff: s.staff.map((x) => x.id === p.id ? { ...x, role: next } : x) });
+          this.log('Changed ' + p.name + ' from ' + p.role + ' to ' + next + '.');
+        },
+        toggle: () => {
+          if (!p.disabled && p.role === 'Admin' && activeAdmins === 1) { this.setState({ staffError: "You can't disable the last Admin. Add another Admin first." }); return; }
+          this.setState({ staffError: '', staff: s.staff.map((x) => x.id === p.id ? { ...x, disabled: !x.disabled } : x) });
+          this.log((p.disabled ? 'Enabled ' : 'Disabled ') + p.name + '.');
+        }
+      }))
+    };
+  }
+}
+</script>
+</body>
+</html>

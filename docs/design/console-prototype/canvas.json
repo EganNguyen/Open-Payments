@@ -1,0 +1,18 @@
+{
+  "v": 3,
+  "createdOnFiles": { "v": 1, "at": "2026-11-06T09:00:00Z" },
+  "title": "Open Payments Console",
+  "launch": { "view": "canvas" },
+  "pages": [],
+  "boards": {
+    "Main.dc.html": { "x": 0, "y": 0, "w": 1360, "h": 900, "title": "Desktop prototype", "expand": "fill", "is_interactive": true },
+    "Phone.dc.html": { "x": 1440, "y": 0, "w": 390, "h": 844, "title": "iPhone prototype", "is_interactive": true },
+    "States.dc.html": { "x": 1910, "y": 0, "w": 820, "h": 900, "title": "Payment state reference" },
+    "DesktopDark.dc.html": { "x": 0, "y": 1020, "w": 1360, "h": 900, "title": "Desktop prototype, dark", "is_interactive": true },
+    "PhoneDark.dc.html": { "x": 1440, "y": 1020, "w": 390, "h": 844, "title": "iPhone prototype, dark", "is_interactive": true },
+    "Access.dc.html": { "x": 1910, "y": 1020, "w": 1180, "h": 760, "title": "Sign-in and access" }
+  },
+  "order": ["Main.dc.html", "Phone.dc.html", "States.dc.html", "DesktopDark.dc.html", "PhoneDark.dc.html", "Access.dc.html"],
+  "notes": {},
+  "designSystems": []
+}

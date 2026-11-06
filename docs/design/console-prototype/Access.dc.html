@@ -1,0 +1,53 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Sign-in and access</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600&display=swap">
+<style>
+body{margin:0}
+</style>
+</helmet>
+<div style="width: 1180px; height: 760px; box-sizing: border-box; padding: 32px; display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); grid-template-rows: repeat(2, minmax(0, 1fr)); gap: 20px; background: {{t.page}}; color: {{t.text}}; font-family: 'IBM Plex Sans', sans-serif; font-size: 14px; line-height: 1.45;">
+<sc-for list="{{cards}}" as="c" hint-placeholder-count="6">
+<section style="box-sizing: border-box; padding: 28px; border: 1px solid {{t.border}}; border-radius: 8px; background: {{t.surface}}; display: flex; flex-direction: column; gap: 14px;">
+<div style="font-weight: 600; font-size: 13px; color: {{t.muted}};">Open Payments</div>
+<svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="{{c.iconColor}}" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="{{c.icon}}"></path></svg>
+<h1 style="margin: 0; font-size: 20px; font-weight: 600;">{{c.title}}</h1>
+<p style="margin: 0; color: {{t.muted}};">{{c.body}}</p>
+<div style="margin-top: auto; display: flex; flex-wrap: wrap; gap: 8px;">
+<sc-if value="{{c.hasPrimary}}" hint-placeholder-val="{{true}}"><button type="button" style="min-height: 44px; padding: 0 16px; border: 0; border-radius: 6px; background: {{t.accent}}; color: {{t.onAccent}}; font: inherit; font-weight: 500;">{{c.primary}}</button></sc-if>
+<sc-if value="{{c.hasSecondary}}" hint-placeholder-val="{{false}}"><button type="button" style="min-height: 44px; padding: 0 16px; border: 1px solid {{t.input}}; border-radius: 6px; background: {{t.surface}}; color: {{t.text}}; font: inherit; font-weight: 500;">{{c.secondary}}</button></sc-if>
+</div>
+</section>
+</sc-for>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"theme":{"editor":"enum","options":["Light","Dark"],"default":"Light"},"$preview":{"width":1180,"height":760}}'>
+const LOCK = 'M6 11h12v9H6zM8 11V7a4 4 0 0 1 8 0v4';
+const ALERT = 'M12 9v4M12 17h.01M10.3 3.9 2.4 18a2 2 0 0 0 1.7 3h15.8a2 2 0 0 0 1.7-3L13.7 3.9a2 2 0 0 0-3.4 0z';
+const CLOCK = 'M12 21a9 9 0 1 0 0-18 9 9 0 0 0 0 18zM12 7v5l3 2';
+const LIGHT = { page: '#F7F8FA', surface: '#FFFFFF', text: '#172033', muted: '#45516A', border: '#D5DAE3', input: '#8A94A8', accent: '#1F5FBF', onAccent: '#FFFFFF', warning: '#6B4600', danger: '#8E1F1A' };
+const DARK = { page: '#11161F', surface: '#1A212D', text: '#EEF2F8', muted: '#A8B4C7', border: '#334055', input: '#6C7A91', accent: '#7FB0F5', onAccent: '#0B1930', warning: '#FFD97A', danger: '#FFB9B2' };
+class Component extends DCLogic {
+  renderVals() {
+    const t = (this.props.theme ?? 'Light') === 'Dark' ? DARK : LIGHT;
+    const card = (title, body, icon, iconColor, primary, secondary) => ({ title, body, icon, iconColor, primary, secondary, hasPrimary: Boolean(primary), hasSecondary: Boolean(secondary) });
+    return { t, cards: [
+      card('Sign in', "Use your company account. Open Payments doesn't store passwords.", LOCK, t.accent, 'Continue to sign-in provider'),
+      card('Two-step sign-in required', "Your account signed in without a second step, which this console requires. Turn it on with your company's IT team, then try again.", ALERT, t.warning, 'Try again', 'Sign out'),
+      card("You don't have access", 'Your company account is valid, but no one has added you to this console. Ask your Admin to add you.', ALERT, t.danger, null, 'Sign out'),
+      card('Your session expired', "Sign in again to continue. If you were filling in a form, your details are still there.", CLOCK, t.warning, 'Sign in again'),
+      card('Your access was removed', "An Admin disabled your account or changed your role, so this action didn't run. Ask your Admin if this looks wrong.", ALERT, t.danger, 'Back to payments', 'Sign out'),
+      card("Can't reach your sign-in provider", 'You can keep reading. Refunds, captures and approvals wait until it comes back, because they need you to verify it\'s you.', ALERT, t.warning, 'Try again', 'Keep reading')
+    ] };
+  }
+}
+</script>
+</body>
+</html>
