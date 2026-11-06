@@ -17,7 +17,11 @@ public static class CheckRunner
             throw new ArgumentException($"Unknown stage '{options.Stage}'.", nameof(options));
         }
 
-        await using var connection = new NpgsqlConnection(NormalizeConnectionString(options.Db));
+        var connectionString = new NpgsqlConnectionStringBuilder(NormalizeConnectionString(options.Db))
+        {
+            CommandTimeout = 0,
+        }.ConnectionString;
+        await using var connection = new NpgsqlConnection(connectionString);
         await connection.OpenAsync(cancellationToken);
         await PrepareAsync(connection, options.Effects, cancellationToken);
 
