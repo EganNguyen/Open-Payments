@@ -29,6 +29,7 @@ builder.Services.AddSingleton(new InFlightLimiter(
 builder.Services.AddSingleton<IFraudCheck, AllowAllFraudCheck>();
 builder.Services.AddSingleton<CanonicalLog>();
 builder.Services.AddSingleton<PaymentMetrics>();
+builder.Services.AddSingleton<RequestTelemetry>();
 builder.Services.AddSingleton<PaymentFlow>();
 builder.Services.AddHttpClient("psp", client =>
 {
@@ -45,7 +46,43 @@ if (app.Environment.IsDevelopment())
     app.UseDeveloperExceptionPage();
 }
 
+var requestMetrics = app.Services.GetRequiredService<PaymentMetrics>();
+var requestTelemetry = app.Services.GetRequiredService<RequestTelemetry>();
+app.Use(async (context, next) =>
+{
+    if (context.Request.Path == "/metrics" || context.Request.Path == "/health")
+    {
+        await next();
+        return;
+    }
+
+    var started = System.Diagnostics.Stopwatch.GetTimestamp();
+    var scope = requestTelemetry.Begin();
+    requestMetrics.RequestStarted();
+    try
+    {
+        await next();
+    }
+    finally
+    {
+        requestMetrics.RequestFinished(
+            System.Diagnostics.Stopwatch.GetElapsedTime(started), scope.PspWait);
+        requestTelemetry.End();
+        var reason = RejectionReason(context.Response.StatusCode);
+        if (reason is null)
+        {
+            requestMetrics.RequestAdmitted();
+        }
+        else
+        {
+            requestMetrics.RequestRejected(reason);
+        }
+    }
+});
+
 app.MapGet("/health", () => Results.Json(new { status = "ok" }, ApiJson.Options));
+app.MapGet("/metrics", (PaymentMetrics metrics) =>
+    Results.Text(metrics.Render(), "text/plain; version=0.0.4; charset=utf-8"));
 
 app.MapPost("/v1/payments", async (
     HttpContext context,
@@ -294,6 +331,16 @@ static ApiAnswer? Authorize(ApiKeyIdentity? identity)
 }
 
 static bool ValidKey(string key) => key.Length is >= 1 and <= 255;
+
+static string? RejectionReason(int statusCode) => statusCode switch
+{
+    401 or 403 => "auth",
+    404 => "not_found",
+    409 or 422 => "invalid_state",
+    429 => "rate_limit",
+    503 => "busy",
+    _ => null,
+};
 
 static IResult ToResult(ApiAnswer answer, HttpContext context)
 {

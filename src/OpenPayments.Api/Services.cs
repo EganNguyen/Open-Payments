@@ -58,17 +58,6 @@ public sealed class AllowAllFraudCheck : IFraudCheck
         CancellationToken ct) => Task.FromResult<FraudDecision>(new FraudDecision.Allow());
 }
 
-public sealed class PaymentMetrics
-{
-    private long _completed;
-
-    public long CompletedPayments => Interlocked.Read(ref _completed);
-
-    public void CompletedPayment() => Interlocked.Increment(ref _completed);
-
-    public void Reset() => Interlocked.Exchange(ref _completed, 0);
-}
-
 public sealed class InFlightLimiter(int permitLimit)
 {
     private int _current;

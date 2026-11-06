@@ -1,0 +1,245 @@
+using System.Collections.Concurrent;
+using System.Diagnostics;
+using System.Globalization;
+using System.Text;
+
+namespace OpenPayments.Api;
+
+/// <summary>
+/// The four application metrics the API contracts on, plus the in-flight gauge and PSP wait
+/// histogram the dashboard and CK6 use. The values are process-local and are exposed on
+/// GET /metrics in the Prometheus text format.
+/// </summary>
+public sealed class PaymentMetrics
+{
+    private static readonly double[] PlatformOverheadBuckets =
+    [
+        0.001, 0.0025, 0.005, 0.01, 0.015, 0.02, 0.025, 0.03, 0.04, 0.05,
+        0.06, 0.075, 0.1, 0.2, 0.5, 1,
+    ];
+
+    private static readonly double[] PspWaitBuckets =
+    [
+        0.01, 0.025, 0.05, 0.1, 0.2, 0.25, 0.5, 1, 2.5, 5, 10,
+    ];
+
+    private readonly ConcurrentDictionary<string, long> _completedOutcomes = new();
+    private readonly ConcurrentDictionary<string, long> _rejectedReasons = new();
+    private readonly Histogram _platformOverhead = new(PlatformOverheadBuckets);
+    private readonly Histogram _pspWait = new(PspWaitBuckets);
+    private long _completed;
+    private long _admitted;
+    private long _inflight;
+
+    public long CompletedPayments => Interlocked.Read(ref _completed);
+
+    public long InFlight => Interlocked.Read(ref _inflight);
+
+    public void RequestStarted() => Interlocked.Increment(ref _inflight);
+
+    public void RequestFinished(TimeSpan total, TimeSpan pspWait)
+    {
+        Interlocked.Decrement(ref _inflight);
+        var overhead = total - pspWait;
+        _platformOverhead.Observe(Math.Max(0, overhead.TotalSeconds));
+        _pspWait.Observe(Math.Max(0, pspWait.TotalSeconds));
+    }
+
+    public void RequestAdmitted() => Interlocked.Increment(ref _admitted);
+
+    public void RequestRejected(string reason) =>
+        _rejectedReasons.AddOrUpdate(reason, 1, static (_, count) => count + 1);
+
+    public void Completed(string outcome)
+    {
+        Interlocked.Increment(ref _completed);
+        _completedOutcomes.AddOrUpdate(outcome, 1, static (_, count) => count + 1);
+    }
+
+    // Kept for the existing unit assertion in CaptureTests.
+    public void CompletedPayment() => Completed("captured");
+
+    public void Reset()
+    {
+        Interlocked.Exchange(ref _completed, 0);
+        Interlocked.Exchange(ref _admitted, 0);
+        Interlocked.Exchange(ref _inflight, 0);
+        _completedOutcomes.Clear();
+        _rejectedReasons.Clear();
+        _platformOverhead.Reset();
+        _pspWait.Reset();
+    }
+
+    public string Render()
+    {
+        var text = new StringBuilder();
+
+        AppendCounter(text, "op_requests_admitted_total", "Requests admitted by the API edge.", _admitted);
+        AppendLabeledCounter(
+            text,
+            "op_requests_rejected_total",
+            "Requests refused before work, by reason.",
+            "reason",
+            _rejectedReasons);
+        AppendLabeledCounter(
+            text,
+            "op_payments_completed_total",
+            "Payments that reached a final committed outcome, by outcome.",
+            "outcome",
+            _completedOutcomes);
+        AppendHistogram(
+            text,
+            "op_platform_overhead_seconds",
+            "Total request time minus PSP wait.",
+            _platformOverhead);
+        AppendHistogram(
+            text,
+            "op_psp_wait_seconds",
+            "Time spent inside the PSP adapter call.",
+            _pspWait);
+        AppendGauge(text, "op_inflight", "Requests currently in flight on this instance.", InFlight);
+
+        return text.ToString();
+    }
+
+    private static void AppendCounter(StringBuilder text, string name, string help, long value)
+    {
+        text.Append("# HELP ").Append(name).Append(' ').Append(help).Append('\n');
+        text.Append("# TYPE ").Append(name).Append(" counter\n");
+        text.Append(name).Append(' ').Append(value.ToString(CultureInfo.InvariantCulture)).Append('\n');
+    }
+
+    private static void AppendLabeledCounter(
+        StringBuilder text,
+        string name,
+        string help,
+        string label,
+        ConcurrentDictionary<string, long> values)
+    {
+        text.Append("# HELP ").Append(name).Append(' ').Append(help).Append('\n');
+        text.Append("# TYPE ").Append(name).Append(" counter\n");
+        foreach (var (key, value) in values.OrderBy(pair => pair.Key, StringComparer.Ordinal))
+        {
+            text.Append(name)
+                .Append('{').Append(label).Append("=\"").Append(Escape(key)).Append("\"} ")
+                .Append(value.ToString(CultureInfo.InvariantCulture))
+                .Append('\n');
+        }
+    }
+
+    private static void AppendGauge(StringBuilder text, string name, string help, long value)
+    {
+        text.Append("# HELP ").Append(name).Append(' ').Append(help).Append('\n');
+        text.Append("# TYPE ").Append(name).Append(" gauge\n");
+        text.Append(name).Append(' ').Append(value.ToString(CultureInfo.InvariantCulture)).Append('\n');
+    }
+
+    private static void AppendHistogram(
+        StringBuilder text,
+        string name,
+        string help,
+        Histogram histogram)
+    {
+        text.Append("# HELP ").Append(name).Append(' ').Append(help).Append('\n');
+        text.Append("# TYPE ").Append(name).Append(" histogram\n");
+        var cumulative = 0L;
+        for (var index = 0; index < histogram.Bounds.Length; index++)
+        {
+            cumulative += histogram.Bucket(index);
+            text.Append(name).Append("_bucket{le=\"")
+                .Append(histogram.Bounds[index].ToString("0.####", CultureInfo.InvariantCulture))
+                .Append("\"} ")
+                .Append(cumulative.ToString(CultureInfo.InvariantCulture))
+                .Append('\n');
+        }
+
+        cumulative += histogram.Bucket(histogram.Bounds.Length);
+        text.Append(name).Append("_bucket{le=\"+Inf\"} ")
+            .Append(cumulative.ToString(CultureInfo.InvariantCulture)).Append('\n');
+        text.Append(name).Append("_sum ")
+            .Append(histogram.SumSeconds.ToString("0.000000", CultureInfo.InvariantCulture)).Append('\n');
+        text.Append(name).Append("_count ")
+            .Append(cumulative.ToString(CultureInfo.InvariantCulture)).Append('\n');
+    }
+
+    private static string Escape(string value) =>
+        value.Replace("\\", "\\\\", StringComparison.Ordinal)
+            .Replace("\"", "\\\"", StringComparison.Ordinal)
+            .Replace("\n", "\\n", StringComparison.Ordinal);
+
+    private sealed class Histogram(double[] bounds)
+    {
+        private readonly long[] _buckets = new long[bounds.Length + 1];
+        private long _sumMicros;
+        private long _count;
+
+        public double[] Bounds { get; } = bounds;
+
+        public double SumSeconds => Interlocked.Read(ref _sumMicros) / 1_000_000d;
+
+        public long Bucket(int index) => Interlocked.Read(ref _buckets[index]);
+
+        public void Observe(double seconds)
+        {
+            var index = Array.FindIndex(Bounds, bound => seconds <= bound);
+            if (index < 0)
+            {
+                index = Bounds.Length;
+            }
+
+            Interlocked.Increment(ref _buckets[index]);
+            Interlocked.Increment(ref _count);
+            Interlocked.Add(ref _sumMicros, (long)Math.Round(seconds * 1_000_000));
+        }
+
+        public void Reset()
+        {
+            Array.Clear(_buckets);
+            Interlocked.Exchange(ref _sumMicros, 0);
+            Interlocked.Exchange(ref _count, 0);
+        }
+    }
+}
+
+/// <summary>
+/// Carries the request's PSP wait from the flow to the edge middleware without changing every
+/// public flow signature. AsyncLocal keeps it per request.
+/// </summary>
+public sealed class RequestTelemetry
+{
+    private readonly AsyncLocal<Scope?> _current = new();
+
+    public Scope Begin()
+    {
+        var scope = new Scope();
+        _current.Value = scope;
+        return scope;
+    }
+
+    public void End() => _current.Value = null;
+
+    public PspWaitScope MeasurePspWait() => new(this);
+
+    private void Add(TimeSpan elapsed) => _current.Value?.Add(elapsed);
+
+    public sealed class Scope
+    {
+        private long _pspWaitTicks;
+
+        public TimeSpan PspWait => TimeSpan.FromTicks(Interlocked.Read(ref _pspWaitTicks));
+
+        public void Add(TimeSpan elapsed) =>
+            Interlocked.Add(ref _pspWaitTicks, elapsed.Ticks);
+    }
+
+    public sealed class PspWaitScope : IDisposable
+    {
+        private readonly RequestTelemetry _owner;
+        private readonly long _started = Stopwatch.GetTimestamp();
+
+        public PspWaitScope(RequestTelemetry owner) => _owner = owner;
+
+        public void Dispose() =>
+            _owner.Add(Stopwatch.GetElapsedTime(_started));
+    }
+}

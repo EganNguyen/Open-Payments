@@ -13,7 +13,8 @@ public sealed class PaymentFlow(
     IFraudCheck fraud,
     InFlightLimiter limiter,
     CanonicalLog log,
-    PaymentMetrics metrics)
+    PaymentMetrics metrics,
+    RequestTelemetry telemetry)
 {
     private static readonly TimeSpan PaymentWindow = TimeSpan.FromMinutes(30);
     private static readonly TimeSpan PspDeadline = TimeSpan.FromMilliseconds(2500);
@@ -76,7 +77,8 @@ public sealed class PaymentFlow(
             if (method is null)
             {
                 var created = await store.CreatePaymentAsync(command, cancellationToken);
-                return await FromBeginAsync(created, merchant, key, null, requestHash, cancellationToken);
+                return await FromBeginAsync(
+                    created, merchant, key, null, requestHash, cancellationToken, countCompleted: true);
             }
 
             var checkedFraud = await fraud.CheckAsync(merchant, paymentId, amount, cancellationToken);
@@ -94,7 +96,7 @@ public sealed class PaymentFlow(
             if (request.CaptureMode == "auto" && !supportsSale && begin is BeginResult.Started started)
             {
                 var authorized = await ExecuteAttemptAsync(
-                    started, merchant, key, method, cancellationToken);
+                    started, merchant, key, method, cancellationToken, countCompleted: false);
                 if (authorized.StatusCode != 200)
                 {
                     return authorized;
@@ -106,10 +108,12 @@ public sealed class PaymentFlow(
                     merchant,
                     key + ":capture",
                     RequestHash("POST", "/internal/capture", ReadOnlySpan<byte>.Empty),
-                    cancellationToken);
+                    cancellationToken,
+                    countCompleted: true);
             }
 
-            return await FromBeginAsync(begin, merchant, key, method, requestHash, cancellationToken);
+            return await FromBeginAsync(
+                begin, merchant, key, method, requestHash, cancellationToken, countCompleted: true);
         }
         catch (CommitOutcomeUnknownException exception)
         {
@@ -191,7 +195,8 @@ public sealed class PaymentFlow(
             }
 
             var begin = await store.BeginAttemptAsync(command, cancellationToken);
-            return await FromBeginAsync(begin, merchant, key, method, requestHash, cancellationToken);
+            return await FromBeginAsync(
+                begin, merchant, key, method, requestHash, cancellationToken, countCompleted: true);
         }
         catch (CommitOutcomeUnknownException exception)
         {
@@ -260,7 +265,8 @@ public sealed class PaymentFlow(
         MerchantId merchant,
         string key,
         byte[] requestHash,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken,
+        bool countCompleted = false)
     {
         var view = await store.GetPaymentAsync(merchant, paymentId, cancellationToken);
         if (view is null)
@@ -269,7 +275,7 @@ public sealed class PaymentFlow(
         }
 
         if (request.AmountMinor != view.Amount.Minor)
-        {
+                {
             return ApiAnswer.Problem(422, "The amount must equal the authorized amount.", "capture_amount_mismatch");
         }
 
@@ -294,6 +300,7 @@ public sealed class PaymentFlow(
         PspResult result;
         try
         {
+            using var pspWait = telemetry.MeasurePspWait();
             using var deadline = new CancellationTokenSource(PspDeadline);
             result = await adapter.CaptureAsync(attempt.Id, view.Amount, deadline.Token);
         }
@@ -306,7 +313,7 @@ public sealed class PaymentFlow(
                     attempt.Id, false, null, "timeout", TimedOut: true, DateTimeOffset.UtcNow),
                 null,
                 CancellationToken.None);
-            return await FromAppliedAsync(timedOut, merchant, key, 202, 0, timedOut: true);
+            return await FromAppliedAsync(timedOut, merchant, key, 202, 0, timedOut: true, countCompleted: false);
         }
 
         var answer = result switch
@@ -320,7 +327,7 @@ public sealed class PaymentFlow(
         };
         var status = result is PspResult.Declined ? 402 : 200;
         var applied = await store.ApplyAsync(paymentId, answer, null, CancellationToken.None);
-        return await FromAppliedAsync(applied, merchant, key, status, 0, timedOut: false);
+        return await FromAppliedAsync(applied, merchant, key, status, 0, timedOut: false, countCompleted: countCompleted);
     }
 
     public async Task<ApiAnswer> VoidAsync(
@@ -363,6 +370,7 @@ public sealed class PaymentFlow(
         PspResult result;
         try
         {
+            using var pspWait = telemetry.MeasurePspWait();
             using var deadline = new CancellationTokenSource(PspDeadline);
             result = await adapter.VoidAsync(attempt.Id, authorized.Value, deadline.Token);
         }
@@ -374,7 +382,7 @@ public sealed class PaymentFlow(
                 new PaymentCommand.VoidAnswer(attempt.Id, false, TimedOut: true, "timeout", DateTimeOffset.UtcNow),
                 null,
                 CancellationToken.None);
-            return await FromAppliedAsync(timedOut, merchant, key, 202, 0, timedOut: true);
+            return await FromAppliedAsync(timedOut, merchant, key, 202, 0, timedOut: true, countCompleted: false);
         }
 
         var answer = result is PspResult.Approved
@@ -385,7 +393,7 @@ public sealed class PaymentFlow(
                 DateTimeOffset.UtcNow);
         var status = result is PspResult.Approved ? 200 : 402;
         var applied = await store.ApplyAsync(paymentId, answer, null, CancellationToken.None);
-        return await FromAppliedAsync(applied, merchant, key, status, 0, timedOut: false);
+        return await FromAppliedAsync(applied, merchant, key, status, 0, timedOut: false, countCompleted: false);
     }
 
     public async Task<ApiAnswer> RefundAsync(
@@ -434,6 +442,7 @@ public sealed class PaymentFlow(
         PspResult result;
         try
         {
+            using var pspWait = telemetry.MeasurePspWait();
             using var deadline = new CancellationTokenSource(PspDeadline);
             result = await adapter.RefundAsync(refundId, amount, deadline.Token);
         }
@@ -516,7 +525,8 @@ public sealed class PaymentFlow(
         string key,
         PaymentMethodRef? method,
         byte[] requestHash,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken,
+        bool countCompleted)
     {
         switch (result)
         {
@@ -543,7 +553,12 @@ public sealed class PaymentFlow(
                 return new ApiAnswer(200, null, RawJson: body);
             case BeginResult.Started started:
                 return await ExecuteAttemptAsync(
-                    started, merchant, key, method ?? new PaymentMethodRef("card", "tok_test"), cancellationToken);
+                    started,
+                    merchant,
+                    key,
+                    method ?? new PaymentMethodRef("card", "tok_test"),
+                    cancellationToken,
+                    countCompleted);
             default:
                 return ApiAnswer.Problem(500, "Unhandled answer.", "internal");
         }
@@ -554,7 +569,8 @@ public sealed class PaymentFlow(
         MerchantId merchant,
         string key,
         PaymentMethodRef method,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken,
+        bool countCompleted)
     {
         var view = started.Payment;
         var attempt = view.Attempt ?? throw new InvalidOperationException("A started attempt has no row.");
@@ -570,6 +586,7 @@ public sealed class PaymentFlow(
         PspResult result;
         try
         {
+            using var pspWait = telemetry.MeasurePspWait();
             using var deadline = new CancellationTokenSource(PspDeadline);
             result = operation == AttemptOperation.Sale
                 ? await adapter.SaleAsync(attempt.Id, view.Amount, method, deadline.Token)
@@ -584,7 +601,9 @@ public sealed class PaymentFlow(
                 new PaymentCommand.Timeout(attempt.Id, operation, DateTimeOffset.UtcNow),
                 null,
                 CancellationToken.None);
-            return await FromAppliedAsync(timedOut, merchant, key, 202, pspWatch.ElapsedMilliseconds, timedOut: true);
+            return await FromAppliedAsync(
+                timedOut, merchant, key, 202, pspWatch.ElapsedMilliseconds, timedOut: true,
+                countCompleted: false);
         }
 
         pspWatch.Stop();
@@ -611,7 +630,8 @@ public sealed class PaymentFlow(
                 status = 200;
             }
 
-            return await FromAppliedAsync(applied, merchant, key, status, pspWatch.ElapsedMilliseconds, false);
+            return await FromAppliedAsync(
+                applied, merchant, key, status, pspWatch.ElapsedMilliseconds, false, countCompleted);
         }
         catch (Exception)
         {
@@ -627,7 +647,8 @@ public sealed class PaymentFlow(
         string key,
         int status,
         long pspWaitMs,
-        bool timedOut)
+        bool timedOut,
+        bool countCompleted)
     {
         switch (result)
         {
@@ -640,9 +661,9 @@ public sealed class PaymentFlow(
                 var body = JsonSerializer.Serialize(PaymentBody.From(applied.Payment), ApiJson.Options);
                 await store.ResolveKeyAsync(
                     merchant, key, new StoredResponse(finalStatus, body), CancellationToken.None);
-                if (applied.Payment.State == PaymentState.Captured)
+                if (countCompleted && CompletedOutcome(applied.Payment) is { } outcome)
                 {
-                    metrics.CompletedPayment();
+                    metrics.Completed(outcome);
                 }
 
                 log.Record(Entry(
@@ -658,6 +679,15 @@ public sealed class PaymentFlow(
                 return ApiAnswer.Problem(500, "Unhandled answer.", "internal");
         }
     }
+
+    private static string? CompletedOutcome(PaymentView payment) => payment.State switch
+    {
+        PaymentState.Captured => "captured",
+        PaymentState.Authorized => "authorized",
+        PaymentState.AwaitingMethod when payment.Attempt is
+            { State: AttemptState.Failed, FailureCode: not "fraud_blocked" and not "timeout" } => "declined",
+        _ => null,
+    };
 
     private static CanonicalEntry Entry(
         MerchantId merchant,
