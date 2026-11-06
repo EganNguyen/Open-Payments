@@ -187,13 +187,15 @@ if [[ ! -s "$RUN_DIR/checks.json" ]]; then
 fi
 
 if [[ "$STAGE" != "phase0" ]] && psql "$CHECKS_DB_URL" -XAtq -c 'select 1' >/dev/null 2>&1; then
+  # Prometheus is optional for the local preview. Do not let a refused connection
+  # (curl exit 7) abort the report through set -e.
   METRIC=$(curl -sG --data-urlencode 'query=sum(op_payments_completed_total)' \
     "${PROM_URL:-http://127.0.0.1:9090}/api/v1/query" 2>/dev/null \
     | python3 -c 'import json,sys
 try:
  d=json.load(sys.stdin); r=d["data"]["result"]; print(int(float(r[0]["value"][1])) if r else "")
 except Exception:
- print("")')
+ print("")' || true)
   if [[ -n "$METRIC" ]]; then
     DB_COUNT=$(psql "$CHECKS_DB_URL" -XAtq -c "select count(*) from payments where state in ('CAPTURED','PARTIALLY_REFUNDED','REFUNDED')" 2>/dev/null || echo 0)
     printf '{"metric": %s, "db": %s}\n' "$METRIC" "$DB_COUNT" > "$RUN_DIR/counts.json"
