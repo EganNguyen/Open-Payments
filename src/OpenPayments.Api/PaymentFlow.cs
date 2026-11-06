@@ -514,6 +514,10 @@ public sealed class PaymentFlow(
             409, "A request is in flight.", "request_in_flight", retryAfter: 1),
         BeginOperationResult.HashMismatch => ApiAnswer.Problem(
             422, "The key was used for another request.", "idempotency_key_reused"),
+        BeginOperationResult.Rejected rejected
+            when rejected.ReasonCode is "refund_live" or "already_moved" or "operation_live" =>
+            ApiAnswer.Problem(
+                409, "Another operation is live; retry shortly.", "operation_live", retryAfter: 1),
         BeginOperationResult.Rejected rejected => ApiAnswer.Problem(
             422, "The request was refused.", rejected.ReasonCode),
         _ => ApiAnswer.Problem(409, "The operation is already live.", "operation_live", retryAfter: 1),

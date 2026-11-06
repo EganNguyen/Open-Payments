@@ -138,6 +138,7 @@ public sealed class RefundTests(AcceptanceFixture db)
         var paymentId = await CapturedPaymentAsync(client, "refund-race", 10000);
 
         var outcomes = new System.Collections.Concurrent.ConcurrentBag<HttpStatusCode>();
+        var failures = new System.Collections.Concurrent.ConcurrentBag<string>();
         await Task.WhenAll(Enumerable.Range(0, 50).Select(async index =>
         {
             for (var attempt = 0; attempt < 100; attempt++)
@@ -160,15 +161,22 @@ public sealed class RefundTests(AcceptanceFixture db)
                     return;
                 }
 
-                await Task.Delay(20);
+                if (response.StatusCode == HttpStatusCode.Conflict && response.Headers.RetryAfter is not null)
+                {
+                    await Task.Delay(20);
+                    continue;
+                }
+
+                failures.Add($"refund-race-{index}: {(int)response.StatusCode} {code}");
+                return;
             }
 
-            outcomes.Add(HttpStatusCode.Conflict);
+            failures.Add($"refund-race-{index}: retry limit exhausted");
         }));
 
+        Assert.True(failures.IsEmpty, string.Join("; ", failures));
         Assert.Equal(10, outcomes.Count(status => status == HttpStatusCode.OK));
         Assert.Equal(40, outcomes.Count(status => status == HttpStatusCode.UnprocessableEntity));
-        Assert.DoesNotContain(outcomes, status => status == HttpStatusCode.InternalServerError);
         var payment = await GetPaymentAsync(client, paymentId);
         var captured = payment.GetProperty("captured_minor").GetInt64();
         var refunded = payment.GetProperty("refunded_minor").GetInt64();
