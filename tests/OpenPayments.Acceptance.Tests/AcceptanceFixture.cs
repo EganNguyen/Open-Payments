@@ -1,0 +1,406 @@
+using System.Security.Cryptography;
+using System.Text;
+using Microsoft.AspNetCore.Hosting;
+using Microsoft.AspNetCore.Mvc.Testing;
+using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.DependencyInjection.Extensions;
+using Npgsql;
+using OpenPayments.Api;
+using OpenPayments.Domain;
+using OpenPayments.Psp;
+using OpenPayments.Transitions;
+using Testcontainers.PostgreSql;
+using Xunit;
+
+namespace OpenPayments.Acceptance.Tests;
+
+[CollectionDefinition("acceptance")]
+public sealed class AcceptanceCollection : ICollectionFixture<AcceptanceFixture>;
+
+public sealed class AcceptanceFixture : IAsyncLifetime
+{
+    private PostgreSqlContainer _container = null!;
+
+    public TestPsp Psp { get; } = new();
+
+    public TestFraud Fraud { get; } = new();
+
+    public string AdminConnectionString => _container.GetConnectionString();
+
+    public string AppConnectionString
+    {
+        get
+        {
+            var builder = new NpgsqlConnectionStringBuilder(AdminConnectionString)
+            {
+                Username = "op_app",
+                Password = "op_local_only",
+                CommandTimeout = 0,
+                Timeout = 2,
+                MaxPoolSize = 20,
+            };
+            return builder.ConnectionString;
+        }
+    }
+
+    public MerchantId MerchantA { get; private set; }
+
+    public MerchantId MerchantB { get; private set; }
+
+    public Guid PspAccountA { get; private set; }
+
+    public WebApplicationFactory<Program> Factory { get; private set; } = null!;
+
+    public async Task InitializeAsync()
+    {
+        var repo = FindRepositoryRoot();
+        var migration = Path.Combine(repo, "db", "migrations", "0001_initial.sql");
+        _container = new PostgreSqlBuilder("postgres:18.6")
+            .WithDatabase("openpayments")
+            .WithUsername("postgres")
+            .WithPassword("op_local_only")
+            .WithBindMount(migration, "/schema/0001_initial.sql")
+            .Build();
+        await _container.StartAsync();
+        await ExecAsync(
+            "do $$ begin if not exists (select from pg_roles where rolname = 'op_app') then create role op_app login password 'op_local_only'; end if; end $$;");
+        await ResetAsync();
+
+#pragma warning disable CA2000 // Factory is owned by the fixture and disposed in DisposeAsync.
+        Factory = new WebApplicationFactory<Program>().WithWebHostBuilder(builder =>
+        {
+            builder.UseSetting("DATABASE_URL", AppConnectionString);
+            builder.UseSetting("INFLIGHT_CAP", "500");
+            builder.ConfigureServices(services =>
+            {
+                services.RemoveAll<IPspAdapterFactory>();
+                services.AddSingleton<IPspAdapterFactory>(Psp);
+                services.RemoveAll<IFraudCheck>();
+                services.AddSingleton<IFraudCheck>(Fraud);
+            });
+        });
+#pragma warning restore CA2000
+    }
+
+    public async Task ResetAsync()
+    {
+        await ExecAsync("drop schema if exists public cascade; create schema public; grant usage on schema public to public;");
+        await ExecAsync("create table schema_migrations (version text primary key, checksum text not null, applied_at timestamptz not null default now());");
+        await ExecAsync("-f", "/schema/0001_initial.sql");
+        MerchantA = await SeedMerchantAsync("live_key_a");
+        MerchantB = await SeedMerchantAsync("live_key_b");
+        PspAccountA = await PspAccountAsync(MerchantA);
+        Psp.Reset();
+        Fraud.Reset();
+        if (Factory is not null)
+        {
+            var store = Factory.Services.GetRequiredService<PaymentStore>();
+            store.BeforeBegin = null;
+            store.BeforeOutboxInsert = null;
+            store.BeforePaymentUpdate = null;
+        }
+    }
+
+    public async Task<MerchantId> SeedMerchantAsync(string apiKey)
+    {
+        var merchant = new MerchantId(Guid.NewGuid());
+        var pspAccount = Guid.NewGuid();
+        await using var connection = await OpenAdminAsync();
+        await using (var command = new NpgsqlCommand(
+            """
+            insert into psp_accounts (id, merchant_id, psp, mode, credential_ref, rate_limit_per_s)
+            values (@id, @merchant, 'mock', 'live', 'test', 1000)
+            """,
+            connection))
+        {
+            command.Parameters.AddWithValue("id", pspAccount);
+            command.Parameters.AddWithValue("merchant", merchant.Value);
+            await command.ExecuteNonQueryAsync();
+        }
+
+        await using (var command = new NpgsqlCommand(
+            "insert into api_keys (key_hash, merchant_id, mode, scopes) values (@hash, @merchant, 'live', array['payments:write','payments:read'])",
+            connection))
+        {
+            command.Parameters.AddWithValue("hash", SHA256.HashData(Encoding.UTF8.GetBytes(apiKey)));
+            command.Parameters.AddWithValue("merchant", merchant.Value);
+            await command.ExecuteNonQueryAsync();
+        }
+
+        foreach (var (type, moneyClass, kind) in new[]
+        {
+            ("auth_hold", "logical", "clearing"),
+            ("auth_hold_contra", "logical", "clearing"),
+            ("psp_receivable", "real", "terminal"),
+            ("merchant_payable", "real", "terminal"),
+            ("refund_reserved", "real", "clearing"),
+            ("psp_refund_payable", "real", "terminal"),
+        })
+        {
+            foreach (var currency in new[] { "USD", "JPY", "KWD" })
+            {
+                await using var command = new NpgsqlCommand(
+                    """
+                    insert into accounts
+                      (id, merchant_id, account_type, sub_account, class, class_of_money, currency)
+                    values (@id, @merchant, @type, 0, @class, @money_class, @currency)
+                    """,
+                    connection);
+                command.Parameters.AddWithValue("id", Guid.NewGuid());
+                command.Parameters.AddWithValue("merchant", merchant.Value);
+                command.Parameters.AddWithValue("type", type);
+                command.Parameters.AddWithValue("class", kind);
+                command.Parameters.AddWithValue("money_class", moneyClass);
+                command.Parameters.AddWithValue("currency", currency);
+                await command.ExecuteNonQueryAsync();
+            }
+        }
+
+        return merchant;
+    }
+
+    public async Task<Guid> PspAccountAsync(MerchantId merchant)
+    {
+        await using var connection = await OpenAdminAsync();
+        await using var command = new NpgsqlCommand(
+            "select id from psp_accounts where merchant_id = @merchant limit 1",
+            connection);
+        command.Parameters.AddWithValue("merchant", merchant.Value);
+        return (Guid)(await command.ExecuteScalarAsync())!;
+    }
+
+    public async Task<NpgsqlConnection> OpenAdminAsync()
+    {
+        var connection = new NpgsqlConnection(AdminConnectionString);
+        await connection.OpenAsync();
+        return connection;
+    }
+
+    public async Task<long> CountAsync(string sql)
+    {
+        await using var connection = await OpenAdminAsync();
+        await using var command = new NpgsqlCommand(sql, connection);
+        return (long)(await command.ExecuteScalarAsync())!;
+    }
+
+    public async Task<string> StateAsync(Guid paymentId)
+    {
+        await using var connection = await OpenAdminAsync();
+        await using var command = new NpgsqlCommand(
+            "select state from payments where id = @id", connection);
+        command.Parameters.AddWithValue("id", paymentId);
+        return (string)(await command.ExecuteScalarAsync())!;
+    }
+
+    public HttpClient Client()
+    {
+        var client = Factory.CreateClient();
+        client.BaseAddress = new Uri("http://localhost");
+        return client;
+    }
+
+    public async Task DisposeAsync()
+    {
+        await Factory.DisposeAsync();
+        await _container.DisposeAsync();
+    }
+
+    private async Task ExecAsync(params string[] arguments)
+    {
+        string[] command = arguments.Length == 2 && arguments[0] == "-f"
+            ? ["psql", "-U", "postgres", "-d", "openpayments", "-v", "ON_ERROR_STOP=1", "-f", arguments[1]]
+            : ["psql", "-U", "postgres", "-d", "openpayments", "-v", "ON_ERROR_STOP=1", "-c", arguments[0]];
+        var result = await _container.ExecAsync(command);
+        if (result.ExitCode != 0)
+        {
+            throw new InvalidOperationException(
+                $"Container command failed ({result.ExitCode}): {string.Join(' ', arguments)}\n{result.Stderr}");
+        }
+    }
+
+    private static string FindRepositoryRoot()
+    {
+        var directory = new DirectoryInfo(AppContext.BaseDirectory);
+        while (directory is not null)
+        {
+            if (File.Exists(Path.Combine(directory.FullName, "OpenPayments.slnx")))
+            {
+                return directory.FullName;
+            }
+
+            directory = directory.Parent;
+        }
+
+        throw new InvalidOperationException("Could not find the repository root.");
+    }
+}
+
+public sealed class TestFraud : IFraudCheck
+{
+    private int _checks;
+    private FraudDecision _decision = new FraudDecision.Allow();
+
+    public int Checks => Volatile.Read(ref _checks);
+
+    public void Block(string code) => _decision = new FraudDecision.Block(code);
+
+    public void Reset()
+    {
+        _decision = new FraudDecision.Allow();
+        Interlocked.Exchange(ref _checks, 0);
+    }
+
+    public Task<FraudDecision> CheckAsync(
+        MerchantId merchant, PaymentId payment, Money amount, CancellationToken ct)
+    {
+        Interlocked.Increment(ref _checks);
+        return Task.FromResult(_decision);
+    }
+}
+
+public sealed record PspCall(string Operation, string Key, long Amount);
+
+public sealed class TestPsp : IPspAdapterFactory, IPspAdapter
+{
+    private readonly object _gate = new();
+    private readonly List<PspCall> _calls = [];
+    private readonly Queue<PspResult> _results = [];
+    private PspResult _result = new PspResult.Approved("psp_default");
+    private TimeSpan _delay;
+    private bool _timeout;
+    private bool _supportsSale = true;
+
+    public IReadOnlyList<PspCall> Calls
+    {
+        get
+        {
+            lock (_gate)
+            {
+                return [.. _calls];
+            }
+        }
+    }
+
+    PspCapabilities IPspAdapterFactory.Capabilities(PspAccount account) =>
+        new(SupportsSale: _supportsSale, RecoveryMode: "authoritative_lookup", KeyRetention: TimeSpan.FromHours(2));
+
+    public IPspAdapter For(PspAccount account) => this;
+
+    public PspCapabilities Capabilities =>
+        new(SupportsSale: _supportsSale, RecoveryMode: "authoritative_lookup", KeyRetention: TimeSpan.FromHours(2));
+
+    public void Reset()
+    {
+        lock (_gate)
+        {
+            _calls.Clear();
+            _results.Clear();
+            _result = new PspResult.Approved("psp_default");
+            _delay = TimeSpan.Zero;
+            _timeout = false;
+            _supportsSale = true;
+        }
+    }
+
+    public void Next(PspResult result) => _results.Enqueue(result);
+
+    private PspResult TakeResult() => _results.Count > 0 ? _results.Dequeue() : _result;
+
+    public void Delay(TimeSpan delay) => _delay = delay;
+
+    public void Timeout() => _timeout = true;
+
+    public bool SupportsSale
+    {
+        get => _supportsSale;
+        set => _supportsSale = value;
+    }
+
+    public async Task<PspResult> AuthorizeAsync(
+        AttemptId attempt, Money amount, PaymentMethodRef method, CancellationToken ct)
+    {
+        await RecordAsync("authorize", attempt, amount, ct);
+        if (_timeout)
+        {
+            throw new PspTimeoutException("scripted timeout");
+        }
+
+        return TakeResult();
+    }
+
+    public async Task<PspResult> SaleAsync(
+        AttemptId attempt, Money amount, PaymentMethodRef method, CancellationToken ct)
+    {
+        await RecordAsync("sale", attempt, amount, ct);
+        if (_timeout)
+        {
+            throw new PspTimeoutException("scripted timeout");
+        }
+
+        return TakeResult();
+    }
+
+    public Task<PspResult> CompleteActionAsync(AttemptId attempt, CancellationToken ct) =>
+        Task.FromResult(_result);
+
+    public async Task<PspResult> CaptureAsync(AttemptId attempt, Money amount, CancellationToken ct)
+    {
+        await RecordAsync("capture", attempt, amount, ct);
+        if (_timeout)
+        {
+            throw new PspTimeoutException("scripted timeout");
+        }
+
+        return TakeResult();
+    }
+
+    public async Task<PspResult> VoidAsync(AttemptId attempt, AttemptId authorized, CancellationToken ct)
+    {
+        await RecordAsync("void", attempt, new Money(0, CurrencyCode.Usd), ct);
+        if (_timeout)
+        {
+            throw new PspTimeoutException("scripted timeout");
+        }
+
+        return TakeResult();
+    }
+
+    public async Task<PspResult> RefundAsync(RefundId refund, Money amount, CancellationToken ct)
+    {
+        lock (_gate)
+        {
+            _calls.Add(new PspCall("refund", refund.Value.ToString("D"), amount.Minor));
+        }
+
+        if (_delay > TimeSpan.Zero)
+        {
+            await Task.Delay(_delay, ct);
+        }
+
+        if (_timeout)
+        {
+            throw new PspTimeoutException("scripted timeout");
+        }
+
+        return TakeResult();
+    }
+
+    public Task<PspInquiry> RecoverAsync(AttemptId attempt, CancellationToken ct) =>
+        Task.FromResult<PspInquiry>(new PspInquiry.Inconclusive("not_used"));
+
+    public Task<PspInquiry> RecoverRefundAsync(RefundId refund, CancellationToken ct) =>
+        Task.FromResult<PspInquiry>(new PspInquiry.Inconclusive("not_used"));
+
+    private async Task RecordAsync(string operation, AttemptId attempt, Money amount, CancellationToken ct)
+    {
+        lock (_gate)
+        {
+            _calls.Add(new PspCall(operation, attempt.Value.ToString("D"), amount.Minor));
+        }
+
+        if (_delay > TimeSpan.Zero)
+        {
+            await Task.Delay(_delay, ct);
+        }
+    }
+}

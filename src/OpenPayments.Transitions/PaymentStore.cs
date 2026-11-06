@@ -21,7 +21,14 @@ public sealed record RefundView(
     Money Amount,
     string? FailureCode,
     string Psp,
-    Guid PspAccountId);
+    Guid PspAccountId,
+    DateTimeOffset CreatedAt = default);
+
+public sealed record RefundRecord(
+    RefundId Id,
+    PaymentId PaymentId,
+    MerchantId MerchantId,
+    RefundView Refund);
 
 public sealed record PaymentView(
     PaymentId Id,
@@ -35,7 +42,9 @@ public sealed record PaymentView(
     int EventSeq,
     int Version,
     AttemptView? Attempt,
-    RefundView? Refund)
+    RefundView? Refund,
+    DateTimeOffset ExpiresAt = default,
+    DateTimeOffset CreatedAt = default)
 {
     public PaymentSnapshot ToSnapshot() =>
         new(
@@ -91,6 +100,7 @@ public abstract record KeyLookup
 public abstract record BeginResult
 {
     public sealed record Started(AttemptId AttemptId, PaymentView Payment) : BeginResult;
+    public sealed record Created(PaymentView Payment) : BeginResult;
     public sealed record Replay(StoredResponse Response) : BeginResult;
     public sealed record KeyInFlight : BeginResult;
     public sealed record HashMismatch : BeginResult;
@@ -98,6 +108,22 @@ public abstract record BeginResult
     public sealed record CapExceeded(PaymentView Payment) : BeginResult;
     public sealed record Rejected(string ReasonCode, PaymentView? Payment = null) : BeginResult;
 }
+
+public abstract record BeginOperationResult
+{
+    public sealed record Started(PaymentView Payment) : BeginOperationResult;
+    public sealed record Replay(StoredResponse Response) : BeginOperationResult;
+    public sealed record KeyInFlight : BeginOperationResult;
+    public sealed record HashMismatch : BeginOperationResult;
+    public sealed record Rejected(string ReasonCode, PaymentView? Payment = null) : BeginOperationResult;
+}
+
+public sealed record MerchantPspAccount(
+    Guid Id,
+    string Psp,
+    string Mode,
+    string CredentialRef,
+    int RateLimitPerSecond);
 
 public abstract record ApplyResult
 {
@@ -121,6 +147,9 @@ public sealed class PaymentStore
 
     /// <summary>Test-only failpoint used by the atomicity test.</summary>
     public Action? BeforeOutboxInsert { get; set; }
+
+    /// <summary>Test-only failpoint used to simulate an unknown transaction A commit.</summary>
+    public Action? BeforeBegin { get; set; }
 
     /// <summary>Test-only failpoint after the snapshot is read and before the conditional update.</summary>
     public Action? BeforePaymentUpdate { get; set; }
@@ -154,6 +183,7 @@ public sealed class PaymentStore
 
         try
         {
+            BeforeBegin?.Invoke();
             return await _runner.RunAsync(
                 command.MerchantId,
                 (connection, transaction, ct) => BeginInTransactionAsync(
@@ -280,7 +310,9 @@ public sealed class PaymentStore
         var pspAccountId = command.PspAccountId
             ?? await ResolvePspAccountAsync(connection, transaction, command.MerchantId, cancellationToken);
 
-        if (!await InsertKeyAsync(connection, transaction, command, attemptId, cancellationToken))
+        if (!await InsertKeyAsync(
+                connection, transaction, command.MerchantId, command.Key,
+                command.RequestHash, command.PaymentId, attemptId, null, cancellationToken))
         {
             return await ReadKeyOnConnectionAsync(
                 connection, transaction, command.MerchantId, command.Key, command.RequestHash,
@@ -381,6 +413,20 @@ public sealed class PaymentStore
         }
 
         var accepted = (TransitionResult.Accepted)transition;
+        return await PersistAsync(
+            connection, transaction, view, command, accepted, response, cancellationToken);
+    }
+
+    private async Task<ApplyResult> PersistAsync(
+        NpgsqlConnection connection,
+        NpgsqlTransaction transaction,
+        PaymentView view,
+        PaymentCommand command,
+        TransitionResult.Accepted accepted,
+        StoredResponse? response,
+        CancellationToken cancellationToken)
+    {
+        var paymentId = view.Id;
         var captured = accepted.NewState is PaymentState.Captured
             or PaymentState.PartiallyRefunded
             or PaymentState.Refunded
@@ -459,25 +505,31 @@ public sealed class PaymentStore
     private static async Task<bool> InsertKeyAsync(
         NpgsqlConnection connection,
         NpgsqlTransaction transaction,
-        BeginAttempt command,
-        AttemptId attemptId,
+        MerchantId merchant,
+        string key,
+        byte[] requestHash,
+        PaymentId paymentId,
+        AttemptId? attemptId,
+        RefundId? refundId,
         CancellationToken cancellationToken)
     {
         await using var insert = new NpgsqlCommand(
             """
             insert into idempotency_keys
-              (merchant_id, key, request_hash, payment_id, attempt_id, response_code, response_body, resolved_at)
+              (merchant_id, key, request_hash, payment_id, attempt_id, refund_id,
+               response_code, response_body, resolved_at)
             values
-              (@merchant, @key, @hash, @payment, @attempt, null, null, null)
+              (@merchant, @key, @hash, @payment, @attempt, @refund, null, null, null)
             on conflict (merchant_id, key) do nothing
             """,
             connection,
             transaction);
-        insert.Parameters.AddWithValue("merchant", command.MerchantId.Value);
-        insert.Parameters.AddWithValue("key", command.Key);
-        insert.Parameters.AddWithValue("hash", command.RequestHash);
-        insert.Parameters.AddWithValue("payment", command.PaymentId.Value);
-        insert.Parameters.AddWithValue("attempt", attemptId.Value);
+        insert.Parameters.AddWithValue("merchant", merchant.Value);
+        insert.Parameters.AddWithValue("key", key);
+        insert.Parameters.AddWithValue("hash", requestHash);
+        insert.Parameters.AddWithValue("payment", paymentId.Value);
+        insert.Parameters.AddWithValue("attempt", NpgsqlTypes.NpgsqlDbType.Uuid, (object?)attemptId?.Value ?? DBNull.Value);
+        insert.Parameters.AddWithValue("refund", NpgsqlTypes.NpgsqlDbType.Uuid, (object?)refundId?.Value ?? DBNull.Value);
         return await insert.ExecuteNonQueryAsync(cancellationToken) > 0;
     }
 
@@ -755,6 +807,28 @@ public sealed class PaymentStore
         await update.ExecuteNonQueryAsync(cancellationToken);
     }
 
+    private static async Task InsertFraudOutboxAsync(
+        NpgsqlConnection connection,
+        NpgsqlTransaction transaction,
+        PaymentId paymentId,
+        MerchantId merchant,
+        AttemptId attemptId,
+        CancellationToken cancellationToken)
+    {
+        await using var insert = new NpgsqlCommand(
+            """
+            insert into outbox
+              (id, merchant_id, aggregate_id, event_type, sequence, schema_version, payload, created_at)
+            values (@id, @merchant, @aggregate, 'payment.attempt_failed', 1, 1, '{}'::jsonb, now())
+            """,
+            connection,
+            transaction);
+        insert.Parameters.AddWithValue("id", Posting.Id(attemptId.Value, "event:payment.attempt_failed"));
+        insert.Parameters.AddWithValue("merchant", merchant.Value);
+        insert.Parameters.AddWithValue("aggregate", paymentId.Value);
+        await insert.ExecuteNonQueryAsync(cancellationToken);
+    }
+
     private static async Task<Guid> ResolveAccountAsync(
         NpgsqlConnection connection,
         NpgsqlTransaction transaction,
@@ -788,6 +862,340 @@ public sealed class PaymentStore
         return value is Guid id
             ? id
             : throw new InvalidOperationException($"Merchant {merchant} has no PSP account.");
+    }
+
+    public async Task<BeginResult> CreatePaymentAsync(
+        BeginAttempt command,
+        CancellationToken cancellationToken)
+    {
+        var existing = await ReadKeyAsync(
+            command.MerchantId, command.Key, command.RequestHash, cancellationToken);
+        switch (existing)
+        {
+            case KeyLookup.Finished finished:
+                return new BeginResult.Replay(finished.Response);
+            case KeyLookup.HashMismatch:
+                return new BeginResult.HashMismatch();
+            case KeyLookup.Unresolved:
+            case KeyLookup.InFlight:
+                return new BeginResult.KeyInFlight();
+        }
+
+        return await _runner.RunAsync<BeginResult>(
+            command.MerchantId,
+            async (connection, transaction, ct) =>
+            {
+                if (!await InsertKeyAsync(
+                        connection, transaction, command.MerchantId, command.Key,
+                        command.RequestHash, command.PaymentId, null, null, ct))
+                {
+                    var lookup = await ReadKeyOnConnectionAsync(
+                        connection, transaction, command.MerchantId, command.Key,
+                        command.RequestHash, ct);
+                    return lookup switch
+                    {
+                        KeyLookup.Finished finished => new BeginResult.Replay(finished.Response),
+                        KeyLookup.HashMismatch => new BeginResult.HashMismatch(),
+                        _ => new BeginResult.KeyInFlight(),
+                    };
+                }
+
+                await using var insert = new NpgsqlCommand(
+                    """
+                    insert into payments
+                      (id, merchant_id, state, amount_minor, currency, captured_minor,
+                       refunded_minor, refund_pending_minor, attempt_count, event_seq, expires_at, version)
+                    values
+                      (@id, @merchant, 'AWAITING_METHOD', @amount, @currency, 0, 0, 0, 0, 0, @expires, 0)
+                    """,
+                    connection,
+                    transaction);
+                insert.Parameters.AddWithValue("id", command.PaymentId.Value);
+                insert.Parameters.AddWithValue("merchant", command.MerchantId.Value);
+                insert.Parameters.AddWithValue("amount", command.Amount.Minor);
+                insert.Parameters.AddWithValue("currency", command.Amount.Currency.Value);
+                insert.Parameters.AddWithValue("expires", command.ExpiresAt);
+                await insert.ExecuteNonQueryAsync(ct);
+                var view = await LoadPaymentAsync(
+                    command.PaymentId, command.MerchantId, ct, connection, transaction);
+                return new BeginResult.Created(view!);
+            },
+            cancellationToken);
+    }
+
+    public async Task<KeyLookup> WaitForKeyAsync(
+        MerchantId merchant,
+        string key,
+        byte[] requestHash,
+        TimeSpan timeout,
+        CancellationToken cancellationToken)
+    {
+        var clock = System.Diagnostics.Stopwatch.StartNew();
+        while (clock.Elapsed < timeout)
+        {
+            var lookup = await ReadKeyAsync(merchant, key, requestHash, cancellationToken);
+            if (lookup is KeyLookup.Finished or KeyLookup.HashMismatch)
+            {
+                return lookup;
+            }
+
+            await Task.Delay(25, cancellationToken);
+        }
+
+        return new KeyLookup.InFlight();
+    }
+
+    public async Task ResolveKeyAsync(
+        MerchantId merchant,
+        string key,
+        StoredResponse response,
+        CancellationToken cancellationToken)
+    {
+        await using var connection = await _runner.DataSource.OpenConnectionAsync(cancellationToken);
+        await using var command = new NpgsqlCommand(
+            """
+            update idempotency_keys
+               set response_code = @code, response_body = @body::jsonb, resolved_at = now()
+             where merchant_id = @merchant and key = @key
+            """,
+            connection);
+        command.Parameters.AddWithValue("code", response.StatusCode);
+        command.Parameters.AddWithValue("body", NpgsqlTypes.NpgsqlDbType.Jsonb, response.Body);
+        command.Parameters.AddWithValue("merchant", merchant.Value);
+        command.Parameters.AddWithValue("key", key);
+        await command.ExecuteNonQueryAsync(cancellationToken);
+    }
+
+    public async Task<RefundRecord?> GetRefundAsync(
+        MerchantId merchant,
+        RefundId refundId,
+        CancellationToken cancellationToken)
+    {
+        await using var connection = await _runner.DataSource.OpenConnectionAsync(cancellationToken);
+        await using var command = new NpgsqlCommand(
+            """
+            select r.id, r.payment_id, r.state, r.amount_minor, r.psp,
+                   r.psp_account_id, r.created_at, p.currency
+            from refunds r
+            join payments p on p.id = r.payment_id
+            where r.id = @id and r.merchant_id = @merchant
+            """,
+            connection);
+        command.Parameters.AddWithValue("id", refundId.Value);
+        command.Parameters.AddWithValue("merchant", merchant.Value);
+        await using var reader = await command.ExecuteReaderAsync(cancellationToken);
+        if (!await reader.ReadAsync(cancellationToken))
+        {
+            return null;
+        }
+
+        return new RefundRecord(
+            new RefundId(reader.GetGuid(0)),
+            new PaymentId(reader.GetGuid(1)),
+            merchant,
+            new RefundView(
+                new RefundId(reader.GetGuid(0)),
+                StateText.Refund(reader.GetString(2)),
+                new Money(reader.GetInt64(3), CurrencyCode.Parse(reader.GetString(7))),
+                null,
+                reader.GetString(4),
+                reader.GetGuid(5),
+                reader.GetDateTime(6)));
+    }
+
+    public async Task<AttemptId?> GetAuthorizedAttemptAsync(
+        MerchantId merchant,
+        PaymentId paymentId,
+        CancellationToken cancellationToken)
+    {
+        await using var connection = await _runner.DataSource.OpenConnectionAsync(cancellationToken);
+        await using var command = new NpgsqlCommand(
+            """
+            select attempt_id
+            from payment_attempts
+            where payment_id = @payment and merchant_id = @merchant
+              and operation in ('authorize', 'sale') and state = 'SUCCEEDED'
+            order by created_at desc
+            limit 1
+            """,
+            connection);
+        command.Parameters.AddWithValue("payment", paymentId.Value);
+        command.Parameters.AddWithValue("merchant", merchant.Value);
+        var value = await command.ExecuteScalarAsync(cancellationToken);
+        return value is Guid id ? new AttemptId(id) : null;
+    }
+
+    public async Task<PaymentView?> GetPaymentAsync(
+        MerchantId merchant,
+        PaymentId paymentId,
+        CancellationToken cancellationToken) =>
+        await LoadPaymentAsync(paymentId, merchant, cancellationToken);
+
+    public async Task<MerchantPspAccount?> GetPspAccountAsync(
+        MerchantId merchant,
+        CancellationToken cancellationToken)
+    {
+        await using var connection = await _runner.DataSource.OpenConnectionAsync(cancellationToken);
+        await using var command = new NpgsqlCommand(
+            """
+            select id, psp, mode, credential_ref, rate_limit_per_s
+            from psp_accounts
+            where merchant_id = @merchant and disabled_at is null
+            order by id
+            limit 1
+            """,
+            connection);
+        command.Parameters.AddWithValue("merchant", merchant.Value);
+        await using var reader = await command.ExecuteReaderAsync(cancellationToken);
+        return await reader.ReadAsync(cancellationToken)
+            ? new MerchantPspAccount(
+                reader.GetGuid(0),
+                reader.GetString(1),
+                reader.GetString(2),
+                reader.GetString(3),
+                reader.GetInt32(4))
+            : null;
+    }
+
+    /// <summary>
+    /// Persists a fraud block as a failed attempt with no PSP effect (D33). The payment is
+    /// created in AWAITING_METHOD so a new key can attempt it again.
+    /// </summary>
+    public async Task<BeginResult> RecordFraudBlockAsync(
+        BeginAttempt command,
+        StoredResponse response,
+        CancellationToken cancellationToken)
+    {
+        var merchant = command.MerchantId;
+        return await _runner.RunAsync<BeginResult>(
+            merchant,
+            async (connection, transaction, ct) =>
+            {
+                var attemptId = AttemptId.New();
+                if (!await InsertKeyAsync(
+                        connection, transaction, merchant, command.Key, command.RequestHash,
+                        command.PaymentId, attemptId, null, ct))
+                {
+                    var lookup = await ReadKeyOnConnectionAsync(
+                        connection, transaction, merchant, command.Key, command.RequestHash, ct);
+                    return lookup switch
+                    {
+                        KeyLookup.Finished finished => new BeginResult.Replay(finished.Response),
+                        KeyLookup.HashMismatch => new BeginResult.HashMismatch(),
+                        _ => new BeginResult.KeyInFlight(),
+                    };
+                }
+
+                await using (var insertPayment = new NpgsqlCommand(
+                    """
+                    insert into payments
+                      (id, merchant_id, state, amount_minor, currency, captured_minor,
+                       refunded_minor, refund_pending_minor, attempt_count, event_seq, expires_at, version)
+                    values
+                      (@id, @merchant, 'AWAITING_METHOD', @amount, @currency, 0, 0, 0, 1, 1, @expires, 0)
+                    """,
+                    connection,
+                    transaction))
+                {
+                    insertPayment.Parameters.AddWithValue("id", command.PaymentId.Value);
+                    insertPayment.Parameters.AddWithValue("merchant", merchant.Value);
+                    insertPayment.Parameters.AddWithValue("amount", command.Amount.Minor);
+                    insertPayment.Parameters.AddWithValue("currency", command.Amount.Currency.Value);
+                    insertPayment.Parameters.AddWithValue("expires", command.ExpiresAt);
+                    await insertPayment.ExecuteNonQueryAsync(ct);
+                }
+
+                var pspAccount = command.PspAccountId
+                    ?? await ResolvePspAccountAsync(connection, transaction, merchant, ct);
+                await InsertAttemptAsync(
+                    connection, transaction, command.PaymentId, merchant,
+                    new AttemptChange(attemptId, AttemptOperation.Authorize, AttemptState.Failed, "fraud_blocked"),
+                    pspAccount, command.Psp, command.MethodRef, command.MethodType, ct);
+                await InsertFraudOutboxAsync(connection, transaction, command.PaymentId, merchant, attemptId, ct);
+                await StoreResponseAsync(
+                    connection, transaction,
+                    (await LoadPaymentAsync(command.PaymentId, merchant, ct, connection, transaction))!,
+                    new PaymentCommand.FraudBlock(attemptId, "fraud_blocked", DateTimeOffset.UtcNow),
+                    response, ct);
+                var view = await LoadPaymentAsync(
+                    command.PaymentId, merchant, ct, connection, transaction);
+                return new BeginResult.Created(view!);
+            },
+            cancellationToken);
+    }
+
+    public async Task<BeginOperationResult> BeginOperationAsync(
+        MerchantId merchant,
+        PaymentId paymentId,
+        string key,
+        byte[] requestHash,
+        PaymentCommand command,
+        AttemptId? attemptId,
+        RefundId? refundId,
+        CancellationToken cancellationToken)
+    {
+        var existing = await ReadKeyAsync(merchant, key, requestHash, cancellationToken);
+        switch (existing)
+        {
+            case KeyLookup.Finished finished:
+                return new BeginOperationResult.Replay(finished.Response);
+            case KeyLookup.HashMismatch:
+                return new BeginOperationResult.HashMismatch();
+            case KeyLookup.Unresolved:
+            case KeyLookup.InFlight:
+                return new BeginOperationResult.KeyInFlight();
+        }
+
+        try
+        {
+            return await _runner.RunAsync<BeginOperationResult>(
+                merchant,
+                async (connection, transaction, ct) =>
+                {
+                var view = await LoadPaymentAsync(
+                    paymentId, merchant, ct, connection, transaction);
+                if (view is null)
+                {
+                    return new BeginOperationResult.Rejected("not_found");
+                }
+
+                var transition = PaymentRules.Decide(view.ToSnapshot(), command, RuleVersion.V1);
+                if (transition is TransitionResult.Rejected rejected)
+                {
+                    return new BeginOperationResult.Rejected(rejected.ReasonCode, view);
+                }
+
+                if (transition is not TransitionResult.Accepted accepted)
+                {
+                    return new BeginOperationResult.Rejected("invalid_state", view);
+                }
+
+                if (!await InsertKeyAsync(
+                        connection, transaction, merchant, key, requestHash,
+                        paymentId, attemptId, refundId, ct))
+                {
+                    var lookup = await ReadKeyOnConnectionAsync(
+                        connection, transaction, merchant, key, requestHash, ct);
+                    return lookup switch
+                    {
+                        KeyLookup.Finished finished => new BeginOperationResult.Replay(finished.Response),
+                        KeyLookup.HashMismatch => new BeginOperationResult.HashMismatch(),
+                        _ => new BeginOperationResult.KeyInFlight(),
+                    };
+                }
+
+                var applied = await PersistAsync(
+                    connection, transaction, view, command, accepted, null, ct);
+                    return applied is ApplyResult.Applied done
+                        ? new BeginOperationResult.Started(done.Payment)
+                        : new BeginOperationResult.Rejected("already_moved", view);
+                },
+                cancellationToken);
+        }
+        catch (PostgresException exception) when (exception.SqlState == "23505")
+        {
+            return new BeginOperationResult.Rejected("operation_live");
+        }
     }
 
     private static async Task<KeyLookup> ReadKeyOnConnectionAsync(
@@ -858,6 +1266,8 @@ public sealed class PaymentStore
         int attemptCount;
         int eventSeq;
         int version = 0;
+        DateTimeOffset expiresAt = default;
+        DateTimeOffset createdAt = default;
         await using (var command = new NpgsqlCommand(
             Sql.LoadPayment + (forUpdate ? " for update" : string.Empty),
             connection,
@@ -881,6 +1291,8 @@ public sealed class PaymentStore
             attemptCount = reader.GetInt32(8);
             eventSeq = reader.GetInt32(9);
             version = reader.GetInt32(10);
+            expiresAt = reader.GetDateTime(11);
+            createdAt = reader.GetDateTime(12);
         }
 
         AttemptView? attempt = null;
@@ -915,7 +1327,8 @@ public sealed class PaymentStore
                     new Money(reader.GetInt64(2), CurrencyCode.Parse(currency)),
                     null,
                     reader.GetString(3),
-                    reader.GetGuid(4));
+                    reader.GetGuid(4),
+                    reader.GetDateTime(5));
             }
         }
 
@@ -931,7 +1344,9 @@ public sealed class PaymentStore
             eventSeq,
             version,
             attempt,
-            refund);
+            refund,
+            expiresAt,
+            createdAt);
     }
 
     private async Task<MerchantId?> MerchantForAsync(

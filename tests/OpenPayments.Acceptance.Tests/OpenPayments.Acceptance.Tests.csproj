@@ -1,0 +1,21 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <RootNamespace>OpenPayments.Acceptance.Tests</RootNamespace>
+    <AssemblyName>OpenPayments.Acceptance.Tests</AssemblyName>
+    <IsTestProject>true</IsTestProject>
+    <IsPackable>false</IsPackable>
+  </PropertyGroup>
+  <ItemGroup>
+    <PackageReference Include="Microsoft.AspNetCore.Mvc.Testing" />
+    <PackageReference Include="Microsoft.NET.Test.Sdk" />
+    <PackageReference Include="Npgsql" />
+    <PackageReference Include="Testcontainers.PostgreSql" />
+    <PackageReference Include="xunit" />
+    <PackageReference Include="xunit.runner.visualstudio" PrivateAssets="all" />
+  </ItemGroup>
+  <ItemGroup>
+    <ProjectReference Include="../../src/OpenPayments.Api/OpenPayments.Api.csproj" />
+    <ProjectReference Include="../../src/OpenPayments.Psp/OpenPayments.Psp.csproj" />
+    <ProjectReference Include="../../src/OpenPayments.Transitions/OpenPayments.Transitions.csproj" />
+  </ItemGroup>
+</Project>

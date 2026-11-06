@@ -7,7 +7,7 @@ internal static class Sql
     public const string LoadPayment = """
         select id, merchant_id, state, amount_minor, currency, captured_minor,
                refunded_minor, refund_pending_minor, attempt_count, event_seq,
-               version, authorized_until, expires_at
+               version, expires_at, created_at
         from payments
         where id = @payment_id and merchant_id = @merchant_id
         """;
@@ -21,7 +21,7 @@ internal static class Sql
         """;
 
     public const string LoadRefund = """
-        select id, state, amount_minor, psp, psp_account_id
+        select id, state, amount_minor, psp, psp_account_id, created_at
         from refunds
         where payment_id = @payment_id
         order by created_at desc

@@ -1,0 +1,13 @@
+<Project Sdk="Microsoft.NET.Sdk.Web">
+  <PropertyGroup>
+    <RootNamespace>OpenPayments.Api</RootNamespace>
+    <AssemblyName>OpenPayments.Api</AssemblyName>
+  </PropertyGroup>
+  <ItemGroup>
+    <ProjectReference Include="../OpenPayments.Domain/OpenPayments.Domain.csproj" />
+    <ProjectReference Include="../OpenPayments.Psp/OpenPayments.Psp.csproj" />
+    <ProjectReference Include="../OpenPayments.Transitions/OpenPayments.Transitions.csproj" />
+    <PackageReference Include="Microsoft.CodeAnalysis.BannedApiAnalyzers" PrivateAssets="all" />
+    <AdditionalFiles Include="$(MSBuildThisFileDirectory)../../BannedSymbols.txt" />
+  </ItemGroup>
+</Project>
