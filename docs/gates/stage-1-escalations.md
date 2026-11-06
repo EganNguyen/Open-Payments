@@ -250,7 +250,7 @@ S3 stays PARTIAL until these pass. Revisit the statement count after Linux step 
 
 ## E7: benchmark reset leaves the CK1 ledger manifest stale
 
-**State:** Open · Raised 2026-11-06
+**State:** Answered 2026-11-06, builder work open · Raised 2026-11-06
 
 **Task:** 17, validating a preview after a database reset. This is a harness reset issue, not a money defect.
 
@@ -269,5 +269,14 @@ S3 stays PARTIAL until these pass. Revisit the statement count after Linux step 
 **Recommendation:** Option 1. Clear the manifest only between independent runs, never while a run is in progress, and rerun step 2 before continuing the limit search. Do not weaken CK1.
 
 **Impact:** No passing step-2 preview is recorded. Task 17 remains PARTIAL and the limit search stays stopped at the first failed gate. The run is still evidence that the mix fix and the k6 metric-name fix work: sale 40.10%, authorize 10.38%, capture 9.51%, status 15.16%, refund 9.98%, retry 10.05%, other 4.83%, 56 capture substitutions, and no k6 unique-series warning.
+
+**Answer (design session, approved by the owner, 2026-11-06):** Option 1. CK1 and its code stay unchanged.
+
+**Required from the builder:**
+
+1. Add clearing `ck.ledger_rows` to the full benchmark reset in the [benchmark README](../../benchmarks/README.md), next to the effect-log reset.
+2. Clear the manifest only in the same reset that empties the ledger, with the API and mock stopped. Never clear it alone, during a run or to make a check pass, because that would hide real ledger changes.
+3. Before the next run, confirm the manifest and the ledger are both empty.
+4. Rerun step 2 from that state. It passes when the run is valid, every share is within the 2-point limit, and all applicable checks pass, including CK1.
 
 **Escalate again if** clearing the manifest does not make CK1 pass on a rerun, or if any share leaves the 2-point limit.
