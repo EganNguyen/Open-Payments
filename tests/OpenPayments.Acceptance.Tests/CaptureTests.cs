@@ -2,6 +2,7 @@ using System.Net;
 using System.Net.Http.Headers;
 using System.Net.Http.Json;
 using System.Text.Json;
+using Microsoft.Extensions.DependencyInjection;
 using OpenPayments.Api;
 using OpenPayments.Domain;
 using OpenPayments.Psp;
@@ -133,6 +134,24 @@ public sealed class CaptureTests(AcceptanceFixture db)
         {
             db.Psp.SupportsSale = true;
         }
+    }
+
+    [Fact]
+    public async Task Auto_capture_success_counts_one_completed_payment()
+    {
+        await db.ResetAsync();
+        using var client = Authorized("live_key_a");
+        using var response = await PostAsync(client, "/v1/payments", "auto-count", new
+        {
+            amount_minor = 1000,
+            currency = "USD",
+            method = new { type = "card", @ref = "tok_test" },
+            capture_mode = "auto",
+        });
+
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        Assert.Equal("CAPTURED", (await ReadAsync(response)).GetProperty("state").GetString());
+        Assert.Equal(1, db.Factory.Services.GetRequiredService<OpenPayments.Api.PaymentMetrics>().CompletedPayments);
     }
 
     [Fact]

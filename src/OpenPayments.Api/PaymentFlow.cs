@@ -12,7 +12,8 @@ public sealed class PaymentFlow(
     IPspAdapterFactory adapters,
     IFraudCheck fraud,
     InFlightLimiter limiter,
-    CanonicalLog log)
+    CanonicalLog log,
+    PaymentMetrics metrics)
 {
     private static readonly TimeSpan PaymentWindow = TimeSpan.FromMinutes(30);
     private static readonly TimeSpan PspDeadline = TimeSpan.FromMilliseconds(2500);
@@ -235,9 +236,15 @@ public sealed class PaymentFlow(
             attemptId: null,
             refundId: null,
             cancellationToken);
+        if (result is BeginOperationResult.Started started)
+        {
+            var body = JsonSerializer.Serialize(PaymentBody.From(started.Payment), ApiJson.Options);
+            await store.ResolveKeyAsync(merchant, key, new StoredResponse(200, body), cancellationToken);
+            return new ApiAnswer(200, null, RawJson: body);
+        }
+
         return result switch
         {
-            BeginOperationResult.Started started => ApiAnswer.Payment(started.Payment),
             BeginOperationResult.Replay replay => new ApiAnswer(
                 replay.Response.StatusCode, null, RawJson: replay.Response.Body),
             BeginOperationResult.KeyInFlight => ApiAnswer.Problem(409, "A request is in flight.", "request_in_flight", 1),
@@ -633,6 +640,11 @@ public sealed class PaymentFlow(
                 var body = JsonSerializer.Serialize(PaymentBody.From(applied.Payment), ApiJson.Options);
                 await store.ResolveKeyAsync(
                     merchant, key, new StoredResponse(finalStatus, body), CancellationToken.None);
+                if (applied.Payment.State == PaymentState.Captured)
+                {
+                    metrics.CompletedPayment();
+                }
+
                 log.Record(Entry(
                     merchant,
                     applied.Payment.Id,

@@ -28,6 +28,7 @@ builder.Services.AddSingleton(new InFlightLimiter(
     int.TryParse(builder.Configuration["INFLIGHT_CAP"], out var cap) ? cap : 500));
 builder.Services.AddSingleton<IFraudCheck, AllowAllFraudCheck>();
 builder.Services.AddSingleton<CanonicalLog>();
+builder.Services.AddSingleton<PaymentMetrics>();
 builder.Services.AddSingleton<PaymentFlow>();
 builder.Services.AddHttpClient("psp", client =>
 {

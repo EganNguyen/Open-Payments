@@ -98,6 +98,7 @@ public sealed class AcceptanceFixture : IAsyncLifetime
             store.BeforeBegin = null;
             store.BeforeOutboxInsert = null;
             store.BeforePaymentUpdate = null;
+            Factory.Services.GetRequiredService<PaymentMetrics>().Reset();
         }
     }
 
