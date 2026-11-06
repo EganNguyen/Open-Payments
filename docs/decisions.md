@@ -412,6 +412,14 @@ All values are starting points until measured. Other docs state the resulting ru
 - **Why:** The standards require tests that catch N+1 patterns, and a request on one payment with no related rows can't show one. The builder's limits had no design source. Reading the code suggests the apply transaction runs about 12-14 commands, because each ledger line is its own command, so a limit of about 5 would force a rewrite before there is evidence it limits capacity. See [E6](gates/stage-1-escalations.md#e6-s3-query-count-budgets-have-no-design-source).
 - **Consequence:** S3 stays PARTIAL until the test meets these rules. The statement count is a likely bottleneck, to be revisited after Linux step 5. If pool wait or lock waits limit capacity, batching is the first fix to try.
 
+### D49
+
+**Every stage has a frontend task.** Status: `Committed`, owner decision 2026-11-06. The screens added after Stage 2 still need their stage's design gate.
+
+- **Decision:** Stage C stops being a separate stage. Its tasks move into stages 1 and 2, and stages 3, 4 and 5 each get a new frontend task. The split is in the [roadmap](superpowers/plans/2026-11-05-open-payments-implementation-and-benchmark.md#frontend-tasks-by-stage).
+- **Why:** The owner asked for a frontend task in every stage. The split follows what each stage provides: Stage 1's routes are enough for search, payment detail and money actions, and Stage 2 already lists review tooling, which is what the console's resolution tasks build.
+- **Consequence:** Stage 1 can't reach its review gate until Task 18 is done, so its review now also covers the console's first screens. Stage 2's review covers the change to `Decide` in Task C3. Until Stage 2, there's no Needs attention screen and `REVIEW` can't be resolved from the console. F4's reference checkout is new scope, and no document designs it yet.
+
 ## Assumptions and limits
 
 - **Numbers are targets, not measurements.** SLOs, thresholds, pool sizes and the 60% CPU target are replaced by measured values from L1 and O3.

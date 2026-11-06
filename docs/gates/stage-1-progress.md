@@ -1,6 +1,6 @@
 # Stage 1 Build Progress
 
-The build gate's evidence log: one line per task, with the commit, the command that was run, and the result. Tasks 7-16 are complete under [D46](../decisions.md#d46). Task 17 has valid local previews; its Linux steps 4-5 are open.
+The build gate's evidence log: one line per task, with the commit, the command that was run, and the result. Tasks 7-16 are complete under [D46](../decisions.md#d46). Task 17 has valid local previews; its Linux steps 4-5 are open. Task 18 is not started and waits for the [console design gate](stage-c-design.md).
 
 Status: In progress · Last updated: 2026-11-06
 

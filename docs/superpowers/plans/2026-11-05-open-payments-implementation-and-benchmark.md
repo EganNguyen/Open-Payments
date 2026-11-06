@@ -10,14 +10,14 @@
 
 **Spec:** [Implementation and benchmark design](../specs/2026-11-05-implementation-and-benchmark-design.md), which sets scope, the definition of done and the benchmark rules. The system itself is defined in the design docs in `docs/`, chiefly [architecture](../../architecture.md), [payment lifecycle](../../payment-lifecycle.md), [verification](../../verification.md), [scaling playbook](../../scaling-playbook.md), [engineering standards](../../engineering-standards.md), [decisions](../../decisions.md) and [Stripe research](../../stripe-research.md). When this plan and a doc disagree, the doc wins unless Task 1 has changed it.
 
-**Scope of this plan:** Tasks 1-17 are detailed, up to the first recorded ramp steps. The [roadmap](#roadmap-after-task-17) covers everything after that. It is enough to size and order the work, and each stage gets a detailed plan when it starts.
+**Scope of this plan:** Tasks 1-18 are detailed, up to the first recorded ramp steps and the console's first screens. The [roadmap](#roadmap-after-task-17) covers everything after that. It is enough to size and order the work, and each stage gets a detailed plan when it starts.
 
 **Status:** Tasks 1 and 2 are done. The [design review](../specs/2026-11-05-implementation-and-benchmark-design.md#what-the-review-found) and the owner's acceptance of D35, D37, D38 and D39 changed the tasks below. Tasks 1-5 are done. Task 6 is done on the owner's MacBook, as far as the owner chose: results are in the [MacBook summary](../../benchmarks/spike/macbook-2026-11-05/summary.md), [D25](../../decisions.md#d25) and [D26](../../decisions.md#d26) are recorded, and the first migration exists. The Linux run that closes G1 moves to before Stage 4.
 
 | Gate | Tasks | Done by | Exit record |
 |---|---|---|---|
 | Design | 1-6 | Opus | [`docs/gates/stage-1-design.md`](../../gates/stage-1-design.md), signed by the owner |
-| Build | 7-17 | DeepSeek | `docs/gates/stage-1-progress.md`, with no open `docs/gates/stage-1-escalations.md` entry |
+| Build | 7-18 | DeepSeek | `docs/gates/stage-1-progress.md`, with no open `docs/gates/stage-1-escalations.md` entry |
 | Review | The complete change since `6680a7e`, including Tasks 1-6 | Opus, in a fresh session | `docs/gates/stage-1-review.md`, with no open critical or high finding |
 
 ## Owner decisions needed
@@ -803,13 +803,43 @@ Expected: each `result.md` is valid with gates met and is labelled preview. If a
 - [ ] **Step 3: On Linux, run steps 4 and 5.** Record `C`, then compute `N = ceil(T / (C × U))` with `T` of 10,000 and `C` measured at the same mix ([D47](../../decisions.md#d47)). Compare measured commits per payment with the D47 estimate of 2.8, since Phase 1 has no callbacks.
 - [ ] **Step 4: Write `BASELINE.md`:** per-request latency breakdown, the first bottleneck at each step, `C`, and whether the 5,000 target still looks reachable on one cell. State plainly anything that doesn't support the goal.
 - [ ] **Step 5: Commit** the results with message `test: record first ramp baseline`.
-- [ ] **Step 6: Hand over to the review gate.** Confirm every task has a progress line and no escalation is open, then tell the owner the build is ready for an [independent review](../../delivery-workflow.md#review-gate) of everything since `6680a7e`.
+
+### Task 18: Console foundation and money actions
+
+Stage 1's frontend task ([D49](../../decisions.md#d49)). It gives staff sign-in, search, payment detail, capture, void, cancel, refund, the audit log and staff management, using the routes from Tasks 14-16.
+
+**Starts when:** the owner has signed the [console design gate](../../gates/stage-c-design.md). It doesn't need the Linux host.
+
+**Build these console plan tasks, in this order and as written:** [C4](2026-11-06-console.md#task-c4-console-schema-roles-and-indexes), [C6](2026-11-06-console.md#task-c6-service-sign-in-and-roles), [C7](2026-11-06-console.md#task-c7-state-presentation-and-money-formatting), [C8](2026-11-06-console.md#task-c8-read-store-and-payments-search), [C9](2026-11-06-console.md#task-c9-payment-detail), [C10](2026-11-06-console.md#task-c10-audit-writer), [C11](2026-11-06-console.md#task-c11-money-actions), [C13](2026-11-06-console.md#task-c13-audit-log-and-staff-screens-then-the-finish-checks). The console plan's Global Constraints apply, except that progress and escalations go in the Stage 1 records.
+
+**Limits until Stage 2 adds C12:**
+
+- The home page is Payments, and navigation has no Attention item.
+- `REVIEW` shows its label and wording, with no propose or approve controls. `StatePresentation` keeps the spec's full action list, and the page leaves out those two actions.
+- Audit intents with no outcome are marked in the audit log, because their queue doesn't exist yet.
+
+- [ ] **Step 1: Confirm the console design gate is signed.** If it isn't, stop.
+- [ ] **Step 2: Build each console task above,** test first, with one commit and one progress line per task.
+- [ ] **Step 3: Test the Stage 1 limits**
+
+```csharp
+[Fact] public Task Home_opens_payments_until_attention_exists();
+[Fact] public Task Review_payment_shows_wording_with_no_resolution_controls();
+[Fact] public Task Orphan_intent_is_marked_in_the_audit_log();
+```
+
+- [ ] **Step 4: Run the finish checks**
+
+Run: `dotnet build OpenPayments.slnx -warnaserror` and `dotnet test OpenPayments.slnx`.
+Expected: PASS, including the C13 browser tests at 1280px and 390px.
+
+- [ ] **Step 5: Hand over to the review gate.** Confirm every task has a progress line and no escalation is open, then tell the owner the build is ready for an [independent review](../../delivery-workflow.md#review-gate) of everything since `6680a7e`. The review includes the console plan's [review checks](2026-11-06-console.md#for-the-review-gate).
 
 ---
 
 ## Roadmap after Task 17
 
-Each stage goes through all three [gates](../../delivery-workflow.md), and starts only once the previous stage's review gate has closed. Its design gate writes the detailed plan, after reading the latest measurements. Stop and reassess if a gate says the design doesn't hold.
+Each stage goes through all three [gates](../../delivery-workflow.md), and starts only once the previous stage's review gate has closed. Its design gate writes the detailed plan, after reading the latest measurements. Stop and reassess if a gate says the design doesn't hold. Each stage also has a [frontend task](#frontend-tasks-by-stage).
 
 | Stage | Build | Benchmark run | Exit | Needs |
 |---|---|---|---|---|
@@ -818,6 +848,20 @@ Each stage goes through all three [gates](../../delivery-workflow.md), and start
 | **4: Hardening** | Kubernetes, HA with Patroni or managed, separate limits per kind of waiting, reserved capacity, dark-launched limiters, minimal synchronous fraud, edge gateway, client-side access; cells only if D26 requires them | Steps 9-11, **L1, L5, L6**, then L2, L3, L4; **G1, G3, G4, G5, G6** closed on the full system; S2 allocation budgets | Phase 4 list | Rented cluster, D36 |
 | **5: Security and operations** | Full fraud rules and decision records, test mode isolation, audit log, RBAC, runbooks and drills | **L5 again as the sign-off number**; C42 | Phase 5 list | Isolation mechanism; a PCI assessor before live cards |
 | **Sign-off** | [Final report](../../scaling-playbook.md#final-report) | All of the above, with CK1-CK10 | All 108 and 25 rows ticked, each with a recorded run | Real PSP results |
+
+### Frontend tasks by stage
+
+Set by [D49](../../decisions.md#d49). A stage isn't ready for its review gate until its frontend task is done.
+
+| Stage | Task | Builds | Design state |
+|---|---|---|---|
+| 1 | [Task 18](#task-18-console-foundation-and-money-actions) | Console sign-in, roles, Payments, Payment detail, money actions, audit log and Staff: C4, C6-C11 and C13 | Designed. The [gate](../../gates/stage-c-design.md) isn't signed |
+| 2 | F2: review and recovery screens | Needs attention and `REVIEW` resolution: C3, C5 and C12, with C3 before the escalation job. Adds PSP events and the last inquiry to the timeline | C3, C5 and C12 are designed. The timeline needs a link from `psp_events` to a payment, and a stored inquiry result, from Stage 2's design gate |
+| 3 | F3: webhook visibility | Webhook deliveries and their status on the payment timeline, read-only | Named in the console spec's [timeline limits](../specs/2026-11-05-console-design.md#timeline-limits). Details come from Stage 3's design gate. Webhook management stays out of scope |
+| 4 | F4: reference checkout | A small page that takes a payment end to end through client-side access: limited client secret, PSP-hosted card fields and the final status. Card data never reaches our systems ([D39](../../decisions.md#d39)) | Not designed, and new scope. Stage 4's design gate must design it with client-side access |
+| 5 | F5: test mode and fraud in the console | A clear test mode marker on every console page, fraud decisions on the payment timeline, and a final accessibility and iPhone pass across the whole console | Not designed. Depends on the test mode isolation mechanism and the fraud decision records |
+
+F2-F5 follow the console plan's [Global Constraints](2026-11-06-console.md#global-constraints) where they change the console, and each stage's design gate writes their files, signatures and tests. Any screen that can move money goes through the API or `OpenPayments.Transitions`, never a new path.
 
 **Benchmark checkpoints in order:**
 

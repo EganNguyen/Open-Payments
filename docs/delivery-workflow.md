@@ -18,12 +18,13 @@ Status: Draft · Last updated: 2026-11-05
 
 | Stage | Contains | Plan |
 |---|---|---|
-| 1 | Spike, test tools, payment core, first ramp steps | [Tasks 1-17](superpowers/plans/2026-11-05-open-payments-implementation-and-benchmark.md) |
-| 2 | PSP and recovery | Written at its design gate |
-| 3 | Async workers | Written at its design gate |
-| 4 | Hardening, and the target load tests | Written at its design gate |
-| 5 | Security, operations, and the sign-off number | Written at its design gate |
-| C | Staff console | [Tasks C1-C13](superpowers/plans/2026-11-06-console.md). Its place in the order is an owner decision in the [gate record](gates/stage-c-design.md) |
+| 1 | Spike, test tools, payment core, first ramp steps, console's first screens | [Tasks 1-18](superpowers/plans/2026-11-05-open-payments-implementation-and-benchmark.md) |
+| 2 | PSP and recovery, console review screens | Written at its design gate, with [Tasks C3, C5 and C12](superpowers/plans/2026-11-06-console.md) |
+| 3 | Async workers, webhook visibility | Written at its design gate |
+| 4 | Hardening, the target load tests, reference checkout | Written at its design gate |
+| 5 | Security, operations, the sign-off number, test mode and fraud in the console | Written at its design gate |
+
+Every stage has a [frontend task](superpowers/plans/2026-11-05-open-payments-implementation-and-benchmark.md#frontend-tasks-by-stage) ([D49](decisions.md#d49)). The console's design approval is kept in its own [gate record](gates/stage-c-design.md).
 
 **A stage can't start until the previous stage's review gate has closed.** Work goes straight to `main`, so review can't block a merge. It blocks the next stage instead, and nothing carries real money until every stage has closed.
 

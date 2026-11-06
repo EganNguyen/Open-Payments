@@ -125,9 +125,18 @@ See [Codebase structure](architecture/codebase-structure.md) for the projects, d
 
 See [Running a benchmark](#running-a-benchmark). The output is `benchmarks/BASELINE.md`, which states plainly whether the target still looks reachable on one cell.
 
-### After Task 17
+### E: Build the console's first screens (Task 18)
 
-Write a new detailed plan at the start of each [roadmap stage](superpowers/plans/2026-11-05-open-payments-implementation-and-benchmark.md#roadmap-after-task-17), and read the latest measurements first. Each stage repeats the same loop: build, pass its gate, run its benchmark, and record the bottleneck.
+**Why in Stage 1:** the API routes for search, capture, void, cancel and refund already exist, so staff can use them through a real interface ([D49](decisions.md#d49)).
+
+- **Read first:** [Console design](superpowers/specs/2026-11-05-console-design.md) and the [console plan](superpowers/plans/2026-11-06-console.md).
+- **Do:** build C4, C6-C11 and C13, as listed in [Task 18](superpowers/plans/2026-11-05-open-payments-implementation-and-benchmark.md#task-18-console-foundation-and-money-actions).
+- **Done when:** the whole test suite passes, including the browser tests, and each task has a progress line.
+- **Watch for:** the console writing money state. It moves money only through the API, and its database roles can't write money tables.
+
+### After Stage 1
+
+Write a new detailed plan at the start of each [roadmap stage](superpowers/plans/2026-11-05-open-payments-implementation-and-benchmark.md#roadmap-after-task-17), and read the latest measurements first. Each stage repeats the same loop: build, including its [frontend task](superpowers/plans/2026-11-05-open-payments-implementation-and-benchmark.md#frontend-tasks-by-stage), pass its gate, run its benchmark, and record the bottleneck.
 
 ## Core patterns
 

@@ -192,4 +192,4 @@ These are starting values, not measurements, and can be changed by configuration
 
 ## Delivery
 
-The [implementation plan](../plans/2026-11-06-console.md) has the tasks, and a clickable prototype follows in its Task C2. Under the [delivery workflow](../../delivery-workflow.md), the build goes to DeepSeek and an independent review goes to a fresh Opus session. The build doesn't start until the owner has approved the design record and the measurements above have results.
+The [implementation plan](../plans/2026-11-06-console.md) has the tasks, and a clickable prototype follows in its Task C2. [D49](../../decisions.md#d49) builds this spec across two stages: Stage 1 delivers everything except Needs attention and `REVIEW` resolution, which Stage 2 adds. Under the [delivery workflow](../../delivery-workflow.md), the build goes to DeepSeek and an independent review goes to a fresh Opus session. The build doesn't start until the owner has approved the design record and the measurements above have results.

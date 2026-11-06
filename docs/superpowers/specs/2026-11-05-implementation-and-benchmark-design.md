@@ -144,7 +144,7 @@ These remain open. Each has a recommendation.
 
 ## Delivery
 
-Each stage passes three [gates](../../delivery-workflow.md): design by Opus, build by DeepSeek, and independent review by Opus in a fresh session. Stage 1's design gate holds orders 1-2 below, and is [recorded here](../../gates/stage-1-design.md). Its build gate holds orders 3-5, followed by its review gate. Orders 6-9 are stages 2-5, each with all three gates.
+Each stage passes three [gates](../../delivery-workflow.md): design by Opus, build by DeepSeek, and independent review by Opus in a fresh session. Stage 1's design gate holds orders 1-2 below, and is [recorded here](../../gates/stage-1-design.md). Its build gate holds orders 3-5, followed by its review gate. Orders 6-9 are stages 2-5, each with all three gates. Every stage also has a [frontend task](../plans/2026-11-05-open-payments-implementation-and-benchmark.md#frontend-tasks-by-stage) ([D49](../../decisions.md#d49)), and Stage 1's is Task 18.
 
 ## Build order
 
