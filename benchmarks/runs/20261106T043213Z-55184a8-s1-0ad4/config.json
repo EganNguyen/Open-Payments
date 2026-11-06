@@ -1,0 +1,33 @@
+{
+  "run_id": "20261106T043213Z-55184a8-s1-0ad4",
+  "commit": "55184a8",
+  "step": 1,
+  "env": "local",
+  "stage": "phase1",
+  "psp_latency_ms": 200,
+  "rate": 10,
+  "duration_seconds": 300,
+  "started_at": "2026-11-06T04:32:13Z",
+  "generator_cpu_pct": 0.03,
+  "k6_exit": 0,
+  "base_url": "http://127.0.0.1:8080",
+  "target_override": "api",
+  "mock_config": {
+    "latency_ms": 200,
+    "jitter_ms": 0,
+    "decline_rate": 0.03,
+    "error_rate": 0,
+    "callback_rate": 0
+  },
+  "auto_capture_share": 0.5,
+  "mock_added_p99_ms": 0.0,
+  "git_dirty": false,
+  "config_recorded": true,
+  "api_instances": "local",
+  "db_instances": "local",
+  "mock_instances": "1",
+  "bottleneck": "not recorded",
+  "action": "not recorded",
+  "evidence": "not recorded",
+  "next_step": "not recorded"
+}

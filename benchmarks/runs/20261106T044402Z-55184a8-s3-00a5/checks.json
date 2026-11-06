@@ -1,0 +1,102 @@
+[
+  {
+    "check": "CK1",
+    "applicable": true,
+    "passed": true,
+    "rows_examined": 63358,
+    "violations": 0,
+    "sample_ids": [],
+    "money_impact_minor": 0,
+    "reason": null
+  },
+  {
+    "check": "CK2",
+    "applicable": true,
+    "passed": true,
+    "rows_examined": 27464,
+    "violations": 0,
+    "sample_ids": [],
+    "money_impact_minor": 0,
+    "reason": null
+  },
+  {
+    "check": "CK3",
+    "applicable": true,
+    "passed": true,
+    "rows_examined": 24270,
+    "violations": 0,
+    "sample_ids": [],
+    "money_impact_minor": 0,
+    "reason": null
+  },
+  {
+    "check": "CK4",
+    "applicable": true,
+    "passed": true,
+    "rows_examined": 52674,
+    "violations": 0,
+    "sample_ids": [],
+    "money_impact_minor": 0,
+    "reason": null
+  },
+  {
+    "check": "CK5",
+    "applicable": true,
+    "passed": true,
+    "rows_examined": 52625,
+    "violations": 0,
+    "sample_ids": [],
+    "money_impact_minor": 0,
+    "reason": null
+  },
+  {
+    "check": "CK6",
+    "applicable": false,
+    "passed": false,
+    "rows_examined": 0,
+    "violations": 0,
+    "sample_ids": [],
+    "money_impact_minor": 0,
+    "reason": "CK6 needs --prom"
+  },
+  {
+    "check": "CK7",
+    "applicable": false,
+    "passed": false,
+    "rows_examined": 0,
+    "violations": 0,
+    "sample_ids": [],
+    "money_impact_minor": 0,
+    "reason": "CK7 starts after Phase 2"
+  },
+  {
+    "check": "CK8",
+    "applicable": false,
+    "passed": false,
+    "rows_examined": 0,
+    "violations": 0,
+    "sample_ids": [],
+    "money_impact_minor": 0,
+    "reason": "CK8 starts after Phase 2"
+  },
+  {
+    "check": "CK9",
+    "applicable": true,
+    "passed": true,
+    "rows_examined": 24270,
+    "violations": 0,
+    "sample_ids": [],
+    "money_impact_minor": 0,
+    "reason": null
+  },
+  {
+    "check": "CK10",
+    "applicable": true,
+    "passed": true,
+    "rows_examined": 24270,
+    "violations": 0,
+    "sample_ids": [],
+    "money_impact_minor": 0,
+    "reason": null
+  }
+]
