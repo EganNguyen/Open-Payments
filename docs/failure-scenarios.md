@@ -176,8 +176,8 @@ Short, ordered steps. Each runbook is rehearsed in a [drill](#drills) before it 
 **R4. Many payments or operations stuck unresolved (FS-35)**
 1. Check whether the PSP inquiry works (a manual call by `attempt_id`).
 2. Check the reconciler is running and its rate is not capped too low.
-3. Past the threshold, move the remainder to the manual review queue.
-4. For each, record the PSP's answer and post any missing ledger entries.
+3. Past the threshold, the remainder moves to `REVIEW` ([D45](decisions.md#d45)).
+4. For each, two people record the PSP's answer and resolve it in the console, which posts any missing ledger entries ([D41](decisions.md#d41)).
 
 **R5. Ledger imbalance (FS-34): stop-the-line**
 1. Pause refunds and payouts if the imbalance is growing; keep accepting payments only if the bad path is isolated.
@@ -214,7 +214,6 @@ Rules for every drill: define the expected result first, run CK1-CK6 afterwards,
 
 - **Fallback policy for the fraud service** (allow, hold or reject, by risk tier) needs a business owner.
 - **A warning on repeated order references (E5)** is optional and not designed yet.
-- **Manual review tooling** for `REVIEW` and FS-35 needs a simple internal screen; not designed.
 - **Region loss (FS-41)** is out of scope for version 1.
 - **The order of protection** is `Proposed` until the owner confirms it.
 - **All times and thresholds** are starting values until measured.

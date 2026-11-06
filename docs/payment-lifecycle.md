@@ -113,7 +113,7 @@ Each row is one allowed transition. Anything not listed is forbidden.
 | `PSP_PENDING` | `AWAITING_METHOD` | PSP declined, or proof it can't succeed ([D27](decisions.md#d27)); attempt `FAILED` | PSP response, callback or reconciler | None | `Committed` |
 | `PSP_PENDING` | `ACTION_REQUIRED` | PSP requires customer action | PSP response or callback | None | `Committed` |
 | `PSP_PENDING` | `UNKNOWN` | Timeout, or reconciler finds a stale attempt | Internal | None | `Committed` |
-| `PSP_PENDING` or `UNKNOWN` | `REVIEW` | Amount or currency mismatch | PSP response, callback or reconciler | None for the disputed amount | `Committed` |
+| `PSP_PENDING` or `UNKNOWN` | `REVIEW` | Amount or currency mismatch, or `UNKNOWN` past its age limit ([D45](decisions.md#d45)) | PSP response, callback, reconciler or timer job | None for the disputed amount | `Committed` |
 | `ACTION_REQUIRED` | `PSP_PENDING` | Customer finished; the same attempt continues | Customer return or callback | None | `Committed` |
 | `ACTION_REQUIRED` | `AUTHORIZED` | PSP reports approved | Callback or reconciler | Authorization hold | `Committed` |
 | `ACTION_REQUIRED` | `AWAITING_METHOD` | Action failed; attempt `FAILED` | Callback or reconciler | None | `Committed` |
@@ -123,8 +123,8 @@ Each row is one allowed transition. Anything not listed is forbidden.
 | `UNKNOWN` | `ACTION_REQUIRED` | Inquiry says the customer must act | Reconciler | None | `Committed` |
 | `AWAITING_METHOD` | `REVIEW` | Late approval on a `FAILED` attempt | Callback or reconciler | None until resolved | `Committed` |
 | `AUTHORIZED` | `CAPTURED` | PSP confirms capture | PSP response, callback or reconciler | Release the hold; debit `psp_receivable`, credit `merchant_payable` | `Committed` |
-| `AUTHORIZED` | `REVIEW` | Capture amount mismatch | PSP response, callback or reconciler | None for the disputed amount | `Committed` |
-| `REVIEW` | `AUTHORIZED`, `AWAITING_METHOD` or `CAPTURED` | Person compares the PSP record | Manual | Matching entries, or a reversing entry | `Committed` |
+| `AUTHORIZED` | `REVIEW` | Capture amount mismatch, or a capture attempt past its age limit ([D45](decisions.md#d45)) | PSP response, callback, reconciler or timer job | None for the disputed amount | `Committed` |
+| `REVIEW` | `AUTHORIZED`, `AWAITING_METHOD` or `CAPTURED` | Two people compare the PSP record ([D41](decisions.md#d41)) | Manual | Matching entries, or a reversing entry | `Committed` |
 | `CAPTURED` | `PARTIALLY_REFUNDED` | PSP confirms a partial refund | PSP response, callback or reconciler | Debit `refund_reserved`, credit `psp_refund_payable` | `Committed` |
 | `CAPTURED` | `REFUNDED` | PSP confirms a full refund | PSP response, callback or reconciler | Debit `refund_reserved`, credit `psp_refund_payable` | `Committed` |
 | `PARTIALLY_REFUNDED` | `REFUNDED` | PSP confirms the remainder | PSP response, callback or reconciler | Debit `refund_reserved`, credit `psp_refund_payable` | `Committed` |
@@ -277,7 +277,7 @@ Timer jobs use the same conditional update, so a job and a manual capture cannot
 | Action window (starting value 15 minutes) | `ACTION_REQUIRED` | Move to `UNKNOWN`, then inquire. Found through `payment_attempts_action_window` | `Committed` |
 | Payment window (starting value 24 hours) | `AWAITING_METHOD` | Move to `CANCELED`. Found through `payments_awaiting` | `Committed` |
 | Idempotency key expiry | Keys resolved at least 24 hours ago | Delete in batches; never a key with no `resolved_at` | `Committed` |
-| Unknown age limit | `UNKNOWN` | Alert and escalate to manual review | `Committed` |
+| Unknown age limit | `UNKNOWN` | Alert and move to `REVIEW` ([D45](decisions.md#d45)) | `Committed` |
 | Unresolved operation | Capture attempts and refunds, through `payment_attempts_unresolved` and `refunds_unresolved` | Inquire; alert and escalate past the age limit | `Committed` |
 | Authorization window (per PSP and method, set conservatively, for example 7 days) | `AUTHORIZED` with no live capture or void, found through `payments_authorized` | Move to `EXPIRED` and release the hold | `Committed` |
 | Dispute response deadline | `DISPUTED` | Alert so evidence is submitted in time | `Proposed` |

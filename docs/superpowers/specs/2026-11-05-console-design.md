@@ -2,7 +2,7 @@
 
 A responsive web console that lets the business running Open Payments find any payment, understand what happened, and act on it safely.
 
-Status: Draft, awaiting owner review · Last updated: 2026-11-05
+Status: Approved by the owner, with [corrections from planning](#corrections-from-planning) to confirm · Last updated: 2026-11-06
 
 The system is defined in the [design docs](../../../README.md#documents), and this spec doesn't restate them. It answers the open item in [Assumptions and limits](../../decisions.md#assumptions-and-limits) that manual review tooling needs a simple internal screen, and it follows the dashboard rule in [engineering standards](../../engineering-standards.md): MFA, RBAC, step-up authentication and an append-only audit log.
 
@@ -24,12 +24,16 @@ One deployment serves one self-hosting business and its staff. The people using 
 |---|---|---|
 | Needs attention (home) | Queues: `REVIEW`, unresolved payments and refunds past their age limit, resolutions waiting for approval, authorizations about to expire | Full |
 | Payments | Look up by ID; list by date range, filtered by state and amount | Full, rows become cards |
-| Payment detail | State and money position in plain words; timeline of attempts, PSP events and webhooks | Full |
+| Payment detail | State and money position in plain words; [timeline](#timeline-limits) of attempts, refunds, ledger entries and staff actions | Full |
 | Actions | Refund, capture, void, cancel; propose and approve `REVIEW` resolutions | Full |
 | Audit log | Who did what, when and why | Readable |
 | Staff | People and roles | Desktop only |
 
 **Out of scope for version 1:** revenue analytics, reconciliation and settlement views, webhook and API key management, second approval for large refunds, a native iPhone app, creating payments, and starting new attempts. [Only the merchant or customer starts a new attempt](../../payment-lifecycle.md#attempts), so staff never can. `Proposed` states and partial capture are also out, and the console shows an unrecognized state as its raw name rather than failing.
+
+### Timeline limits
+
+`psp_events` has no link to a payment, webhook deliveries arrive with Stage 3, and no table stores inquiry results yet. Attempts also record only when they were created, not each change of state. So the version 1 timeline shows when attempts and refunds began, ledger entries and staff actions, with each attempt's current state and PSP reference. PSP events, webhook deliveries and the last inquiry join the timeline when those stages provide the data.
 
 ## Navigation
 
@@ -83,9 +87,9 @@ An unresolved refund shows as "In progress, amount reserved", never as refunded.
 3. A different Approver approves or rejects the proposal. The server refuses self-approval.
 4. On approval, the payment transition module applies the outcome with its ledger effect, using a reversing entry where one is needed, in one transaction with the outbox event.
 
-A late-approved sale can't be voided, so a person reverses it at the PSP. The console records the evidence and never claims to have moved that money. This is a [new decision to record](#new-decisions-needed).
+A late-approved sale can't be voided, so a person reverses it at the PSP. The console records the evidence and never claims to have moved that money. This is recorded as [D44](../../decisions.md#d44).
 
-Payments stuck past the age limit ([FS-35](../../failure-scenarios.md)) appear in the same queue, where staff can see the age, the last inquiry and the PSP's answer. **Staff can't change their state in version 1 until the decision below is made.** [FS-35](../../failure-scenarios.md) and runbook R4 say a person resolves them, but the [transitions table](../../payment-lifecycle.md#transitions) has no manual move out of `UNKNOWN`, and anything not listed is forbidden. The proposed answer is to move such a payment from `UNKNOWN` to `REVIEW` on escalation, so that it follows the same two-person flow.
+Payments, capture attempts and refunds stuck past the age limit ([FS-35](../../failure-scenarios.md)) appear in the queue with their age, and can't be resolved until they have moved to `REVIEW` under [D45](../../decisions.md#d45). They then follow the same two-person flow. A stuck void stays visible and unresolved.
 
 ## Architecture
 
@@ -107,7 +111,7 @@ The payment tables must sustain 5,000 payments per second, and they are hash-par
 - **By ID:** a direct lookup.
 - **Lists:** the existing `payments_merchant_created` index, with a required date range of 7 days by default and 31 at most. State and amount filter within that range.
 - **Queues:** the existing `payments_unresolved`, `payments_authorized`, `payment_attempts_unresolved` and `refunds_unresolved` indexes.
-- **One new index:** a small partial index on `payments` where `state = 'REVIEW'`. `REVIEW` is rare, so its cost should be near zero, but it's [measured before it's accepted](#measurements).
+- **Four new indexes:** small partial indexes on `payments`, `payment_attempts` and `refunds` where `state = 'REVIEW'`, because a late approval or a refund can be in `REVIEW` while its payment isn't, and `refunds (payment_id)` for the payment detail page. `REVIEW` is rare, so the partial ones should cost almost nothing, but all four are [measured before they're accepted](#measurements).
 
 Searching all history would need a separate search store, which is deliberately left out.
 
@@ -166,19 +170,21 @@ These are design dependencies, and they need results before the build relies on 
 
 | Item | Pass condition |
 |---|---|
-| Partial index on `REVIEW` | No measurable change in sustained throughput or p99 in the [benchmark](../../verification.md) |
+| The four new indexes | No measurable change in sustained throughput or p99 in the [benchmark](../../verification.md) |
 | Console searches on the replica during a payment benchmark | Payment p99 target still met; replica lag stays below the banner's threshold |
 
-## New decisions needed
+## Decisions
 
-Record these in [Decisions](../../decisions.md) once this spec is approved, continuing from D39:
+These are recorded as [D40-D45](../../decisions.md#d40).
 
-1. **The console is a separate deployable** that reads from the replica and moves money only through the API or the internal resolution endpoint.
-2. **`REVIEW` resolution requires two people** and uses a new internal endpoint. This closes "Review tooling stays `Open`" in [D12](../../decisions.md#d12).
-3. **Audit uses intent and outcome rows** for actions that go through the API.
-4. **Search is limited to a 31-day range** in version 1.
-5. **Reversals made at the PSP are recorded with evidence,** because the console can't make them itself. This defines what the ledger records for a late-approved sale that a person reverses.
-6. **Add `UNKNOWN` to `REVIEW` on escalation past the age limit** to the lifecycle. Unresolved capture attempts and refunds need the same treatment on their own rows. This needs the owner's decision, because it changes the state machine.
+## Corrections from planning
+
+Reading the code while planning changed the following, which the owner should confirm in the [gate record](../../gates/stage-c-design.md):
+
+1. **The timeline is smaller.** See [Timeline limits](#timeline-limits).
+2. **There are four new indexes, not one.** See [Search limits](#search-limits).
+3. **Refund and attempt resolution need new domain rules.** Refund confirm and release reject a refund in `REVIEW`, and `Decide` leaves a resolved attempt in `REVIEW`.
+4. **A stuck void isn't escalated in version 1,** because no transition moves a payment from `REVIEW` to `VOIDED`.
 
 ## Starting values to confirm
 
@@ -186,4 +192,4 @@ These are starting values, not measurements, and can be changed by configuration
 
 ## Delivery
 
-After approval, the [implementation plan](../plans) and a clickable prototype follow. Under the [delivery workflow](../../delivery-workflow.md), the build goes to DeepSeek and an independent review goes to a fresh Opus session. The build doesn't start until the owner has approved the design record and the measurements above have results.
+The [implementation plan](../plans/2026-11-06-console.md) has the tasks, and a clickable prototype follows in its Task C2. Under the [delivery workflow](../../delivery-workflow.md), the build goes to DeepSeek and an independent review goes to a fresh Opus session. The build doesn't start until the owner has approved the design record and the measurements above have results.

@@ -340,6 +340,54 @@ All values are starting points until measured. Other docs state the resulting ru
 - **Why:** [Hosted fields can keep merchants in the lightest assessment](https://www.securitymetrics.com/blog/ultimate-cheat-sheet-making-online-pci-compliance-work-you), while handling card data brings the full one. The vault was also the one shared dependency on the payment path. These are vendor sources only, so **a PCI assessor must confirm the scope before any live card traffic.** This doesn't block building.
 - **Consequence:** PSP tokens don't move between PSPs, so failover (C13) only works for methods the second PSP can charge, and needs the merchant to hold a second account. Phase 4 drops the vault. A client-secret flow still needs designing, because the docs let customers start attempts while the API has only secret merchant keys.
 
+### D40
+
+**The console is a separate deployable that can't write money tables.** Status: `Committed`, owner decision 2026-11-05.
+
+- **Decision:** `OpenPayments.Console` reads from a replica and moves money only through the API or the internal resolution route. It doesn't reference `OpenPayments.Transitions`.
+- **Why:** Staff search must not slow live payments, and a second path that moves money would break [D2](#d2).
+- **Consequence:** One more deployable. Staff can briefly see lag on the replica, so pages show a "data as of" time and read the primary after an action.
+
+### D41
+
+**`REVIEW` resolution requires two people and uses an internal route.** Status: `Committed`, owner decision 2026-11-05. Closes the open review tooling in [D12](#d12).
+
+- **Decision:** One person records the PSP's answer, evidence and a proposed outcome. A different Approver approves it. `OpenPayments.Transitions` applies it in one transaction with its ledger, outbox and audit rows, and the database refuses self-approval.
+- **Why:** The resolution decides where money ends up, and the state machine has no other check on it.
+- **Consequence:** A business needs at least two money-role staff. Resolving also needs new domain commands, because refund confirm and release reject a refund in `REVIEW`, and the attempt must leave `REVIEW` with its payment.
+
+### D42
+
+**Audit uses intent and outcome rows for actions through the API.** Status: `Committed`, owner decision 2026-11-05.
+
+- **Decision:** The console writes an intent, with its idempotency key, before calling the API, and an outcome afterwards. An intent with no outcome after a limit is flagged and checked by reading the payment.
+- **Why:** The call crosses a service, so one transaction can't cover both. This mirrors writing the attempt before calling the PSP.
+- **Consequence:** An intent can exist for an action that never ran, so an intent alone doesn't prove the action happened.
+
+### D43
+
+**Search is limited to a 31-day range in version 1.** Status: `Committed`, owner decision 2026-11-05.
+
+- **Decision:** Lists use the existing `payments_merchant_created` index with a required date range. ID lookup has no limit. There are no broad search indexes and no search store.
+- **Why:** Physical replicas share the primary's indexes, so a search index on a replica would still cost every payment write.
+- **Consequence:** Finding an older payment needs its ID. New partial indexes for the review queues and `refunds_payment` are `MEASURE-FIRST`.
+
+### D44
+
+**A reversal made at the PSP is recorded, not performed.** Status: `Committed`, owner decision 2026-11-05.
+
+- **Decision:** A late-approved sale can't be voided, so a person reverses it at the PSP. Through the two-person flow, the attempt then becomes `FAILED` with `late_approval_reversed`, with evidence and no ledger entry, because none was posted for it.
+- **Why:** The console must never claim to have moved money it didn't move, and the charge and its reversal net to zero.
+- **Consequence:** Settlement files can still list both the charge and the reversal, with no attempt ledger to match. How these lines are matched is decided when settlement reconciliation is designed.
+
+### D45
+
+**Escalation past the age limit moves unresolved operations to `REVIEW`.** Status: `Committed`, owner decision 2026-11-05.
+
+- **Decision:** An authorize or sale attempt in `UNKNOWN` past the age limit moves with its payment to `REVIEW`. A capture attempt moves with its `AUTHORIZED` payment to `REVIEW`. A refund moves to `REVIEW` on its own row, and its payment doesn't change. A void attempt isn't escalated in version 1.
+- **Why:** The failure docs have a person resolve these, but the transitions had no manual way out of `UNKNOWN`. `REVIEW` already has one, with two-person approval.
+- **Consequence:** While in `REVIEW`, a PSP answer doesn't move the payment, so a person sees and decides it. A resolved attempt that later lands as approved takes the late-approval path. The timer job is built in Stage 2, and a stuck void stays visible and unresolved.
+
 ## Assumptions and limits
 
 - **Numbers are targets, not measurements.** SLOs, thresholds, pool sizes and the 60% CPU target are replaced by measured values from L1 and O3.
@@ -357,7 +405,6 @@ All values are starting points until measured. Other docs state the resulting ru
 
 - **Open-source parts.** Hyperswitch, Formance Ledger and TigerBeetle are candidates, none written in C#. Adopting one could change D11.
 - **Data model gaps.** Inbox, balance snapshot, delivery log and discrepancy tables are named but not yet specified.
-- **Manual review tooling** for `REVIEW` and stuck payments needs a simple internal screen.
 - **Fraud fallback policy** needs a business owner.
 - **Shed order** in [Rules for every failure](failure-scenarios.md#rules-for-every-failure) needs owner confirmation.
 - **Repeated order references.** An optional warning for edge case E5 is not designed.
