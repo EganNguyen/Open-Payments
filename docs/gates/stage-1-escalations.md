@@ -52,7 +52,7 @@ The probe found both halves of the stop condition:
 
 ## E2: Task 16 late declined callback has no receiver
 
-**State:** Open · Raised 2026-11-06
+**State:** Answered 2026-11-06 ([D46](../decisions.md#d46)) · Raised 2026-11-06
 
 **Task:** 16, refunds and the Phase 1 exit gate. C31a lists E9: a late `declined` callback on a captured payment must be ignored, logged and alerted.
 
@@ -68,9 +68,18 @@ The probe found both halves of the stop condition:
 
 **Impact:** C31a remains incomplete. No callback route or fake test was added.
 
+**Answer (design session, approved by the owner, 2026-11-06):** Option 1, recorded as a scope correction rather than a Phase 1 waiver. E9 moves from C31a to C31b ([D46](../decisions.md#d46)). A late callback can't happen in Phase 1 because no callback route exists. Stage 2 builds the receiver, and C9 already covers its callbacks. Do not add a route or a domain-only test in Stage 1.
+
+C31b's E9 test must send a signed late `declined` callback for a captured payment through the real route, and assert:
+
+- Payment state and ledger entries are unchanged.
+- The event is stored in `psp_events`.
+- The event is logged and the ignored-event counter rises.
+- The FS-05 contradiction alert fires.
+
 ## E3: Task 16 idempotency-key retention has no implementation
 
-**State:** Open · Raised 2026-11-06
+**State:** Answered 2026-11-06 ([D46](../decisions.md#d46)) · Raised 2026-11-06
 
 **Task:** 16, refunds and the Phase 1 exit gate. E4 says a key reused after the retention period is treated as new, with at least 24 hours after resolution and never while unresolved ([D19](../decisions.md#d19)).
 
@@ -85,3 +94,16 @@ The probe found both halves of the stop condition:
 **Recommendation:** Option 1 unless the owner wants the expiry job in Stage 1. Do not mark E4 covered without an executable mechanism.
 
 **Impact:** C31a E4 remains open. No retention code or test was added.
+
+**Answer (design session, approved by the owner, 2026-11-06):** Option 1. E4 moves from C31a to C31b ([D46](../decisions.md#d46)), next to E24 and C41, which already expect the key expiry job in Phase 2. Do not add expiry in Stage 1, and Option 3, lazy expiry on read, is rejected. [D19](../decisions.md#d19) is unchanged: retention is at least 24 hours after resolution, and a key is never expired while its operation is unresolved. Until the job exists, keys are simply kept, which is the safe direction: a late retry replays its answer and can't charge twice.
+
+Stage 2's design gate must:
+
+- Measure V7 (batched delete under load) and record the expiry method before the job is built.
+- Check that every path that resolves an operation sets `resolved_at`, including `UNKNOWN` resolved by the reconciler.
+
+C31b's E4 test must run the real job and assert:
+
+- A resolved key past retention is removed, and reusing it creates a new operation.
+- A resolved key just inside retention still replays with no PSP call.
+- A key with `resolved_at is null` is kept, whatever its age.

@@ -2,7 +2,7 @@
 
 The only home for test IDs, the production checklists, progress counts and the build phases that tie them together.
 
-Status: Draft · Last updated: 2026-11-05
+Status: Draft · Last updated: 2026-11-06
 
 ## How verification works
 
@@ -89,7 +89,7 @@ CK7-CK10 are separate code from the payment-transition module ([D23](decisions.m
 | C28 | Full outage, then restart of all services | Staged ramp and capped backlog drain; no second outage; CK pass before recovery is declared |
 | C29 | Replica lag of 30 s | Reads that must be fresh go to the primary; no stale payment status after create |
 | C30 | One merchant sends 50% of all traffic | Per-merchant limits protect others; other merchants keep their SLO |
-| C31 | Edge-case suite for payment handling ([E1-E29](failure-scenarios.md#edge-cases)), split by phase: C31a (E1-E9, E11-E13, E16-E18, E21, E25-E29), C31b (E10, E19, E20, E22-E24), C31c (E14, E15) | Each case returns its defined result; no state or ledger corruption |
+| C31 | Edge-case suite for payment handling ([E1-E29](failure-scenarios.md#edge-cases)), split by phase ([D46](decisions.md#d46)): C31a (E1-E3, E5-E8, E11-E13, E16-E18, E21, E25-E29), C31b (E4, E9, E10, E19, E20, E22-E24), C31c (E14, E15) | Each case returns its defined result; no state or ledger corruption |
 | C32 | PSP returns an amount or currency that differs from ours | Payment moves to `REVIEW`; no ledger entry for the disputed amount; alert fires |
 | C33 | Cell router or its config store unavailable (only if cells are adopted) | Routers keep the last mapping; mapping changes frozen; traffic keeps flowing |
 | C34 | Capture, refund and reconciler race on one payment, with lock order forced to collide | `40P01` is raised and counted in `pg_stat_database.deadlocks`; retried at most twice; `55P03` returns 503; exactly one effect per operation; CK1 and CK3 pass |

@@ -2,7 +2,7 @@
 
 The decisions that shape Open Payments, the assumptions behind them, and the questions still open.
 
-Status: Draft · Last updated: 2026-11-05
+Status: Draft · Last updated: 2026-11-06
 
 All values are starting points until measured. Other docs state the resulting rule; this doc says why.
 
@@ -387,6 +387,14 @@ All values are starting points until measured. Other docs state the resulting ru
 - **Decision:** An authorize or sale attempt in `UNKNOWN` past the age limit moves with its payment to `REVIEW`. A capture attempt moves with its `AUTHORIZED` payment to `REVIEW`. A refund moves to `REVIEW` on its own row, and its payment doesn't change. A void attempt isn't escalated in version 1.
 - **Why:** The failure docs have a person resolve these, but the transitions had no manual way out of `UNKNOWN`. `REVIEW` already has one, with two-person approval.
 - **Consequence:** While in `REVIEW`, a PSP answer doesn't move the payment, so a person sees and decides it. A resolved attempt that later lands as approved takes the late-approval path. The timer job is built in Stage 2, and a stuck void stays visible and unresolved.
+
+### D46
+
+**Callback and key-expiry edge cases belong to Phase 2.** Status: `Committed`, owner decision 2026-11-06.
+
+- **Decision:** C31a becomes E1-E3, E5-E8, E11-E13, E16-E18, E21 and E25-E29. C31b becomes E4, E9, E10, E19, E20 and E22-E24.
+- **Why:** E9 needs the callback receiver and E4 needs the expiry job, and both are Phase 2 work. Their tests can't exercise real behavior before then. See [E2 and E3](gates/stage-1-escalations.md#e2-task-16-late-declined-callback-has-no-receiver).
+- **Consequence:** Stage 1 results don't include the cost of expiring keys, and `idempotency_keys` only grows during Stage 1 runs. `BASELINE.md` must say so. V7 must be measured at Stage 2's design gate.
 
 ## Assumptions and limits
 

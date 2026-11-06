@@ -129,7 +129,7 @@ create table api_keys (
 ```
 
 - [ ] **Step 3: Correct the lifecycle ledger effects.** Replace "debit customer funds" with `psp_receivable` and `merchant_payable`, and point authorization at `auth_hold`.
-- [ ] **Step 4: Correct the verification and playbook docs.** Add CK7-CK10. Split C31 into C31a (E1-E9, E11-E13, E16-E18, E21) in Phase 1, C31b (E10, E19, E20, E22-E24) in Phase 2 and C31c (E14, E15) in Phase 3, with E8 limited to rejected capture from a non-`AUTHORIZED` state. Add the applicability table. Add the edge gateway and vault to Phase 4, and require L5 again after Phase 5.
+- [ ] **Step 4: Correct the verification and playbook docs.** Add CK7-CK10. Split C31 into C31a (E1-E3, E5-E8, E11-E13, E16-E18, E21) in Phase 1, C31b (E4, E9, E10, E19, E20, E22-E24, as corrected by [D46](../../decisions.md#d46)) in Phase 2 and C31c (E14, E15) in Phase 3, with E8 limited to rejected capture from a non-`AUTHORIZED` state. Add the applicability table. Add the edge gateway and vault to Phase 4, and require L5 again after Phase 5.
 - [ ] **Step 5: Verify nothing was lost**
 
 Run: `grep -c '| ☐ |' docs/verification.md`
@@ -771,7 +771,7 @@ Expected: PASS.
 [Fact] public Task S3_each_endpoint_within_query_count();
 ```
 
-Add `C31a` as one test per edge case in E1-E9, E11-E13, E16-E18, E21 and E25-E29 as defined in Task 1, reusing earlier tests by name where one exists.
+Add `C31a` as one test per edge case in E1-E3, E5-E8, E11-E13, E16-E18, E21 and E25-E29 as defined in Task 1, reusing earlier tests by name where one exists. E4 and E9 moved to C31b ([D46](../../decisions.md#d46)).
 
 - [ ] **Step 2: Run to verify they fail**
 
@@ -813,7 +813,7 @@ Each stage goes through all three [gates](../../delivery-workflow.md), and start
 
 | Stage | Build | Benchmark run | Exit | Needs |
 |---|---|---|---|---|
-| **2: PSP and recovery** | Real adapter with its declared recovery mode, resilience per PSP account with a recovery quota, callback routes per account, atomic callback receiver with parking, reconciler and timers including expiry and automatic late voids, settlement ingestion per account, review tooling, one 3D Secure flow; freeze the API contract after C39 | Repeat steps 0-5 with timeouts, late landings and callbacks. **G2** per account, against the sandbox and in writing | Phase 2 list in [Verification](../../verification.md#build-phases), plus C31b | PSP choice |
+| **2: PSP and recovery** | Real adapter with its declared recovery mode, resilience per PSP account with a recovery quota, callback routes per account, atomic callback receiver with parking, reconciler and timers including expiry and automatic late voids, settlement ingestion per account, review tooling, one 3D Secure flow; idempotency-key expiry job, after its design gate measures V7 and confirms every resolving path sets `resolved_at` ([E3](../../gates/stage-1-escalations.md#e3-task-16-idempotency-key-retention-has-no-implementation)); freeze the API contract after C39 | Repeat steps 0-5 with timeouts, late landings and callbacks. **G2** per account, against the sandbox and in writing | Phase 2 list in [Verification](../../verification.md#build-phases), plus C31b, including the E4 and E9 tests defined in [E2 and E3](../../gates/stage-1-escalations.md#e2-task-16-late-declined-callback-has-no-receiver) | PSP choice |
 | **3: Async** | Outbox publisher by the method V9 chose, with one publisher per payment and gap parking, Redpanda, ledger projector, webhook dispatcher, inbox dedupe | Steps 6-8. First non-preview runs: **CK4 and CK6 full**. Outbox age and consumer lag | Phase 3 list, with the ordering race in C17, plus C31c | Stage 2 |
 | **4: Hardening** | Kubernetes, HA with Patroni or managed, separate limits per kind of waiting, reserved capacity, dark-launched limiters, minimal synchronous fraud, edge gateway, client-side access; cells only if D26 requires them | Steps 9-11, **L1, L5, L6**, then L2, L3, L4; **G1, G3, G4, G5, G6** closed on the full system; S2 allocation budgets | Phase 4 list | Rented cluster, D36 |
 | **5: Security and operations** | Full fraud rules and decision records, test mode isolation, audit log, RBAC, runbooks and drills | **L5 again as the sign-off number**; C42 | Phase 5 list | Isolation mechanism; a PCI assessor before live cards |
