@@ -2,7 +2,7 @@
 
 The metric contract between the API, the load harness, the dashboard and the correctness run. Task 14 emits these names; Task 11 reads them; this file is their one home.
 
-Status: Draft · Last updated: 2026-11-05
+Status: Draft · Last updated: 2026-11-06
 
 The stack is in [`deploy/compose/observability.yaml`](../deploy/compose/observability.yaml), with Prometheus at `http://127.0.0.1:9090`, Grafana at `http://127.0.0.1:3000` (`admin` / `admin` locally) and the [overview dashboard](../deploy/compose/grafana/dashboards/overview.json).
 
@@ -22,6 +22,11 @@ The stack is in [`deploy/compose/observability.yaml`](../deploy/compose/observab
 | `op_requests_rejected_total` | counter | `reason` | Requests refused before work. Reasons: `rate_limit`, `inflight_cap`, `pool_wait`, `lock_timeout`, `busy`, `auth`, `not_found`, `invalid_state` | API edge |
 | `op_payments_completed_total` | counter | `outcome` | Payments that reached a final, committed outcome. Outcomes: `captured`, `authorized`, `declined`, `action_required`, `canceled`, `voided`, `expired` | Payment flow, after the final commit only |
 | `op_platform_overhead_seconds` | histogram | none | Total request time minus PSP wait. The SLO applies to this, not to end-to-end time | Payment flow |
+| `op_threadpool_queue` | gauge | none | Pending ThreadPool work items | API `/metrics` |
+| `op_gen2_gc_per_second` | gauge | none | Gen 2 collections per second since process start | API `/metrics` |
+| `op_allocation_rate_bytes_per_second` | gauge | none | Managed allocation rate since process start | API `/metrics` |
+| `op_abandoned_commits` | gauge | none | Commits still running after the commit wait limit ([E1](../gates/stage-1-escalations.md#e1-task-13-npgsql-commit-cancellation-breaks-d28)) | Transaction runner, via API `/metrics` |
+| `op_commit_warnings_total` | counter | none | Commit-time replication warnings that make the outcome unknown ([E1](../gates/stage-1-escalations.md#e1-task-13-npgsql-commit-cancellation-breaks-d28)) | Transaction runner, via API `/metrics` |
 | `op_psp_wait_seconds` | histogram | none | Time spent inside the PSP adapter call | PSP adapter |
 | `op_inflight` | gauge | none | Requests currently in flight on this instance | API edge |
 | `op_tx_retries_total` | counter | `sqlstate` | Transaction retries. Only `40001` and `40P01` are retried, at most twice | Transaction runner |
@@ -46,6 +51,8 @@ A histogram with no samples is not a pass. The harness reports a missing metric 
 | `pgbouncer_pools_client_waiting_connections` | pgbouncer-exporter | Clients waiting for a server connection |
 | `pgbouncer_pools_client_maxwait_seconds` | pgbouncer-exporter | Age of the oldest waiting client |
 | `process_cpu_seconds_total{job="api"}`, `process_resident_memory_bytes{job="api"}`, `process_num_threads{job="api"}` | API `/metrics` | API resources |
+| `op_threadpool_queue`, `op_gen2_gc_per_second`, `op_allocation_rate_bytes_per_second` | API `/metrics` | Runtime pressure and allocation rate |
+| `op_abandoned_commits`, `op_commit_warnings_total` | API `/metrics` | The two E1 commit signals |
 
 The API scrape target is `host.docker.internal:8080` in local development. On Linux the compose file supplies `host.docker.internal:host-gateway`. In Kubernetes, the scrape config is replaced by service discovery.
 
@@ -61,8 +68,8 @@ The [Results log](../scaling-playbook.md#results-log) asks for these fields. The
 | Error rate excluding deliberate rejections | Harness result, from `op_payments_completed_total` and the API's error responses |
 | API CPU and memory | `process_cpu_seconds_total`, `process_resident_memory_bytes` |
 | DB CPU, I/O and WAL rate | postgres-exporter (`pg_wal_bytes`, `pg_stat_database*`) and host metrics in the run record |
-| Runtime ThreadPool queue, Gen 2 GC/s, allocation rate | OpenTelemetry runtime metrics, added with the API in Task 14; the panel is marked pending until then |
-| Pool wait, lock waits, deadlocks, WAL rate | pgbouncer-exporter and postgres-exporter panels |
+| Runtime ThreadPool queue, Gen 2 GC/s, allocation rate | `op_threadpool_queue`, `op_gen2_gc_per_second`, `op_allocation_rate_bytes_per_second` from `/metrics` |
+| Pool wait, lock waits, deadlocks, WAL rate | `pgbouncer_pools_client_maxwait_seconds`, `pg_locks_count`, `pg_stat_database_deadlocks`, `rate(pg_wal_bytes[1m])` |
 | Outbox age | `op_outbox_oldest_age_seconds` |
 | Consumer lag | Kafka exporter, Phase 3 |
 | Correctness CK1-CK10 | `op-checks` output, not a metric; the harness writes it to `checks.json` |

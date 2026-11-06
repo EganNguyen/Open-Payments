@@ -363,6 +363,7 @@ public sealed class PaymentStore
             updatePayment.Parameters.AddWithValue("version", view.Version);
             if (await updatePayment.ExecuteNonQueryAsync(cancellationToken) == 0)
             {
+                _runner.Metrics.ConditionalUpdateZeroRow();
                 return new BeginResult.Rejected("already_moved", view);
             }
         }
@@ -480,6 +481,7 @@ public sealed class PaymentStore
             update.Parameters.AddWithValue("version", view.Version);
             if (await update.ExecuteNonQueryAsync(cancellationToken) == 0)
             {
+                _runner.Metrics.ConditionalUpdateZeroRow();
                 var current = await LoadPaymentAsync(
                     paymentId, view.MerchantId, cancellationToken, connection, transaction);
                 return new ApplyResult.AlreadyMoved(current!);

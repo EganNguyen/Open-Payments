@@ -247,13 +247,39 @@ public sealed class AcceptanceFixture : IAsyncLifetime
     }
 }
 
+public sealed record TransactionCount(int Statements, int RoundTrips);
+
 public sealed class QueryCounter : ILoggerProvider, ILoggerFactory
 {
+    private readonly object _gate = new();
+    private readonly List<TransactionCount> _transactions = [];
     private long _count;
+    private int _current;
+    private bool _inTransaction;
 
     public long Count => Interlocked.Read(ref _count);
 
-    public void Reset() => Interlocked.Exchange(ref _count, 0);
+    public IReadOnlyList<TransactionCount> Transactions
+    {
+        get
+        {
+            lock (_gate)
+            {
+                return [.. _transactions];
+            }
+        }
+    }
+
+    public void Reset()
+    {
+        Interlocked.Exchange(ref _count, 0);
+        lock (_gate)
+        {
+            _transactions.Clear();
+            _current = 0;
+            _inTransaction = false;
+        }
+    }
 
     public ILogger CreateLogger(string categoryName) => new CountingLogger(this);
 
@@ -265,7 +291,45 @@ public sealed class QueryCounter : ILoggerProvider, ILoggerFactory
     {
     }
 
-    private void Add() => Interlocked.Increment(ref _count);
+    private void Observe(string message)
+    {
+        if (message.Contains("transaction_begin", StringComparison.Ordinal))
+        {
+            lock (_gate)
+            {
+                _inTransaction = true;
+                _current = 0;
+            }
+            return;
+        }
+
+        if (message.Contains("transaction_commit", StringComparison.Ordinal)
+            || message.Contains("transaction_rollback", StringComparison.Ordinal))
+        {
+            lock (_gate)
+            {
+                if (_inTransaction)
+                {
+                    _transactions.Add(new TransactionCount(_current, _current));
+                    _inTransaction = false;
+                    _current = 0;
+                }
+            }
+            return;
+        }
+
+        if (message.Contains("Executing command", StringComparison.Ordinal))
+        {
+            Interlocked.Increment(ref _count);
+            lock (_gate)
+            {
+                if (_inTransaction)
+                {
+                    _current++;
+                }
+            }
+        }
+    }
 
     private sealed class CountingLogger(QueryCounter owner) : ILogger
     {
@@ -280,10 +344,8 @@ public sealed class QueryCounter : ILoggerProvider, ILoggerFactory
             Exception? exception,
             Func<TState, Exception?, string> formatter)
         {
-            if (formatter(state, exception).Contains("Executing command", StringComparison.Ordinal))
-            {
-                owner.Add();
-            }
+            var message = formatter(state, exception);
+            owner.Observe(message);
         }
     }
 }

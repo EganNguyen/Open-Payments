@@ -101,14 +101,14 @@ if [[ -x /usr/bin/time ]]; then
   /usr/bin/time -p env \
     STEP="$STEP" RATE="$RATE" DURATION="$DURATION" RAMP_SECONDS="${RAMP_SECONDS:-5}" BASE_URL="$BASE_URL" \
     TARGET_OVERRIDE="$TARGET_OVERRIDE" API_TOKEN="${API_TOKEN:-}" MOCK_URL="$MOCK_URL" \
-    AUTO_CAPTURE_SHARE="${AUTO_CAPTURE_SHARE:-0.5}" REFUND_TARGETS="$REFUND_TARGETS" \
+    TWO_CALL_SHARE="${TWO_CALL_SHARE:-0.2}" PREFILL_PER_VU="${PREFILL_PER_VU:-3}" REFUND_TARGETS="$REFUND_TARGETS" \
     k6 run --summary-export "$RUN_DIR/k6-summary.json" benchmarks/k6/mix.js \
     > "$RUN_DIR/k6.log" 2> "$RUN_DIR/k6.time"
 else
   env \
     STEP="$STEP" RATE="$RATE" DURATION="$DURATION" RAMP_SECONDS="${RAMP_SECONDS:-5}" BASE_URL="$BASE_URL" \
     TARGET_OVERRIDE="$TARGET_OVERRIDE" API_TOKEN="${API_TOKEN:-}" MOCK_URL="$MOCK_URL" \
-    AUTO_CAPTURE_SHARE="${AUTO_CAPTURE_SHARE:-0.5}" REFUND_TARGETS="$REFUND_TARGETS" \
+    TWO_CALL_SHARE="${TWO_CALL_SHARE:-0.2}" PREFILL_PER_VU="${PREFILL_PER_VU:-3}" REFUND_TARGETS="$REFUND_TARGETS" \
     k6 run --summary-export "$RUN_DIR/k6-summary.json" benchmarks/k6/mix.js \
     > "$RUN_DIR/k6.log" 2> "$RUN_DIR/k6.time"
 fi
@@ -129,7 +129,7 @@ GEN_CPU=$(python3 -c "u=float('${USER_CPU:-0}'); s=float('${SYS_CPU:-0}'); r=max
 RUN_ID="$RUN_ID" COMMIT="$COMMIT" STEP="$STEP" ENV="$ENV" STAGE="$STAGE" \
 PSP_LATENCY="$PSP_LATENCY" RATE="$RATE" DURATION="$DURATION" RAMP_SECONDS="${RAMP_SECONDS:-5}" STARTED_AT="$STARTED_AT" \
 GEN_CPU="$GEN_CPU" K6_EXIT="$K6_EXIT" BASE_URL="$BASE_URL" TARGET_OVERRIDE="$TARGET_OVERRIDE" \
-MOCK_CONFIG="$MOCK_CONFIG" AUTO_CAPTURE_SHARE="${AUTO_CAPTURE_SHARE:-0.5}" \
+MOCK_CONFIG="$MOCK_CONFIG" TWO_CALL_SHARE="${TWO_CALL_SHARE:-0.2}" PREFILL_PER_VU="${PREFILL_PER_VU:-3}" \
 MOCK_ADDED_P99_MS="${MOCK_ADDED_P99_MS:-}" RUN_DIR="$RUN_DIR" \
 PROM_URL="$PROM_URL" \
 python3 - <<'PY'
@@ -150,7 +150,8 @@ config = {
     "base_url": os.environ["BASE_URL"],
     "target_override": os.environ["TARGET_OVERRIDE"],
     "mock_config": json.loads(os.environ.get("MOCK_CONFIG") or "{}"),
-    "auto_capture_share": float(os.environ["AUTO_CAPTURE_SHARE"]),
+    "two_call_share": float(os.environ["TWO_CALL_SHARE"]),
+    "prefill_per_vu": int(os.environ["PREFILL_PER_VU"]),
     "mock_added_p99_ms": None if not os.environ["MOCK_ADDED_P99_MS"]
         else float(os.environ["MOCK_ADDED_P99_MS"]),
     "prom_url": os.environ["PROM_URL"],
@@ -171,6 +172,23 @@ PY
 
 sleep "${DRAIN_SECONDS:-3}"
 END_EPOCH=$(date +%s)
+
+# Record the achieved request shares from the same k6 summary that drives the gate.
+python3 - "$RUN_DIR" <<'PY'
+import json, os, sys
+run_dir = sys.argv[1]
+summary = json.load(open(os.path.join(run_dir, "k6-summary.json"), encoding="utf-8"))
+names = ("sale", "authorize", "capture", "status", "refund", "retry", "other")
+counts = {
+    name: int(summary.get("metrics", {}).get(f"k6_{name}_requests_total", {}).get("count", 0))
+    for name in names
+}
+total = sum(counts.values())
+shares = {name: (counts[name] / total if total else 0.0) for name in names}
+with open(os.path.join(run_dir, "shares.json"), "w", encoding="utf-8") as handle:
+    json.dump({"counts": counts, "shares": shares}, handle, indent=2)
+    handle.write("\n")
+PY
 
 # Copy the effect log only after the drain: CK2 must include the effects from this run,
 # not just the ones already in the log when the run started.
@@ -227,6 +245,10 @@ except Exception:
 fi
 
 RESULT_EXIT=0
+python3 "$REPO/benchmarks/resources.py" --prom "$PROM_URL" \
+  --start "$START_EPOCH" --end "$END_EPOCH" \
+  --db-container "${DB_CONTAINER:-open-payments-primary-1}" \
+  --out "$RUN_DIR/resources.json" || true
 python3 "$REPO/benchmarks/report.py" --run-dir "$RUN_DIR" --stage "$STAGE" --env "$ENV" || RESULT_EXIT=$?
 
 echo "run directory: $RUN_DIR"

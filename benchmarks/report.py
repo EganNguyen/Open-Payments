@@ -58,6 +58,8 @@ def validity(
     config_recorded: bool = True,
     completed_metric: Optional[int] = None,
     db_count: Optional[int] = None,
+    shares: Optional[Dict[str, float]] = None,
+    two_call_share: float = 0.2,
 ) -> Validity:
     reasons: List[str] = []
     not_checked: List[str] = []
@@ -76,6 +78,17 @@ def validity(
         reasons.append("git tree was dirty")
     if not config_recorded:
         reasons.append("configuration was not recorded")
+    if shares is None:
+        not_checked.append("mix shares")
+    else:
+        for name, target in expected_shares(two_call_share).items():
+            actual = shares.get(name)
+            if actual is None:
+                not_checked.append("mix share " + name)
+            elif abs(actual - target) > 0.02:
+                reasons.append(
+                    "%s share %.1f%% misses %.1f%% by %.1f points"
+                    % (name, actual * 100, target * 100, abs(actual - target) * 100))
     if completed_metric is None or db_count is None:
         not_checked.append("completed metric vs database count")
     else:
@@ -86,6 +99,18 @@ def validity(
                 % (completed_metric, db_count)
             )
     return Validity(not reasons and not not_checked, reasons, not_checked)
+
+
+def expected_shares(two_call_share: float) -> Dict[str, float]:
+    return {
+        "sale": 0.5 * (1 - two_call_share),
+        "authorize": 0.5 * two_call_share,
+        "capture": 0.5 * two_call_share,
+        "status": 0.15,
+        "refund": 0.10,
+        "retry": 0.10,
+        "other": 0.05,
+    }
 
 
 def required_checks(stage: str) -> set:
@@ -152,9 +177,13 @@ def load_checks(path: Path) -> List[Dict[str, Any]]:
 
 def write_result(run_dir: Path, stage: str, env: str) -> int:
     config = read_json(run_dir / "config.json", {})
+    resources = read_json(run_dir / "resources.json", {})
+    config = {**resources, **config}
     summary = read_json(run_dir / "k6-summary.json", {})
     checks = load_checks(run_dir / "checks.json")
     counts = read_json(run_dir / "counts.json", {})
+    shares_doc = read_json(run_dir / "shares.json", None)
+    shares = shares_doc.get("shares") if isinstance(shares_doc, dict) else shares_doc
 
     gen_cpu = float(config.get("generator_cpu_pct", 0.0))
     mock_value = config.get("mock_added_p99_ms")
@@ -170,6 +199,8 @@ def write_result(run_dir: Path, stage: str, env: str) -> int:
         config_recorded=bool(config.get("config_recorded", True)),
         completed_metric=completed_metric,
         db_count=db_count,
+        shares=None if stage == "phase0" else shares,
+        two_call_share=float(config.get("two_call_share", 0.2)),
     )
 
     platform_overhead_p99 = max(
@@ -223,6 +254,11 @@ def write_result(run_dir: Path, stage: str, env: str) -> int:
         )
     )
     lines.append("")
+    if shares:
+        lines.append(
+            "Request shares: "
+            + " ".join("%s %.1f%%" % (name, shares.get(name, 0) * 100)
+                       for name in ("sale", "authorize", "capture", "status", "refund", "retry", "other")))
     lines.append(
         "Achieved: admitted req/s %.2f  rejected req/s %.2f  completed payments/s %.2f"
         % (

@@ -2,6 +2,7 @@ using System.Collections.Concurrent;
 using System.Diagnostics;
 using System.Globalization;
 using System.Text;
+using OpenPayments.Transitions;
 
 namespace OpenPayments.Api;
 
@@ -10,7 +11,7 @@ namespace OpenPayments.Api;
 /// histogram the dashboard and CK6 use. The values are process-local and are exposed on
 /// GET /metrics in the Prometheus text format.
 /// </summary>
-public sealed class PaymentMetrics
+public sealed class PaymentMetrics(TxRunner runner)
 {
     private static readonly double[] PlatformOverheadBuckets =
     [
@@ -30,6 +31,9 @@ public sealed class PaymentMetrics
     private long _completed;
     private long _admitted;
     private long _inflight;
+    private DateTime _started = DateTime.UtcNow;
+    private int _startGen2 = GC.CollectionCount(2);
+    private long _startAllocated = GC.GetTotalAllocatedBytes();
 
     public long CompletedPayments => Interlocked.Read(ref _completed);
 
@@ -68,6 +72,9 @@ public sealed class PaymentMetrics
         _rejectedReasons.Clear();
         _platformOverhead.Reset();
         _pspWait.Reset();
+        _started = DateTime.UtcNow;
+        _startGen2 = GC.CollectionCount(2);
+        _startAllocated = GC.GetTotalAllocatedBytes();
     }
 
     public string Render()
@@ -98,6 +105,48 @@ public sealed class PaymentMetrics
             "Time spent inside the PSP adapter call.",
             _pspWait);
         AppendGauge(text, "op_inflight", "Requests currently in flight on this instance.", InFlight);
+        AppendLabeledCounter(
+            text,
+            "op_tx_retries_total",
+            "Transaction retries by SQLSTATE.",
+            "sqlstate",
+            runner.Metrics.Retries);
+        AppendCounter(
+            text,
+            "op_conditional_update_zero_rows_total",
+            "Conditional updates that changed no row.",
+            runner.Metrics.ConditionalUpdateZeroRows);
+        AppendGauge(
+            text,
+            "op_abandoned_commits",
+            "Commits still running after the wait limit.",
+            runner.Metrics.AbandonedCommits);
+        AppendCounter(
+            text,
+            "op_commit_warnings_total",
+            "Commit-time replication warnings.",
+            runner.Metrics.CommitWarnings);
+
+        var process = Process.GetCurrentProcess();
+        AppendCounter(
+            text,
+            "process_cpu_seconds_total",
+            "Total process CPU time in seconds.",
+            (long)process.TotalProcessorTime.TotalSeconds);
+        AppendGauge(text, "process_resident_memory_bytes", "Resident memory in bytes.", process.WorkingSet64);
+        AppendGauge(text, "process_num_threads", "Operating-system threads.", process.Threads.Count);
+        AppendGauge(text, "op_threadpool_queue", "Pending ThreadPool work items.", ThreadPool.PendingWorkItemCount);
+        var elapsed = Math.Max((DateTime.UtcNow - _started).TotalSeconds, 0.001);
+        AppendGauge(
+            text,
+            "op_gen2_gc_per_second",
+            "Gen 2 garbage collections per second since start.",
+            (long)Math.Round((GC.CollectionCount(2) - _startGen2) / elapsed));
+        AppendGauge(
+            text,
+            "op_allocation_rate_bytes_per_second",
+            "Managed allocation rate since start.",
+            (long)Math.Round((GC.GetTotalAllocatedBytes() - _startAllocated) / elapsed));
 
         return text.ToString();
     }
@@ -114,7 +163,7 @@ public sealed class PaymentMetrics
         string name,
         string help,
         string label,
-        ConcurrentDictionary<string, long> values)
+        IEnumerable<KeyValuePair<string, long>> values)
     {
         text.Append("# HELP ").Append(name).Append(' ').Append(help).Append('\n');
         text.Append("# TYPE ").Append(name).Append(" counter\n");

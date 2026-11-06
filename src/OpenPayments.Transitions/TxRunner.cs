@@ -1,3 +1,4 @@
+using System.Collections.Concurrent;
 using System.Diagnostics;
 using Microsoft.Extensions.Logging;
 using Npgsql;
@@ -34,6 +35,8 @@ public sealed class TransitionMetrics
     private long _warnings;
     private long _lateSuccesses;
     private long _lateFailures;
+    private long _conditionalUpdates;
+    private readonly ConcurrentDictionary<string, long> _retries = new();
 
     public long AbandonedCommits => Interlocked.Read(ref _abandoned);
 
@@ -43,6 +46,10 @@ public sealed class TransitionMetrics
 
     public long LateCommitFailures => Interlocked.Read(ref _lateFailures);
 
+    public long ConditionalUpdateZeroRows => Interlocked.Read(ref _conditionalUpdates);
+
+    public IReadOnlyDictionary<string, long> Retries => _retries;
+
     internal void AbandonedDelta(int delta) => Interlocked.Add(ref _abandoned, delta);
 
     internal void CommitWarning() => Interlocked.Increment(ref _warnings);
@@ -50,6 +57,11 @@ public sealed class TransitionMetrics
     internal void LateSuccess() => Interlocked.Increment(ref _lateSuccesses);
 
     internal void LateFailure() => Interlocked.Increment(ref _lateFailures);
+
+    internal void ConditionalUpdateZeroRow() => Interlocked.Increment(ref _conditionalUpdates);
+
+    internal void Retry(string sqlstate) =>
+        _retries.AddOrUpdate(sqlstate, 1, static (_, count) => count + 1);
 }
 
 /// <summary>
@@ -62,6 +74,7 @@ public sealed class TxRunner : IAsyncDisposable
     private readonly NpgsqlDataSource _dataSource;
     private readonly TimeSpan _commitWaitLimit;
     private readonly TransitionMetrics _metrics;
+    private readonly ILogger<TxRunner>? _logger;
     private readonly object _gate = new();
     private readonly List<Task> _abandonedTasks = [];
 
@@ -93,6 +106,7 @@ public sealed class TxRunner : IAsyncDisposable
         _dataSource = dataSourceBuilder.Build();
         _commitWaitLimit = commitWaitLimit ?? TimeSpan.FromSeconds(3);
         _metrics = metrics ?? new TransitionMetrics();
+        _logger = loggerFactory?.CreateLogger<TxRunner>();
     }
 
     public NpgsqlDataSource DataSource => _dataSource;
@@ -127,6 +141,7 @@ public sealed class TxRunner : IAsyncDisposable
                 }
 
                 transaction = await connection.BeginTransactionAsync(cancellationToken);
+                _logger?.LogDebug("transaction_begin");
                 await SetMerchantAsync(connection, transaction, merchant, cancellationToken);
 
                 var result = await work(connection, transaction, cancellationToken);
@@ -166,15 +181,19 @@ public sealed class TxRunner : IAsyncDisposable
                     throw new CommitOutcomeUnknownException("commit_warning");
                 }
 
+                _logger?.LogDebug("transaction_commit");
                 return result;
             }
             catch (CommitOutcomeUnknownException)
             {
+                _logger?.LogDebug("transaction_rollback");
                 throw;
             }
             catch (PostgresException exception) when (
                 exception.SqlState is "40P01" or "40001")
             {
+                _logger?.LogDebug("transaction_rollback");
+                _metrics.Retry(exception.SqlState);
                 if (attempt >= 2)
                 {
                     throw new BusyException("retry_exhausted", exception);
@@ -184,6 +203,7 @@ public sealed class TxRunner : IAsyncDisposable
             }
             catch (PostgresException exception) when (exception.SqlState == "55P03")
             {
+                _logger?.LogDebug("transaction_rollback");
                 throw new BusyException("lock_timeout", exception);
             }
             finally

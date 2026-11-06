@@ -65,7 +65,11 @@ def test_missing_completed_count_reconciliation_is_not_checked():
 def test_checked_validity_rules_pass():
     result = validity(
         k6(), gen_cpu=40, mock_added_p99_ms=1.0,
-        completed_metric=1000, db_count=1000)
+        completed_metric=1000, db_count=1000,
+        shares={
+            "sale": 0.40, "authorize": 0.10, "capture": 0.10,
+            "status": 0.15, "refund": 0.10, "retry": 0.10, "other": 0.05,
+        })
     assert result.valid is True
     assert result.not_checked == []
 
@@ -87,7 +91,7 @@ def test_result_marks_unchecked_rules(tmp_path):
 
     assert write_result(tmp_path, "phase1", "local") == 1
     result = (tmp_path / "result.md").read_text(encoding="utf-8")
-    assert "Validity not checked: mock added p99 latency; completed metric vs database count" in result
+    assert "Validity not checked: mock added p99 latency; mix shares; completed metric vs database count" in result
     assert "Run valid: no" in result
 
 
@@ -99,3 +103,34 @@ def test_missing_required_check_fails_gates():
     from report import required_checks
     assert "CK6" in required_checks("phase1")
     assert required_checks("phase1") - {"CK1"} != set()
+
+
+def test_share_miss_invalidates_run():
+    result = validity(
+        k6(), gen_cpu=40, mock_added_p99_ms=1.0,
+        completed_metric=1000, db_count=1000,
+        shares={
+            "sale": 0.30, "authorize": 0.10, "capture": 0.10,
+            "status": 0.15, "refund": 0.10, "retry": 0.10, "other": 0.05,
+        }, two_call_share=0.2)
+    assert result.valid is False
+    assert any("sale" in reason for reason in result.reasons)
+
+
+def test_share_within_two_points_passes():
+    result = validity(
+        k6(), gen_cpu=40, mock_added_p99_ms=1.0,
+        completed_metric=1000, db_count=1000,
+        shares={
+            "sale": 0.39, "authorize": 0.10, "capture": 0.10,
+            "status": 0.16, "refund": 0.10, "retry": 0.10, "other": 0.05,
+        }, two_call_share=0.2)
+    assert result.valid is True
+
+
+def test_missing_shares_are_not_checked():
+    result = validity(
+        k6(), gen_cpu=40, mock_added_p99_ms=1.0,
+        completed_metric=1000, db_count=1000)
+    assert result.valid is False
+    assert any("mix shares" in reason for reason in result.not_checked)

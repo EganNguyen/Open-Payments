@@ -55,19 +55,19 @@
   },
   {
     "step": 9,
-    "rate": 8300,
+    "rate": 10000,
     "duration_seconds": 1200,
     "purpose": "Ramp up to 5,000 completed payments/s (auto-capture mix)"
   },
   {
     "step": 10,
-    "rate": 8300,
+    "rate": 10000,
     "duration_seconds": 3600,
     "purpose": "5,000 completed payments/s sustained (L5)"
   },
   {
     "step": 11,
-    "rate": 16600,
+    "rate": 20000,
     "duration_seconds": 900,
     "purpose": "Offered load rising to twice step 10 (L6)"
   }
