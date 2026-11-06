@@ -370,7 +370,7 @@ All values are starting points until measured. Other docs state the resulting ru
 
 - **Decision:** Lists use the existing `payments_merchant_created` index with a required date range. ID lookup has no limit. There are no broad search indexes and no search store.
 - **Why:** Physical replicas share the primary's indexes, so a search index on a replica would still cost every payment write.
-- **Consequence:** Finding an older payment needs its ID. New partial indexes for the review queues and `refunds_payment` are `MEASURE-FIRST`.
+- **Consequence:** Finding an older payment needs its ID. New partial indexes for the review queues and `refunds_payment` are `MEASURE-FIRST`. [The comparison](../benchmarks/console-indexes.md) found no cost in its valid runs, and [D50](#d50) moves `refunds_payment` earlier.
 
 ### D44
 
@@ -419,6 +419,14 @@ All values are starting points until measured. Other docs state the resulting ru
 - **Decision:** Stage C stops being a separate stage. Its tasks move into stages 1 and 2, and stages 3, 4 and 5 each get a new frontend task. The split is in the [roadmap](superpowers/plans/2026-11-05-open-payments-implementation-and-benchmark.md#frontend-tasks-by-stage).
 - **Why:** The owner asked for a frontend task in every stage. The split follows what each stage provides: Stage 1's routes are enough for search, payment detail and money actions, and Stage 2 already lists review tooling, which is what the console's resolution tasks build.
 - **Consequence:** Stage 1 can't reach its review gate until Task 18 is done, so its review now also covers the console's first screens. Stage 2's review covers the change to `Decide` in Task C3. Until Stage 2, there's no Needs attention screen and `REVIEW` can't be resolved from the console. F4's reference checkout is new scope, and no document designs it yet.
+
+### D50
+
+**`refunds (payment_id)` is indexed before the laptop limit search.** Status: `Committed`, owner decision 2026-11-06. Amends [D43](#d43) for this index.
+
+- **Decision:** `refunds_payment` ships in its own migration, ahead of Task 17's limit search, instead of in Task C4. The three `REVIEW` indexes stay in Task C4.
+- **Why:** `Sql.LoadRefund` filters on `payment_id`, which has no index, so a live refund lookup scans the whole table. On the laptop, `refunds` had about 19.7 billion rows read by sequential scans at 41,847 rows. Left alone, the limit search could report this as a bottleneck and hide the next real limit. See [the comparison](../benchmarks/console-indexes.md).
+- **Consequence:** Every refund insert and update adds an index entry. The laptop comparison found no cost in its valid runs, but it is a preview. This index also serves the foreign key check when payments are retired.
 
 ## Assumptions and limits
 

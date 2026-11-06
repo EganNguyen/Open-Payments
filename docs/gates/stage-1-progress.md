@@ -1,6 +1,6 @@
 # Stage 1 Build Progress
 
-The build gate's evidence log: one line per task, with the commit, the command that was run, and the result. Tasks 7-16 are complete under [D46](../decisions.md#d46). Task 17 is PARTIAL: the D47 mix and metric work is in place, the laptop limit search is paused for the console index comparison, and Linux steps 4-5 remain open. Task 18 is not started and waits for the [console design gate](stage-c-design.md).
+The build gate's evidence log: one line per task, with the commit, the command that was run, and the result. Tasks 7-16 are complete under [D46](../decisions.md#d46). Task 17 is PARTIAL: the D47 mix and metric work is in place, the laptop limit search waits for the two items under "Before the limit search", and Linux steps 4-5 remain open. Task 18 is not started and waits for the [console design gate](stage-c-design.md).
 
 Status: In progress · Last updated: 2026-11-06
 
@@ -16,7 +16,7 @@ Status: In progress · Last updated: 2026-11-06
 | 14 | `6eb4bd3` | `dotnet test tests/OpenPayments.Acceptance.Tests`; `dotnet test OpenPayments.slnx`; `dotnet build OpenPayments.slnx -warnaserror` | PASS: create/attempt API with auth, tenant isolation, idempotency replay, in-flight 409, 100-way concurrency, fraud block, canonical log, PSP timeout 202 and simulated C43 A/B failures. 46 acceptance tests; 182 tests total at that commit, 0 warnings. |
 | 15 | `6eb4bd3` plus `bbf7467` | `dotnet test --filter CaptureTests` | PASS: capture, one-call sale, two-call auto-capture, void, timeouts, C36/C50 and the completed-payment counter. 47 acceptance tests; 183 tests total at that commit, 0 warnings. |
 | 16 | `6eb4bd3` plus `37b9e51`, `eced4ee` | `dotnet test --filter "RefundTests|C31a|QueryCountTests|HotQueryPlanTests"`; gitleaks; nuget-license | PASS: refunds, 30/70, timeout, shared key, C6 exact 10/40 and decline-release, E5/E16/E18, S3 query counts/generated-SQL review and S6 secret/license scans pass. C31a is complete under D46; E4 and E9 moved to C31b and were not faked. See [E2/E3](stage-1-escalations.md#e2-task-16-late-declined-callback-has-no-receiver) and [Phase 1 gate](../phase-gates/phase-1.md). |
-| 17 | `2ff6232`, `6e0ece1` (previous previews `5635daa`..`2ae2c42`) | `dotnet test`; `dotnet build -warnaserror`; `python3 -m pytest benchmarks/test_report.py`; `benchmarks/resources.py` smoke | PARTIAL: D47 mix (40/10/10/15/10/10/5, per-VU capture queue, 2-point share validity), D48 S3 checks, full `/metrics`, resource collection and CK6 steady-state logic are implemented and tested. The previous previews are superseded by the mix change. The laptop limit search is paused for the console index comparison; no run under the new mix is recorded. No `C` or `N`; Linux steps 4-5 remain open ([E4](stage-1-escalations.md#e4-task-17-has-no-linux-host-for-steps-4-5-escalation-e4)). |
+| 17 | `2ff6232`, `6e0ece1` (previous previews `5635daa`..`2ae2c42`) | `dotnet test`; `dotnet build -warnaserror`; `python3 -m pytest benchmarks/test_report.py`; `benchmarks/resources.py` smoke | PARTIAL: D47 mix (40/10/10/15/10/10/5, per-VU capture queue, 2-point share validity), D48 S3 checks, full `/metrics`, resource collection and CK6 steady-state logic are implemented and tested. The previous previews are superseded by the mix change. The laptop limit search hasn't started. Valid step 2 and step 4 runs at the new mix exist, and the only ones recorded are in [the index comparison](../../benchmarks/console-indexes.md). No `C` or `N`; Linux steps 4-5 remain open ([E4](stage-1-escalations.md#e4-task-17-has-no-linux-host-for-steps-4-5-escalation-e4)). |
 
 ## Task 17 correction round (2026-11-06)
 
@@ -27,6 +27,13 @@ Status: In progress · Last updated: 2026-11-06
 | Metrics | `2ff6232` | `dotnet test --filter MetricsTests`; `curl :8080/metrics` | PASS: process, runtime, tx retry, conditional-update, abandoned-commit and commit-warning series are served; `/metrics` target is up. |
 | Results fields | `2ff6232` | `python3 benchmarks/resources.py` smoke; report tests | PASS: resource collection reads the run window and names its Prometheus/Docker sources; outbox age and consumer lag remain n/a. No new ramp was run. |
 | CK6 | `6e0ece1` | `dotnet test --filter Ck6TrendTests` | PASS: steady in-flight concurrency no longer fails; a continuing climb still does. |
+
+## Before the limit search (2026-11-06)
+
+The console index comparison is finished: see [the result](../../benchmarks/console-indexes.md). Two items come first, in this order:
+
+1. Ship `refunds_payment` in its own migration, under [D50](../decisions.md#d50), and confirm with `EXPLAIN` that `Sql.LoadRefund` uses it.
+2. Fix the check query that scans `outbox` once per payment, without adding an `outbox` index or weakening the check. Then measure total check time as data grows.
 
 Owner instruction (2026-11-06): E2 and E3 remain open for the build gate. D46's scope correction is recorded and accepted, but the build is not review-ready while E2 or E3 is open.
 

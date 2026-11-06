@@ -24,7 +24,7 @@ Claude changed or added these after the spec was approved, because of what the c
 | Item | Cost if wrong |
 |---|---|
 | The timeline has no PSP events, webhook deliveries or last inquiry yet, because the data isn't linked or stored | Staff check those at the PSP until later stages add them |
-| Four new indexes instead of one, adding attempt and refund `REVIEW` queues and `refunds (payment_id)` | Slower refund writes, which Task C2 measures |
+| Four new indexes instead of one, adding attempt and refund `REVIEW` queues and `refunds (payment_id)`, which now ships earlier under [D50](../decisions.md#d50) | Slower refund writes; Task C2 found no cost in its valid runs |
 | New commands for refund resolution, and `ManualResolution` also moves the attempt | Changes `Decide`, so Stage 2's review must recheck it |
 | A stuck void isn't escalated, because no transition moves `REVIEW` to `VOIDED` | A person handles a stuck void at the PSP, with no console record |
 | A capture attempt escalated to `REVIEW` can't resolve to `AWAITING_METHOD` | A rare case escalates to a design session |
@@ -41,7 +41,7 @@ Claude changed or added these after the spec was approved, because of what the c
 |---|---|---|
 | ☑ | Task C1: decisions recorded and docs corrected | Done with this record |
 | ☑ | Where the console goes in the stage order | Answered by [D49](../decisions.md#d49) |
-| ☐ | Task C2: index measurement | Stage 1 baseline workload; a before-and-after comparison on the owner's laptop, approved by the owner 2026-11-06. It counts as a preview |
+| ☑ | Task C2: index measurement | Stopped early by the owner 2026-11-06, with three valid runs and no cost detected. It counts as a preview. See [the result](../../benchmarks/console-indexes.md) |
 | ☐ | Task C2: clickable prototype reviewed | The owner |
 | ☐ | Owner signs this record, naming the starting commit | The owner |
 
