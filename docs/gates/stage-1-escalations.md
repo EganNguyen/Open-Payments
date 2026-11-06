@@ -250,7 +250,7 @@ S3 stays PARTIAL until these pass. Revisit the statement count after Linux step 
 
 ## E7: benchmark reset leaves the CK1 ledger manifest stale
 
-**State:** Answered 2026-11-06, builder work open · Raised 2026-11-06
+**State:** Answered 2026-11-06, builder work complete in `c249adc`; rerun `20261106T075557Z-c249adc-s2-14be` passed · Raised 2026-11-06
 
 **Task:** 17, validating a preview after a database reset. This is a harness reset issue, not a money defect.
 
