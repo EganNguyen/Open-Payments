@@ -88,6 +88,12 @@ def validity(
     return Validity(not reasons and not not_checked, reasons, not_checked)
 
 
+def required_checks(stage: str) -> set:
+    if stage == "phase0":
+        return {"CK1", "CK2", "CK3"}
+    return {"CK1", "CK2", "CK3", "CK4", "CK5", "CK6", "CK9", "CK10"}
+
+
 def gates(
     p99: float,
     errors: float,
@@ -98,6 +104,8 @@ def gates(
     p50_limit: float = 25.0,
 ) -> Gates:
     reasons: List[str] = []
+    if not checks:
+        reasons.append("no checks ran")
     if p99 > p99_limit:
         reasons.append("p99 %.2f ms is over %.0f ms" % (p99, p99_limit))
     if p50 is not None and p50 > p50_limit:
@@ -181,6 +189,12 @@ def write_result(run_dir: Path, stage: str, env: str) -> int:
         errors=unexpected_rate,
         checks=checks,
     )
+    missing = required_checks(stage) - {check.get("check") for check in checks}
+    if missing:
+        gate_result = Gates(
+            False,
+            gate_result.reasons + ["missing checks: " + ", ".join(sorted(missing))],
+        )
 
     lines = [render_header(stage, env).rstrip(), ""]
     lines.append("Run ID: %s  " % config.get("run_id", run_dir.name))

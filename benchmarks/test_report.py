@@ -89,3 +89,13 @@ def test_result_marks_unchecked_rules(tmp_path):
     result = (tmp_path / "result.md").read_text(encoding="utf-8")
     assert "Validity not checked: mock added p99 latency; completed metric vs database count" in result
     assert "Run valid: no" in result
+
+
+def test_empty_checks_fail_gates():
+    assert gates(p99=10, errors=0, checks=[]).passed is False
+
+
+def test_missing_required_check_fails_gates():
+    from report import required_checks
+    assert "CK6" in required_checks("phase1")
+    assert required_checks("phase1") - {"CK1"} != set()
