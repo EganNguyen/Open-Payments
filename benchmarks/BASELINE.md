@@ -52,6 +52,9 @@ the 100 req/s target. That is the profile's starting rate, not a result for 100 
 ## What this does not establish
 
 - There is no `C` and no `N`. Steps 4 and 5 need a Linux host, and they have not run.
-- No statement about 5,000 completed payments/s is supported by a laptop run.
+- No statement about 5,000 completed payments/s is supported by a laptop run. The target is
+  not assessed here: with no `C`, no `N` can be computed and no reachability claim is made.
+- The measured commits-per-payment comparison with the Task 6 estimate is not possible without
+  the Linux steps 4-5.
 - D46 defers idempotency-key expiry to Stage 2. `idempotency_keys` only grows during
   these runs; V7 must be measured at Stage 2's design gate before that job is built.
