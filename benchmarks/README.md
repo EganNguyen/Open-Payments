@@ -72,6 +72,30 @@ With `TWO_CALL_SHARE=0.2` (the default), half of all requests create a payment. 
 | `DRAIN_SECONDS` | `3` | Wait after k6 before `op-checks` |
 | `OP_CHECKS_BIN` | `tools/OpenPayments.Checks/bin/Debug/net10.0/OpenPayments.Checks.dll` | Check runner |
 
+## Full benchmark reset
+
+A full reset empties the payment and ledger tables and the CK1 manifest. Stop the API and
+the mock first, because a request that writes during the reset would leave the manifest and
+the ledger disagreeing. Clear `ck.ledger_rows` only in the same transaction that truncates
+the ledger, never on its own, during a run, or to make a check pass.
+
+```bash
+docker compose -f deploy/compose/compose.yaml stop api mock-psp
+psql postgres://postgres:op_local_only@127.0.0.1:15432/openpayments -v ON_ERROR_STOP=1 <<'SQL'
+BEGIN;
+TRUNCATE TABLE payments, payment_attempts, refunds, ledger_transactions, ledger_entries,
+  outbox, idempotency_keys, psp_events, settlement_lines, benchmark_refundable CASCADE;
+TRUNCATE TABLE ck.ledger_rows;
+COMMIT;
+SQL
+psql postgres://postgres:op_local_only@127.0.0.1:15432/openpayments -v ON_ERROR_STOP=1 \
+  -f benchmarks/seed-local.sql
+```
+
+Then reset the effect log with the mock still stopped, as described below, and start both
+services again. Before starting a run, confirm `ck.ledger_rows` and `ledger_entries` are both
+empty.
+
 ## Resetting the effect log
 
 Stop the mock before emptying `effects.csv`. `EffectLog` opens the file with
