@@ -41,3 +41,7 @@ by name below; the gate stays open until they are closed.
 - S5: independent review.
 - The API starts and serves the documented routes, but the service is not yet wired into the
   compose stack and the k6 Phase 1 ramp has not been run. Task 17 is therefore not started.
+
+## Task 17 preparation attempt
+
+On 2026-11-06 the local compose `primary` and `pgbouncer` started, but `scripts/migrate.sh` blocked on synchronous replication because neither standby was available. Standby startup then failed with `max_connections = 300` against the existing primary volume's 1100. The migration was cancelled by the shutdown. No benchmark run id or `result.md` was produced, so this is recorded as an invalid preparation attempt, not a ramp result. The compose services were stopped afterwards.
