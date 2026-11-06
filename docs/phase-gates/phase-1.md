@@ -38,7 +38,7 @@ C31b in Phase 2, so C31a is complete without a fake callback route or expiry job
 
 - S5: independent review at the review gate; the self-review recorded above is not a substitute.
 - Task 17: the local preview steps 0-3 pass, but steps 4-5 need a Linux host. No `C` or `N` is
-  recorded. See [E4](stage-1-escalations.md#e4-task-17-has-no-linux-host-for-steps-4-5).
+  recorded. See [E4](../gates/stage-1-escalations.md#e4-task-17-has-no-linux-host-for-steps-4-5).
 - C31a has no open design gap after D46; E4 and E9 are C31b tests, not Stage 1 evidence.
 
 ## Task 17 local preparation and preview
@@ -58,4 +58,4 @@ failed optional Prometheus query no longer aborts the report.
 
 Steps 0-3 are valid previews under the gates: CK1-CK5, CK9 and CK10 pass, and CK6/CK7/CK8
 are not applicable. Their run IDs and numbers are in [BASELINE](../../benchmarks/BASELINE.md).
-No laptop number is reported as `C`. Linux steps 4-5 are open ([E4](stage-1-escalations.md#e4-task-17-has-no-linux-host-for-steps-4-5)).
+No laptop number is reported as `C`. Linux steps 4-5 are open ([E4](../gates/stage-1-escalations.md#e4-task-17-has-no-linux-host-for-steps-4-5)).
