@@ -217,7 +217,7 @@ The mock's 25,000 req/s floor is unchanged. The mix needs about 7,000 PSP calls/
 
 ## E6: S3 query-count budgets have no design source
 
-**State:** Answered 2026-11-06 ([D48](../decisions.md#d48)), builder work open · Raised 2026-11-06
+**State:** Answered 2026-11-06 ([D48](../decisions.md#d48)), builder work complete in `2ff6232` · Raised 2026-11-06
 
 **Task:** 16, S3 endpoint query counts. The current test uses create ≤40, read ≤10, capture ≤40 and refund ≤50 commands. Those numbers were chosen by the builder; a search of the design and verification documents found no equivalent budget.
 
