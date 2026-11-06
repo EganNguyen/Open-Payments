@@ -57,9 +57,8 @@ public sealed class C43Tests(C43Fixture db)
             CancellationToken.None));
 
         Assert.Equal("commit_wait_limit", exception.Reason);
-        await Task.Delay(250);
         Assert.True(
-            await db.CountSyncRepWaitersAsync() >= 1,
+            await db.WaitForSyncRepWaiterAsync(),
             "the backend must still be waiting in SyncRep; a cancel would have ended the wait");
         Assert.Equal(0, runner.Metrics.CommitWarnings);
         await db.UnblockAsync(terminateBackends: false);

@@ -280,7 +280,17 @@ public sealed class PaymentStore
         var pspAccountId = command.PspAccountId
             ?? await ResolvePspAccountAsync(connection, transaction, command.MerchantId, cancellationToken);
 
-        await InsertKeyAsync(connection, transaction, command, attemptId, cancellationToken);
+        if (!await InsertKeyAsync(connection, transaction, command, attemptId, cancellationToken))
+        {
+            return await ReadKeyOnConnectionAsync(
+                connection, transaction, command.MerchantId, command.Key, command.RequestHash,
+                cancellationToken) switch
+            {
+                KeyLookup.Finished finished => new BeginResult.Replay(finished.Response),
+                KeyLookup.HashMismatch => new BeginResult.HashMismatch(),
+                _ => new BeginResult.KeyInFlight(),
+            };
+        }
 
         if (command.CreatePayment)
         {
@@ -446,7 +456,7 @@ public sealed class PaymentStore
         return new ApplyResult.Applied(updated!);
     }
 
-    private static async Task InsertKeyAsync(
+    private static async Task<bool> InsertKeyAsync(
         NpgsqlConnection connection,
         NpgsqlTransaction transaction,
         BeginAttempt command,
@@ -468,7 +478,7 @@ public sealed class PaymentStore
         insert.Parameters.AddWithValue("hash", command.RequestHash);
         insert.Parameters.AddWithValue("payment", command.PaymentId.Value);
         insert.Parameters.AddWithValue("attempt", attemptId.Value);
-        await insert.ExecuteNonQueryAsync(cancellationToken);
+        return await insert.ExecuteNonQueryAsync(cancellationToken) > 0;
     }
 
     private static async Task InsertAttemptAsync(

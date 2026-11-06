@@ -23,6 +23,7 @@ public sealed class C43Fixture : IAsyncLifetime
     private PostgreSqlContainer _postgres = null!;
     private IContainer _pgbouncer = null!;
     private IContainer _standby = null!;
+    private bool _paused;
 
     public string AdminConnectionString => _postgres.GetConnectionString();
 
@@ -60,7 +61,6 @@ public sealed class C43Fixture : IAsyncLifetime
             .WithNetwork(_network)
             .WithNetworkAliases("postgres")
             .WithCommand(
-                "-c", $"synchronous_standby_names={Standbys}",
                 "-c", "synchronous_commit=on",
                 "-c", "wal_level=replica",
                 "-c", "max_wal_senders=10",
@@ -79,7 +79,7 @@ public sealed class C43Fixture : IAsyncLifetime
             .WithEnvironment("DB_NAME", "openpayments")
             .WithEnvironment("POOL_MODE", "transaction")
             .WithEnvironment("QUERY_TIMEOUT", "0")
-            .WithEnvironment("AUTH_TYPE", "trust")
+            .WithEnvironment("AUTH_TYPE", "scram-sha-256")
             .WithEnvironment("MAX_CLIENT_CONN", "100")
             .WithEnvironment("DEFAULT_POOL_SIZE", "20")
             .WithPortBinding(5432, true)
@@ -87,18 +87,29 @@ public sealed class C43Fixture : IAsyncLifetime
             .Build();
         await _pgbouncer.StartAsync();
 
+        var hba = await _postgres.ExecAsync(
+            ["sh", "-c", "echo 'host replication all all trust' >> /var/lib/postgresql/18/docker/pg_hba.conf"]);
+        if (hba.ExitCode != 0)
+        {
+            throw new InvalidOperationException("Could not allow replication connections: " + hba.Stderr);
+        }
+
+        await ExecAdminAsync("select pg_reload_conf()");
+
         _standby = new ContainerBuilder("postgres:18.6")
             .WithNetwork(_network)
             .WithEnvironment("PGPASSWORD", "op_local_only")
+            .WithEnvironment("PGAPPNAME", "standby1")
             .WithCommand(
                 "sh", "-c",
-                "mkdir -p /tmp/wal && chown postgres:postgres /tmp/wal && exec gosu postgres pg_receivewal -h postgres -U postgres -D /tmp/wal --application-name=standby1 --no-sync --verbose")
+                "mkdir -p /tmp/wal && chown postgres:postgres /tmp/wal && exec gosu postgres pg_receivewal -h postgres -U postgres -D /tmp/wal --synchronous --status-interval=1 --verbose")
             .Build();
         await _standby.StartAsync();
 
         await ExecAdminAsync(
             "do $$ begin if not exists (select from pg_roles where rolname = 'op_app') then create role op_app login password 'op_local_only'; end if; end $$;");
         await ResetAsync();
+        await EnableSynchronousAsync();
     }
 
     public async Task ResetAsync()
@@ -110,17 +121,35 @@ public sealed class C43Fixture : IAsyncLifetime
         await WaitForStandbyAsync();
     }
 
+    private async Task EnableSynchronousAsync()
+    {
+        await ExecAdminAsync($"alter system set synchronous_standby_names = '{Standbys}'");
+        await ExecAdminAsync("select pg_reload_conf()");
+        await WaitForSettingAsync(Standbys);
+        await WaitForSyncStandbyAsync();
+    }
+
     /// <summary>Stop the standby's WAL receiver, so COMMIT waits in SyncRep.</summary>
     public async Task BlockAsync()
     {
-        await _standby.ExecAsync(["kill", "-STOP", "1"]);
+        if (!_paused)
+        {
+            await _standby.PauseAsync(CancellationToken.None);
+            _paused = true;
+        }
+
         await Task.Delay(200);
     }
 
     /// <summary>Let the standby receive WAL again, which wakes every waiting COMMIT.</summary>
     public async Task UnblockAsync(bool terminateBackends)
     {
-        await _standby.ExecAsync(["kill", "-CONT", "1"]);
+        if (_paused)
+        {
+            await _standby.UnpauseAsync(CancellationToken.None);
+            _paused = false;
+        }
+
         await WaitForStandbyAsync();
         if (terminateBackends)
         {
@@ -177,11 +206,26 @@ public sealed class C43Fixture : IAsyncLifetime
         return new MerchantSeed(merchant, pspAccountId);
     }
 
+    public async Task<bool> WaitForSyncRepWaiterAsync()
+    {
+        for (var attempt = 0; attempt < 100; attempt++)
+        {
+            if (await CountSyncRepWaitersAsync() >= 1)
+            {
+                return true;
+            }
+
+            await Task.Delay(50);
+        }
+
+        return false;
+    }
+
     public async Task<int> CountSyncRepWaitersAsync()
     {
         await using var connection = await OpenAdminAsync();
         await using var command = new NpgsqlCommand(
-            "select count(*)::int from pg_stat_activity where usename = 'op_app' and wait_event_type = 'SyncRep'",
+            "select count(*)::int from pg_stat_activity where usename = 'op_app' and wait_event = 'SyncRep'",
             connection);
         return (int)(await command.ExecuteScalarAsync())!;
     }
@@ -235,6 +279,27 @@ public sealed class C43Fixture : IAsyncLifetime
         await _network.DeleteAsync();
     }
 
+    private async Task WaitForSettingAsync(string expected)
+    {
+        for (var attempt = 0; attempt < 100; attempt++)
+        {
+            await using var connection = await OpenAdminAsync();
+            await using var command = new NpgsqlCommand(
+                "select current_setting('synchronous_standby_names')",
+                connection);
+            var value = (string)(await command.ExecuteScalarAsync())!;
+            if (value == expected)
+            {
+                return;
+            }
+
+            await Task.Delay(100);
+        }
+
+        throw new InvalidOperationException(
+            $"synchronous_standby_names did not become '{expected}'.");
+    }
+
     private async Task WaitForStandbyAsync()
     {
         for (var attempt = 0; attempt < 100; attempt++)
@@ -252,6 +317,25 @@ public sealed class C43Fixture : IAsyncLifetime
         }
 
         throw new InvalidOperationException("standby1 did not start streaming.");
+    }
+
+    private async Task WaitForSyncStandbyAsync()
+    {
+        for (var attempt = 0; attempt < 100; attempt++)
+        {
+            await using var connection = await OpenAdminAsync();
+            await using var command = new NpgsqlCommand(
+                "select count(*)::int from pg_stat_replication where application_name = 'standby1' and state = 'streaming' and sync_state in ('sync', 'quorum')",
+                connection);
+            if ((int)(await command.ExecuteScalarAsync())! >= 1)
+            {
+                return;
+            }
+
+            await Task.Delay(100);
+        }
+
+        throw new InvalidOperationException("standby1 did not become synchronous.");
     }
 
     private async Task WaitForNoSyncRepWaitersAsync()
