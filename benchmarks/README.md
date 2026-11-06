@@ -72,6 +72,36 @@ With `TWO_CALL_SHARE=0.2` (the default), half of all requests create a payment. 
 | `DRAIN_SECONDS` | `3` | Wait after k6 before `op-checks` |
 | `OP_CHECKS_BIN` | `tools/OpenPayments.Checks/bin/Debug/net10.0/OpenPayments.Checks.dll` | Check runner |
 
+## Resetting the effect log
+
+Stop the mock before emptying `effects.csv`. `EffectLog` opens the file with
+`FileMode.Append` and keeps its write offset, so truncating the file while the mock is
+running leaves zero bytes between the header and the next append. `op-checks` then fails
+to parse the log and no checks run.
+
+Use this sequence:
+
+```bash
+docker compose -f deploy/compose/compose.yaml stop mock-psp
+printf 'key,op,amount_minor,currency,at\n' > deploy/compose/mock-effects/effects.csv
+docker compose -f deploy/compose/compose.yaml start mock-psp
+```
+
+Verify the file has the header and no NUL bytes before starting a run:
+
+```bash
+python3 - <<'PY'
+from pathlib import Path
+data = Path("deploy/compose/mock-effects/effects.csv").read_bytes()
+assert data.startswith(b"key,op,amount_minor,currency,at\n"), data[:40]
+assert b"\x00" not in data, "effect log contains NUL padding"
+print("effect log clean:", len(data), "bytes")
+PY
+```
+
+Never truncate the live file, and stop the API with the mock when resetting the database so
+no request can append between the truncate and the restart.
+
 `MOCK_ADDED_P99_MS` is recorded but not measured by this script. The mock's own capacity run is in [mock-psp-capacity.md](mock-psp-capacity.md); set this value from a fresh measurement before trusting a Linux run. A value above 5 makes the run invalid.
 
 `resources.py` fills the result's resource fields from each run's own Prometheus window. API CPU, memory, ThreadPool queue, Gen 2 GC and allocation come from the API `/metrics` process and runtime series. Pool wait is `pgbouncer_pools_client_maxwait_seconds`; deadlocks are `pg_stat_database_deadlocks`; WAL rate is `rate(pg_wal_bytes[1m])`. Lock waits use `pg_locks_count` as a lock-held proxy. Database CPU and I/O come from `docker stats` for `DB_CONTAINER` (default `open-payments-primary-1`). Outbox age and consumer lag stay `n/a` until their phases.

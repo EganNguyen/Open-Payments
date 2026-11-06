@@ -134,3 +134,38 @@ def test_missing_shares_are_not_checked():
         completed_metric=1000, db_count=1000)
     assert result.valid is False
     assert any("mix shares" in reason for reason in result.not_checked)
+
+
+def function_body(source, name):
+    start = source.index("function " + name + "(")
+    brace = source.index("{", start)
+    depth = 0
+    for index in range(brace, len(source)):
+        if source[index] == "{":
+            depth += 1
+        elif source[index] == "}":
+            depth -= 1
+            if depth == 0:
+                return source[brace + 1:index]
+    raise AssertionError("unterminated function " + name)
+
+
+def test_other_does_not_take_from_the_capture_queue():
+    from pathlib import Path
+    source = (Path(__file__).parent / "k6" / "mix.js").read_text(encoding="utf-8")
+    body = function_body(source, "other")
+    assert "captureQueue" not in body
+    assert "pickRecent(recent)" in body
+
+
+def test_dynamic_urls_have_fixed_metric_names():
+    from pathlib import Path
+    source = (Path(__file__).parent / "k6" / "mix.js").read_text(encoding="utf-8")
+    for name in (
+        "POST /v1/payments/:id/capture",
+        "GET /v1/payments/:id",
+        "POST /v1/payments/:id/refunds",
+        "POST /v1/payments/:id/cancel",
+        "GET /inquire/:key",
+    ):
+        assert name in source

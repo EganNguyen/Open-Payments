@@ -264,7 +264,10 @@ function capture() {
   const response = http.post(
     `${baseUrl}/v1/payments/${entry.id}/capture`,
     JSON.stringify({ amount_minor: entry.amount }),
-    { headers: headers(entry.merchant, uuidv4(), true) },
+    {
+      headers: headers(entry.merchant, uuidv4(), true),
+      tags: { name: "POST /v1/payments/:id/capture" },
+    },
   );
   record(response, [200, 202, 402, 409, 422, 429, 503]);
 
@@ -298,6 +301,7 @@ function status() {
     : `/v1/payments/${entry.id || "00000000-0000-7000-8000-000000000000"}`;
   const response = http.get(`${baseUrl}${path}`, {
     headers: headers(entry.merchant, null, false),
+    tags: { name: mock ? "GET /inquire/:key" : "GET /v1/payments/:id" },
   });
   record(response, [200, 404, 429, 503]);
 }
@@ -316,6 +320,7 @@ function refund() {
   const body = { amount_minor: amount, currency: "USD" };
   const response = http.post(`${baseUrl}${path}`, JSON.stringify(body), {
     headers: headers(target.merchant, key, true),
+    tags: { name: mock ? "POST /mock/refund" : "POST /v1/payments/:id/refunds" },
   });
   record(response, mock ? [200, 402, 429, 503] : [200, 202, 402, 404, 409, 422, 429, 503]);
 }
@@ -342,13 +347,13 @@ function other() {
     const path = entry ? `/inquire/${entry.key}` : "/health";
     const response = http.get(`${baseUrl}${path}`, {
       headers: headers(entry ? entry.merchant : "merchant-0", null, false),
+      tags: { name: entry ? "GET /inquire/:key" : "GET /health" },
     });
     record(response, [200, 404, 429, 503]);
     return;
   }
 
-  const queued = captureQueue.pop();
-  const entry = queued || pickRecent(recent);
+  const entry = pickRecent(recent);
   if (!entry || !entry.id) {
     status();
     return;
@@ -358,7 +363,10 @@ function other() {
   const response = http.post(
     `${baseUrl}/v1/payments/${entry.id}/cancel`,
     JSON.stringify({}),
-    { headers: headers(entry.merchant, key, true) },
+    {
+      headers: headers(entry.merchant, key, true),
+      tags: { name: "POST /v1/payments/:id/cancel" },
+    },
   );
   record(response, [200, 202, 404, 409, 429, 503]);
 }
