@@ -86,8 +86,11 @@ services:
       dockerfile: deploy/compose/mock-psp/Dockerfile
     environment:
       ASPNETCORE_URLS: http://+:8080
+      EFFECTS_DIR: /app/effects
     ports:
       - "127.0.0.1:18080:8080"
+    volumes:
+      - ./mock-effects:/app/effects
     healthcheck:
       test: ["CMD-SHELL", "curl -fsS http://127.0.0.1:8080/health || exit 1"]
       interval: 2s
