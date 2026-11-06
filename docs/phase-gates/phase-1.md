@@ -10,7 +10,7 @@ by name below; the gate stays open until they are closed.
 | Check | Result |
 |---|---|
 | `dotnet build OpenPayments.slnx -warnaserror` | PASS: 12 projects, 0 warnings. |
-| `dotnet test OpenPayments.slnx` | PASS: 182 tests. Domain 70, analyzers 1, mock PSP 17, checks 17, integration 31, acceptance 46. |
+| `dotnet test OpenPayments.slnx` | PASS: 183 tests. Domain 70, analyzers 1, mock PSP 17, checks 17, integration 31, acceptance 47. |
 | `dotnet list OpenPayments.slnx package --vulnerable --include-transitive` | PASS: no vulnerable packages from the configured source. |
 | `bash -n scripts/check-db-settings.sh` | PASS. The script now checks `transaction_timeout` is unset and PgBouncer `query_timeout=0`; it was not run against a full standby compose stack in this session. |
 | License scan | Not run: `nuget-license` is not installed in this environment. |
