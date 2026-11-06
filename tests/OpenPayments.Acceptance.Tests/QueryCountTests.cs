@@ -4,11 +4,12 @@ using System.Net.Http.Json;
 using System.Text.Json;
 using OpenPayments.Api;
 using Xunit;
+using Xunit.Abstractions;
 
 namespace OpenPayments.Acceptance.Tests;
 
 [Collection("acceptance")]
-public sealed class QueryCountTests(AcceptanceFixture db)
+public sealed class QueryCountTests(AcceptanceFixture db, ITestOutputHelper output)
 {
     [Fact]
     public async Task S3_each_endpoint_within_query_count()
@@ -24,22 +25,26 @@ public sealed class QueryCountTests(AcceptanceFixture db)
             method = new { type = "card", @ref = "tok_test" },
         });
         Assert.Equal(HttpStatusCode.OK, created.StatusCode);
+        output.WriteLine($"S3 create commands={db.Queries.Count}");
         AssertWithin("create", db.Queries.Count, 40);
         var paymentId = (await ReadAsync(created)).GetProperty("id").GetString();
 
         db.Queries.Reset();
         using var read = await client.GetAsync($"/v1/payments/{paymentId}");
         Assert.Equal(HttpStatusCode.OK, read.StatusCode);
+        output.WriteLine($"S3 read commands={db.Queries.Count}");
         AssertWithin("read", db.Queries.Count, 10);
 
         db.Queries.Reset();
         using var captured = await PostAsync(client, $"/v1/payments/{paymentId}/capture", "query-capture", new { amount_minor = 1000 });
         Assert.Equal(HttpStatusCode.OK, captured.StatusCode);
+        output.WriteLine($"S3 capture commands={db.Queries.Count}");
         AssertWithin("capture", db.Queries.Count, 40);
 
         db.Queries.Reset();
         using var refunded = await PostAsync(client, $"/v1/payments/{paymentId}/refunds", "query-refund", new { amount_minor = 1000 });
         Assert.Equal(HttpStatusCode.OK, refunded.StatusCode);
+        output.WriteLine($"S3 refund commands={db.Queries.Count}");
         AssertWithin("refund", db.Queries.Count, 50);
     }
 
