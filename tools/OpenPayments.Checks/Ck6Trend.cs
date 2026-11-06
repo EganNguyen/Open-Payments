@@ -39,9 +39,7 @@ public static class Ck6Trend
 
             var first = samples[0];
             var last = samples[^1];
-            var grew = stage == "phase3"
-                ? last > Math.Max(first + 60, 300)
-                : last > (first * 1.5) + 10;
+            var grew = Grew(samples, stage);
             var violations = grew
                 ? new[] { query }
                 : [];
@@ -59,6 +57,28 @@ public static class Ck6Trend
         {
             return Failed(exception.Message);
         }
+    }
+
+    public static bool Grew(IReadOnlyList<double> samples, string stage)
+    {
+        if (samples.Count == 0)
+        {
+            return false;
+        }
+
+        var first = samples[0];
+        var last = samples[^1];
+        if (stage == "phase3")
+        {
+            return last > Math.Max(first + 60, 300);
+        }
+
+        // An in-flight gauge ramps from idle to its steady concurrency. Compare the
+        // final window with the first window instead of calling that ramp growth.
+        var window = Math.Max(2, samples.Count / 4);
+        var early = samples.Take(window).Max();
+        var late = samples.Skip(samples.Count - window).Average();
+        return late > (early * 1.5) + 10;
     }
 
     private static List<double> ReadSamples(JsonDocument document, string query)
