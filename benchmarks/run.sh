@@ -14,6 +14,7 @@ shift
 ENV=local
 STAGE=phase0
 PSP_LATENCY=200
+PROM_URL=${PROM_URL:-http://127.0.0.1:9090}
 while [[ $# -gt 0 ]]; do
   case "$1" in
     --env) ENV=$2; shift 2 ;;
@@ -93,6 +94,7 @@ if psql "$CHECKS_DB_URL" -XAtq -c 'select 1' >/dev/null 2>&1; then
 fi
 
 STARTED_AT=$(date -u +%Y-%m-%dT%H:%M:%SZ)
+START_EPOCH=$(date +%s)
 echo "run $RUN_ID: step $STEP, $RATE req/s for ${DURATION}s, $TARGET_OVERRIDE, $STAGE"
 set +e
 if [[ -x /usr/bin/time ]]; then
@@ -128,7 +130,8 @@ RUN_ID="$RUN_ID" COMMIT="$COMMIT" STEP="$STEP" ENV="$ENV" STAGE="$STAGE" \
 PSP_LATENCY="$PSP_LATENCY" RATE="$RATE" DURATION="$DURATION" STARTED_AT="$STARTED_AT" \
 GEN_CPU="$GEN_CPU" K6_EXIT="$K6_EXIT" BASE_URL="$BASE_URL" TARGET_OVERRIDE="$TARGET_OVERRIDE" \
 MOCK_CONFIG="$MOCK_CONFIG" AUTO_CAPTURE_SHARE="${AUTO_CAPTURE_SHARE:-0.5}" \
-MOCK_ADDED_P99_MS="${MOCK_ADDED_P99_MS:-0}" RUN_DIR="$RUN_DIR" \
+MOCK_ADDED_P99_MS="${MOCK_ADDED_P99_MS:-}" RUN_DIR="$RUN_DIR" \
+PROM_URL="$PROM_URL" \
 python3 - <<'PY'
 import json, os
 config = {
@@ -147,7 +150,9 @@ config = {
     "target_override": os.environ["TARGET_OVERRIDE"],
     "mock_config": json.loads(os.environ.get("MOCK_CONFIG") or "{}"),
     "auto_capture_share": float(os.environ["AUTO_CAPTURE_SHARE"]),
-    "mock_added_p99_ms": float(os.environ["MOCK_ADDED_P99_MS"]),
+    "mock_added_p99_ms": None if not os.environ["MOCK_ADDED_P99_MS"]
+        else float(os.environ["MOCK_ADDED_P99_MS"]),
+    "prom_url": os.environ["PROM_URL"],
     "git_dirty": False,
     "config_recorded": True,
     "api_instances": os.environ.get("API_INSTANCES", "local"),
@@ -164,6 +169,7 @@ with open(os.path.join(os.environ["RUN_DIR"], "config.json"), "w", encoding="utf
 PY
 
 sleep "${DRAIN_SECONDS:-3}"
+END_EPOCH=$(date +%s)
 
 # Copy the effect log only after the drain: CK2 must include the effects from this run,
 # not just the ones already in the log when the run started.
@@ -180,7 +186,8 @@ fi
 
 CHECKS_EXIT=0
 dotnet "$OP_CHECKS_BIN" --db "$CHECKS_DB_URL" --effects "$EFFECTS_PATH" \
-  --stage "$STAGE" --out "$RUN_DIR/checks.json" \
+  --stage "$STAGE" --prom "$PROM_URL" \
+  --from "$START_EPOCH" --to "$END_EPOCH" --out "$RUN_DIR/checks.json" \
   > "$RUN_DIR/checks.stdout" 2> "$RUN_DIR/checks.stderr" || CHECKS_EXIT=$?
 if [[ ! -s "$RUN_DIR/checks.json" ]]; then
   printf '[]\n' > "$RUN_DIR/checks.json"

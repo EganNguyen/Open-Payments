@@ -16,6 +16,7 @@ from typing import Any, Dict, List, Optional
 class Validity:
     valid: bool
     reasons: List[str] = field(default_factory=list)
+    not_checked: List[str] = field(default_factory=list)
 
 
 @dataclass
@@ -52,19 +53,22 @@ def render(check: Dict[str, Any]) -> str:
 def validity(
     summary: Dict[str, Any],
     gen_cpu: float,
-    mock_added_p99_ms: float = 0.0,
+    mock_added_p99_ms: Optional[float] = None,
     dirty_tree: bool = False,
     config_recorded: bool = True,
     completed_metric: Optional[int] = None,
     db_count: Optional[int] = None,
 ) -> Validity:
     reasons: List[str] = []
+    not_checked: List[str] = []
     dropped = int(metric(summary, "dropped_iterations", "count", 0))
     if dropped > 0:
         reasons.append("generator dropped %d arrivals" % dropped)
     if gen_cpu > 80:
         reasons.append("generator CPU was %.1f%%, over 80%%" % gen_cpu)
-    if mock_added_p99_ms > 5:
+    if mock_added_p99_ms is None:
+        not_checked.append("mock added p99 latency")
+    elif mock_added_p99_ms > 5:
         reasons.append(
             "mock added %.2f ms at p99, over 5 ms" % mock_added_p99_ms
         )
@@ -72,14 +76,16 @@ def validity(
         reasons.append("git tree was dirty")
     if not config_recorded:
         reasons.append("configuration was not recorded")
-    if completed_metric is not None and db_count is not None:
+    if completed_metric is None or db_count is None:
+        not_checked.append("completed metric vs database count")
+    else:
         counts = reconcile_counts(completed_metric, db_count)
         if not counts.ok:
             reasons.append(
                 "completed metric %d differs from database %d"
                 % (completed_metric, db_count)
             )
-    return Validity(not reasons, reasons)
+    return Validity(not reasons and not not_checked, reasons, not_checked)
 
 
 def gates(
@@ -143,7 +149,8 @@ def write_result(run_dir: Path, stage: str, env: str) -> int:
     counts = read_json(run_dir / "counts.json", {})
 
     gen_cpu = float(config.get("generator_cpu_pct", 0.0))
-    mock_added = float(config.get("mock_added_p99_ms", 0.0))
+    mock_value = config.get("mock_added_p99_ms")
+    mock_added = None if mock_value is None else float(mock_value)
     completed_metric = counts.get("metric")
     db_count = counts.get("db")
 
@@ -271,6 +278,8 @@ def write_result(run_dir: Path, stage: str, env: str) -> int:
     lines.append("Run valid: %s" % ("yes" if run_validity.valid else "no"))
     if run_validity.reasons:
         lines.append("Invalid because: " + "; ".join(run_validity.reasons))
+    if run_validity.not_checked:
+        lines.append("Validity not checked: " + "; ".join(run_validity.not_checked))
     if gate_result.reasons:
         lines.append("Gate reasons: " + "; ".join(gate_result.reasons))
     lines.append("")

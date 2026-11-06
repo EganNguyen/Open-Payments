@@ -1,3 +1,5 @@
+import json
+
 from report import (
     ck,
     gates,
@@ -5,6 +7,7 @@ from report import (
     render,
     render_header,
     validity,
+    write_result,
 )
 
 
@@ -45,3 +48,44 @@ def test_counter_must_match_database():
 
 def test_preview_label_before_phase3():
     assert "preview" in render_header(stage="phase1")
+
+
+def test_missing_mock_added_latency_is_not_checked():
+    result = validity(k6(), gen_cpu=40, mock_added_p99_ms=None)
+    assert result.valid is False
+    assert any("mock added" in reason for reason in result.not_checked)
+
+
+def test_missing_completed_count_reconciliation_is_not_checked():
+    result = validity(k6(), gen_cpu=40, completed_metric=None, db_count=None)
+    assert result.valid is False
+    assert any("completed" in reason for reason in result.not_checked)
+
+
+def test_checked_validity_rules_pass():
+    result = validity(
+        k6(), gen_cpu=40, mock_added_p99_ms=1.0,
+        completed_metric=1000, db_count=1000)
+    assert result.valid is True
+    assert result.not_checked == []
+
+
+def test_result_marks_unchecked_rules(tmp_path):
+    (tmp_path / "config.json").write_text(json.dumps({
+        "run_id": "unchecked",
+        "commit": "abc",
+        "step": 1,
+        "rate": 10,
+        "duration_seconds": 10,
+        "started_at": "2026-11-06T00:00:00Z",
+        "generator_cpu_pct": 1,
+        "psp_latency_ms": 200,
+        "mock_added_p99_ms": None,
+    }), encoding="utf-8")
+    (tmp_path / "k6-summary.json").write_text(json.dumps(k6()), encoding="utf-8")
+    (tmp_path / "checks.json").write_text("[]", encoding="utf-8")
+
+    assert write_result(tmp_path, "phase1", "local") == 1
+    result = (tmp_path / "result.md").read_text(encoding="utf-8")
+    assert "Validity not checked: mock added p99 latency; completed metric vs database count" in result
+    assert "Run valid: no" in result
