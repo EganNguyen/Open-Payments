@@ -107,3 +107,21 @@ C31b's E4 test must run the real job and assert:
 - A resolved key past retention is removed, and reusing it creates a new operation.
 - A resolved key just inside retention still replays with no PSP call.
 - A key with `resolved_at is null` is kept, whatever its age.
+
+## E4: Task 17 has no Linux host for steps 4-5
+
+**State:** Open · Raised 2026-11-06
+
+**Task:** 17, the first ramp. Steps 0-3 are local previews; steps 4-5 and the first `C` require a Linux host.
+
+**What blocks:** The available machine is the owner's MacBook. The playbook and Task 17 both say laptop numbers are comparative only and cannot answer G1. No Linux host has been provided, so steps 4-5 have not run and no `C` or `N` exists. Reporting the laptop's step-3 result as `C` would be false.
+
+**Options seen:**
+
+1. Provide a Linux host for Task 17 steps 4-5, with the generator separate from the system under test. This is the only option that produces a real `C`.
+2. Mark Task 17 partial and leave `C` unset; carry the Linux run into the review gate or Stage 2 preparation. This keeps the evidence honest but does not close Task 17.
+3. Use the MacBook number as `C`. Rejected: it is a laptop preview and the baseline says so.
+
+**Recommendation:** Option 1. Until a host exists, keep Task 17 PARTIAL and do not report the build as ready for review.
+
+**Impact:** Task 17 steps 4-5 and `BASELINE.md`'s capacity section are incomplete. The Phase 1 gate stays open. The local steps 0-3 are valid previews under the gates and are recorded in [BASELINE](../../benchmarks/BASELINE.md).
