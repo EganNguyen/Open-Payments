@@ -1,6 +1,6 @@
 # Stage 1 Build Progress
 
-The build gate's evidence log: one line per task, with the commit, the command that was run, and the result. Tasks 7-13 are complete; tasks 14-17 are not started.
+The build gate's evidence log: one line per task, with the commit, the command that was run, and the result. Tasks 7-14 are complete; tasks 15-16 are implemented with recorded gaps; Task 17 is not started.
 
 Status: In progress · Last updated: 2026-11-06
 
@@ -13,5 +13,9 @@ Status: In progress · Last updated: 2026-11-06
 | 11 | `a24093d` | `.venv/bin/python -m pytest benchmarks/test_report.py -v`; `TARGET_OVERRIDE=mock CHECKS_DB_URL=postgres://postgres:op_local_only@127.0.0.1:25432/openpayments benchmarks/run.sh 0 --env local --stage phase0 --psp-latency 200`; `dotnet test` | PASS: 7 report tests and 46 .NET tests; Phase 0 run `20261105T103556Z-a24093d-s0-3181` wrote `checks.json` with CK1-CK3 failures on zero rows, a valid preview `result.md`, and exited 1 as required. |
 | 12 | `d85a712` | `dotnet test tests/OpenPayments.Domain.Tests`; `dotnet test`; `dotnet build -warnaserror` | PASS: 70 domain tests covering U2, U3, D27, D29, D32, D33, D37, CK7 and four golden cases; 105 tests total, 0 warnings. |
 | 13 | `ed1ab56` (WIP `80f0e6c`) | `dotnet test tests/OpenPayments.Integration.Tests`; `dotnet test OpenPayments.slnx`; `dotnet build OpenPayments.slnx -warnaserror` | PASS: 30 integration tests, including every C43 scenario direct and through PgBouncer 1.26.1; 135 tests total, 0 warnings. Commit wait limit keeps the backend in SyncRep with no cancel, failed/warned commits are unknown, abandoned commits complete and release their connection, and abandoned connections shed new work as `Busy`. |
+| 14 | `6eb4bd3` | `dotnet test tests/OpenPayments.Acceptance.Tests`; `dotnet test OpenPayments.slnx`; `dotnet build OpenPayments.slnx -warnaserror` | PASS: create/attempt API with auth, tenant isolation, idempotency replay, in-flight 409, 100-way concurrency, fraud block, canonical log, PSP timeout 202 and simulated C43 A/B failures. 46 acceptance tests; 182 tests total, 0 warnings. |
+| 15 | `6eb4bd3` | `dotnet test --filter CaptureTests` | PASS except `Auto_capture_success_counts_one_completed_payment`: capture, two-call auto-capture, one-call sale, void, timeouts and C36/C50 covered. No completed-payment counter is wired yet. |
+| 16 | `6eb4bd3` | `dotnet test --filter "RefundTests|HotQueryPlanTests"` | PARTIAL: refunds, 30/70 worked example, timeout, shared key, C6, E13 and S3 list-plan pass. C31a still lacks E4/E5/E9/E16/E18; S3 endpoint query counts and S6 license/secret scans are open. See [Phase 1 gate](../phase-gates/phase-1.md). |
+| 17 | — | Not run | NOT STARTED: no API in the compose stack and no Phase 1 ramp. Preview and Linux steps remain. |
 
 E1 outcome (2026-11-06): the amended D28 is implemented and covered by the C43 suite on PostgreSQL 18.6, both directly and through PgBouncer 1.26.1. `CommitAsync(CancellationToken.None)` plus the runner's 3 s wait limit never sends a cancel; a timeout, dropped connection, or warning becomes `CommitOutcomeUnknownException`. The commit keeps its connection until the standby confirms, and the abandoned-commit gauge returns to zero when it does. Recorded in [E1](stage-1-escalations.md#e1-task-13-npgsql-commit-cancellation-breaks-d28).
