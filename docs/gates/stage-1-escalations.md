@@ -247,3 +247,27 @@ Do not rewrite the store or add batching in Stage 1. Reading the code suggests t
 S3 stays PARTIAL until these pass. Revisit the statement count after Linux step 5: if pool wait or lock waits limit capacity, batching is the first fix to try.
 
 **Escalate again if** a command count grows with related rows, or a transaction's count varies between runs of the same path for reasons other than a documented retry.
+
+## E7: benchmark reset leaves the CK1 ledger manifest stale
+
+**State:** Open · Raised 2026-11-06
+
+**Task:** 17, validating a preview after a database reset. This is a harness reset issue, not a money defect.
+
+**What happened:** Run `20261106T074406Z-095f2b2-s2-3717` (step 2, commit `095f2b2`) was valid, kept every D47 share within the 2-point limit and passed CK2-CK6, CK9 and CK10. CK1 failed with one `ledger_manifest` violation.
+
+**Evidence:** The reset truncated the payment, attempt, refund, ledger, outbox, idempotency, event and settlement tables, but not the checks' private `ck.ledger_rows` manifest. Before the run it held 148,646 rows; the new ledger had 25,890 rows. 122,756 manifest rows had no matching ledger entry, so `LedgerRowsChangedAsync` correctly reported deletions. `CheckRunner.InitializeAsync` truncates `ck.psp_effects` for each run but deliberately leaves `ck.ledger_rows` to detect tampering within a run. The reset did not clear it between independent runs.
+
+**Why it matters:** CK1 is doing what it was built to do. A benchmark reset is a controlled deletion, but CK1 cannot distinguish that from an operator deleting ledger rows while a run is in progress unless the reset also clears the manifest between separate runs.
+
+**Options seen:**
+
+1. Clear `ck.ledger_rows` while the API and mock are stopped, as part of a full benchmark reset, and document it next to the effect-log reset. Rerun step 2 and keep CK1 unchanged inside a run.
+2. Drop and recreate the `ck` schema on reset. This has the same effect, but removes any other check state as well.
+3. Leave the manifest and treat the CK1 failure as a false positive. Rejected: it leaves the run failed and hides the reset requirement.
+
+**Recommendation:** Option 1. Clear the manifest only between independent runs, never while a run is in progress, and rerun step 2 before continuing the limit search. Do not weaken CK1.
+
+**Impact:** No passing step-2 preview is recorded. Task 17 remains PARTIAL and the limit search stays stopped at the first failed gate. The run is still evidence that the mix fix and the k6 metric-name fix work: sale 40.10%, authorize 10.38%, capture 9.51%, status 15.16%, refund 9.98%, retry 10.05%, other 4.83%, 56 capture substitutions, and no k6 unique-series warning.
+
+**Escalate again if** clearing the manifest does not make CK1 pass on a rerun, or if any share leaves the 2-point limit.
