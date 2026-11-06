@@ -1,8 +1,8 @@
 # Benchmark Guide
 
-How to deploy the stack, run benchmarks, watch resources, verify the money and compare results on the MacBook. The design is in [Local deployment](../architecture/local-deployment.md), and the latest results are in the [MacBook summary](spike/macbook-2026-11-05/summary.md).
+How to deploy the stack, run benchmarks, watch resources, verify the money and compare results on the MacBook. The design is in [Local deployment](../architecture/local-deployment.md), and the latest results are in the [MacBook summary](spike/macbook-2026-11-05/summary.md). What's still unmeasured is in [Open experiments](open-experiments.md).
 
-Status: Database tier only. The full platform has no benchmark until it's built · Last updated: 2026-11-05
+Status: Database tier only. The full platform has no benchmark until it's built · Last updated: 2026-11-06
 
 Run every command from the repository root.
 
