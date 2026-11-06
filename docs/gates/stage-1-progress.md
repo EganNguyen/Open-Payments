@@ -22,6 +22,8 @@ Recorded deviations: tasks 14, 15 and 16 were committed together as `6eb4bd3`, s
 
 D46 outcome (2026-11-06): E4 and E9 moved from C31a to C31b with owner approval, so Task 16 is complete without a callback receiver or key-expiry job. No test was faked. See [D46](../decisions.md#d46) and [E2/E3](stage-1-escalations.md#e2-task-16-late-declined-callback-has-no-receiver).
 
+E4 outcome (2026-11-06): no Linux host for now, so Task 17 stays PARTIAL. The next builder work and the rules for a laptop limit search are in [E4](stage-1-escalations.md#e4-task-17-has-no-linux-host-for-steps-4-5-escalation-e4). It also corrects the Task 13 and 14 records: E1's abandoned-commit gauge and commit-warning counter, and the Task 14 runtime and process metrics, are not served by `/metrics`.
+
 E5 and E6 outcome (2026-11-06): the owner approved [D47](../decisions.md#d47) and [D48](../decisions.md#d48). Task 16's S3 evidence is now PARTIAL, and Task 17 needs the new mix before its previews can feed `C` or `T`. The builder work is listed in [E5](stage-1-escalations.md#e5-task-17-workload-mix-has-no-agreed-saletwo-call-shares) and [E6](stage-1-escalations.md#e6-s3-query-count-budgets-have-no-design-source).
 
 E1 outcome (2026-11-06): the amended D28 is implemented and covered by the C43 suite on PostgreSQL 18.6, both directly and through PgBouncer 1.26.1. `CommitAsync(CancellationToken.None)` plus the runner's 3 s wait limit never sends a cancel; a timeout, dropped connection, or warning becomes `CommitOutcomeUnknownException`. The commit keeps its connection until the standby confirms, and the abandoned-commit gauge returns to zero when it does. Recorded in [E1](stage-1-escalations.md#e1-task-13-npgsql-commit-cancellation-breaks-d28).

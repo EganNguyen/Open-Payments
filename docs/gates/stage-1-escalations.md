@@ -110,7 +110,7 @@ C31b's E4 test must run the real job and assert:
 
 ## E4: Task 17 has no Linux host for steps 4-5 (escalation E4)
 
-**State:** Open · Raised 2026-11-06
+**State:** Open, no host yet; laptop previews continue under the answer below · Raised 2026-11-06
 
 **Task:** 17, the first ramp. Steps 0-3 are local previews; steps 4-5 and the first `C` require a Linux host. This is escalation E4; edge case E4 is the key-retention case moved to C31b by [D46](../decisions.md#d46).
 
@@ -134,6 +134,33 @@ A Phase 1 Linux run is still labelled **preview** under the trust rules, because
 **Recommendation:** Option 1. Until a host exists, keep Task 17 PARTIAL and do not report the build as ready for review.
 
 **Impact:** Task 17 steps 4-5 and `BASELINE.md`'s capacity section are incomplete. The Phase 1 gate stays open. The local steps 0-3 are valid previews only and are recorded in [BASELINE](../../benchmarks/BASELINE.md).
+
+**Answer (owner, 2026-11-06):** Option 2 for now. There is no Linux host, so Task 17 stays PARTIAL and `C` stays unset. The laptop may be used to find bottlenecks, under the rules below. This entry stays open until a host exists.
+
+**Do first, in this order:**
+
+1. Make the [E5](#e5-task-17-workload-mix-has-no-agreed-saletwo-call-shares) mix change and the [E6](#e6-s3-query-count-budgets-have-no-design-source) S3 test change.
+2. Export the metrics [Metrics](../metrics.md) already promises and `/metrics` does not serve: `process_cpu_seconds_total`, `process_resident_memory_bytes`, `process_num_threads`, ThreadPool queue, Gen 2 GC and allocation rate, plus `op_tx_retries_total` and `op_conditional_update_zero_rows_total`.
+3. Export the abandoned-commit gauge and the commit-warning counter that [E1](#e1-task-13-npgsql-commit-cancellation-breaks-d28) item 9 requires, and add both to Metrics. `TxRunner` tracks them today, but they are neither served nor documented.
+4. Fill the `n/a` fields in `result.md` from the run's own time window. Use `pgbouncer_pools_client_maxwait_seconds` for pool wait, `pg_stat_database_deadlocks` for deadlocks and `pg_wal_bytes` for WAL rate. Add lock-wait and database and container CPU sources that work on the local stack, and name each source in the [benchmark README](../../benchmarks/README.md). Outbox age and consumer lag stay `n/a` until their phases.
+
+**Laptop limit search:**
+
+1. Rerun steps 0-3 at the new mix, then run steps 4, 5, 6 and 7 in turn, with `--env local`.
+2. Stop at the first failed gate or invalid run. An invalid run, such as generator CPU over 80% or dropped arrivals, shows the laptop's limit, not the system's. Say so, and don't call it a system bottleneck.
+3. Record each run in [BASELINE](../../benchmarks/BASELINE.md), with the database size. Before naming a bottleneck, the resource fields must be filled, and the entry must cite the numbers behind it.
+
+**Improving from what it finds:**
+
+1. Change one thing at a time, and name the bottleneck it targets before changing it.
+2. Compare before and after at the same step, mix, configuration and database size, starting from the same database state. Keep the change only if the measured limit improves and the applicable checks still pass.
+3. Never disable quorum replication, durable flushes, correctness checks or a gate to reach a higher rate.
+4. Escalate before any change that touches `docs/decisions.md`, the API contract, a migration beyond the current task, or a gate's value. Batching store statements is allowed only after a recorded bottleneck, as [D48](../decisions.md#d48) says.
+5. Laptop pool sizes and tuning values are not production settings. They go into the production estimate only after a Linux run.
+
+**Not established by this work:** `C`, `N`, whether 5,000 completed payments/s is reachable, and the close of Task 17. The review gate stays closed to Task 17 until a host exists, or until the owner decides otherwise.
+
+**Escalate again if** the limit search fails below step 4 at the new mix, or if a bottleneck can only be fixed by a design change.
 
 ## E5: Task 17 workload mix has no agreed sale/two-call shares
 

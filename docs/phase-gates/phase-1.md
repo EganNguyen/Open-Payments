@@ -43,6 +43,10 @@ C31b in Phase 2, so C31a is complete without a fake callback route or expiry job
 - Benchmark mix: `mix.js` sends no standalone capture. The change is specified in
   [E5](../gates/stage-1-escalations.md#e5-task-17-workload-mix-has-no-agreed-saletwo-call-shares),
   and steps 0-3 must be rerun at the new mix.
+- Metrics: the runtime and process metrics, and E1's abandoned-commit gauge and commit-warning
+  counter, are not served by `/metrics`. Listed in the [E4 answer](../gates/stage-1-escalations.md#e4-task-17-has-no-linux-host-for-steps-4-5-escalation-e4).
+- Laptop only for now (owner, 2026-11-06): the E4 answer also sets the rules for a laptop limit
+  search. Its results stay previews and can't close Task 17.
 - Task 17: the local preview steps 0-3 pass, but steps 4-5 need a Linux host. No `C` or `N` is
   recorded. See [E4](../gates/stage-1-escalations.md#e4-task-17-has-no-linux-host-for-steps-4-5-escalation-e4).
 - C31a has no open design gap after D46; E4 and E9 are C31b tests, not Stage 1 evidence.
