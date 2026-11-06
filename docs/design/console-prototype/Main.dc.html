@@ -23,7 +23,12 @@ button:focus-visible,input:focus-visible,select:focus-visible,textarea:focus-vis
 
 <sc-if value="{{isDesktop}}" hint-placeholder-val="{{true}}">
 <nav aria-label="Main" style="flex: 1 1 220px; max-width: 100%; box-sizing: border-box; padding: 20px 12px; background: {{t.surface}}; border-right: 1px solid {{t.border}}; display: flex; flex-direction: column; gap: 4px;">
-<div style="padding: 0 12px 16px; font-weight: 600; font-size: 15px;">Open Payments</div>
+<div style="padding: 0 12px 12px; font-weight: 600; font-size: 15px;">Open Payments</div>
+<div role="group" aria-label="Data shown" style="display: flex; gap: 4px; margin: 0 8px 12px; padding: 3px; border-radius: 8px; background: {{t.sunken}};">
+<sc-for list="{{modes}}" as="m" hint-placeholder-count="2">
+<button type="button" onClick="{{m.pick}}" aria-pressed="{{m.pressed}}" style="flex: 1 1 0; min-height: 44px; border: 0; border-radius: 6px; background: {{m.bg}}; color: {{m.color}}; font-size: 13px; font-weight: {{m.weight}};">{{m.label}}</button>
+</sc-for>
+</div>
 <sc-for list="{{navItems}}" as="n" hint-placeholder-count="4">
 <button type="button" class="nav" onClick="{{n.go}}" aria-current="{{n.current}}" style="display: flex; align-items: center; gap: 10px; min-height: 44px; padding: 0 12px; border: 0; border-radius: 6px; text-align: left; background: {{n.bg}}; color: {{n.color}}; font-weight: {{n.weight}};">
 <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="{{n.icon}}"></path></svg>
@@ -38,8 +43,15 @@ button:focus-visible,input:focus-visible,select:focus-visible,textarea:focus-vis
 </nav>
 </sc-if>
 
-<main style="flex: 999 1 560px; min-width: 0; box-sizing: border-box; padding: {{mainPad}}; overflow-y: {{mainOverflow}}; height: {{mainHeight}};">
+<main ref="{{setMainRef}}" style="flex: 999 1 560px; min-width: 0; box-sizing: border-box; padding: {{mainPad}}; overflow-y: {{mainOverflow}}; height: {{mainHeight}};">
 <div style="max-width: 1040px; margin: 0 auto; display: flex; flex-direction: column; gap: 16px;">
+
+<sc-if value="{{isTest}}" hint-placeholder-val="{{false}}">
+<div role="status" style="display: flex; gap: 8px; align-items: center; padding: 10px 12px; border-radius: 6px; border: 1px dashed {{t.warningText}}; background: {{t.warningBg}}; color: {{t.warningText}}; font-size: 13px; font-weight: 500;">
+<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 9v4M12 17h.01M10.3 3.9 2.4 18a2 2 0 0 0 1.7 3h15.8a2 2 0 0 0 1.7-3L13.7 3.9a2 2 0 0 0-3.4 0z"></path></svg>
+<span>You're viewing test data. Actions here don't move real money.</span>
+</div>
+</sc-if>
 
 <sc-if value="{{showLag}}" hint-placeholder-val="{{false}}">
 <div role="status" style="display: flex; gap: 8px; align-items: center; padding: 8px 12px; border-radius: 6px; background: {{t.warningBg}}; color: {{t.warningText}}; font-size: 13px;">
@@ -68,6 +80,7 @@ button:focus-visible,input:focus-visible,select:focus-visible,textarea:focus-vis
 <button type="button" class="row" onClick="{{r.open}}" style="display: flex; flex-wrap: wrap; align-items: center; gap: 4px 16px; width: 100%; min-height: 52px; box-sizing: border-box; padding: 10px 16px; border: 0; border-bottom: 1px solid {{t.soft}}; background: transparent; text-align: left;">
 <span style="flex: 0 0 130px; font-weight: 600;">{{r.amount}}</span>
 <span style="flex: 1 1 200px; color: {{t.muted}};">{{r.detail}}</span>
+<span style="font-size: 12px; color: {{t.muted}};">{{r.merchant}}</span>
 <span style="font-family: 'IBM Plex Mono', monospace; font-size: 12px; color: {{t.muted}};">{{r.id}}</span>
 </button>
 </sc-for>
@@ -83,6 +96,8 @@ button:focus-visible,input:focus-visible,select:focus-visible,textarea:focus-vis
 <label for="search" style="font-size: 13px; font-weight: 500;">Find a payment</label>
 <input id="search" type="search" value="{{search}}" onChange="{{setSearch}}" placeholder="Payment ID" style="height: 44px; box-sizing: border-box; padding: 0 12px; border: 1px solid {{t.input}}; border-radius: 6px; background: {{t.surface}};">
 </div>
+<sc-if value="{{isPhone}}" hint-placeholder-val="{{false}}"><button type="button" class="ghost" onClick="{{toggleFilters}}" aria-expanded="{{filtersExpanded}}" style="flex: 1 0 100%; min-height: 44px; border: 1px solid {{t.input}}; border-radius: 6px; background: {{t.surface}}; font-weight: 500;">{{filtersLabel}}</button></sc-if>
+<sc-if value="{{showFilterFields}}" hint-placeholder-val="{{true}}">
 <div style="flex: 0 1 150px; display: flex; flex-direction: column; gap: 4px;">
 <label for="range" style="font-size: 13px; font-weight: 500;">Date range</label>
 <select id="range" value="{{range}}" onChange="{{setRange}}" style="height: 44px; padding: 0 8px; border: 1px solid {{t.input}}; border-radius: 6px; background: {{t.surface}};"><option value="7">Last 7 days</option><option value="14">Last 14 days</option><option value="31">Last 31 days</option></select>
@@ -90,6 +105,10 @@ button:focus-visible,input:focus-visible,select:focus-visible,textarea:focus-vis
 <div style="flex: 0 1 180px; display: flex; flex-direction: column; gap: 4px;">
 <label for="stateFilter" style="font-size: 13px; font-weight: 500;">Status</label>
 <select id="stateFilter" value="{{stateFilter}}" onChange="{{setStateFilter}}" style="height: 44px; padding: 0 8px; border: 1px solid {{t.input}}; border-radius: 6px; background: {{t.surface}};"><option value="">All statuses</option><sc-for list="{{stateOptions}}" as="o" hint-placeholder-count="5"><option value="{{o.value}}">{{o.label}}</option></sc-for></select>
+</div>
+<div style="flex: 0 1 150px; display: flex; flex-direction: column; gap: 4px;">
+<label for="merchantFilter" style="font-size: 13px; font-weight: 500;">Merchant</label>
+<select id="merchantFilter" value="{{merchantFilter}}" onChange="{{setMerchantFilter}}" style="height: 44px; padding: 0 8px; border: 1px solid {{t.input}}; border-radius: 6px; background: {{t.surface}};"><option value="">All merchants</option><option value="Main store">Main store</option><option value="Outlet store">Outlet store</option></select>
 </div>
 <div style="flex: 0 1 100px; display: flex; flex-direction: column; gap: 4px;">
 <label for="minAmount" style="font-size: 13px; font-weight: 500;">Min amount</label>
@@ -99,6 +118,7 @@ button:focus-visible,input:focus-visible,select:focus-visible,textarea:focus-vis
 <label for="maxAmount" style="font-size: 13px; font-weight: 500;">Max amount</label>
 <input id="maxAmount" inputmode="decimal" value="{{maxAmount}}" onChange="{{setMax}}" style="width: 100%; height: 44px; box-sizing: border-box; padding: 0 10px; border: 1px solid {{t.input}}; border-radius: 6px; background: {{t.surface}};">
 </div>
+</sc-if>
 </div>
 <p style="margin: 0; color: {{t.muted}}; font-size: 13px;">Lists show up to 31 days at a time. For anything older, search by the payment ID.</p>
 
@@ -111,13 +131,14 @@ button:focus-visible,input:focus-visible,select:focus-visible,textarea:focus-vis
 <sc-if value="{{showList}}" hint-placeholder-val="{{true}}">
 <sc-if value="{{isDesktop}}" hint-placeholder-val="{{true}}">
 <div style="background: {{t.surface}}; border: 1px solid {{t.border}}; border-radius: 8px; overflow-x: auto;">
-<div style="display: grid; grid-template-columns: 150px minmax(0, 1fr) 190px 150px; gap: 16px; min-width: 680px; padding: 10px 16px; border-bottom: 1px solid {{t.border}}; font-size: 12px; font-weight: 600; color: {{t.muted}};">
-<span>Status</span><span>Payment</span><span>Created</span><span style="text-align: right;">Amount</span>
+<div style="display: grid; grid-template-columns: 160px minmax(0, 1fr) 110px 120px 130px; gap: 16px; min-width: 760px; padding: 10px 16px; border-bottom: 1px solid {{t.border}}; font-size: 12px; font-weight: 600; color: {{t.muted}};">
+<span>Status</span><span>Payment</span><span>Merchant</span><span>Created</span><span style="text-align: right;">Amount</span>
 </div>
 <sc-for list="{{rows}}" as="p" hint-placeholder-count="8">
-<button type="button" class="row" onClick="{{p.open}}" style="display: grid; grid-template-columns: 150px minmax(0, 1fr) 190px 150px; gap: 16px; align-items: center; width: 100%; min-width: 680px; min-height: 48px; padding: 8px 16px; border: 0; border-bottom: 1px solid {{t.soft}}; background: transparent; text-align: left;">
+<button type="button" class="row" onClick="{{p.open}}" style="display: grid; grid-template-columns: 160px minmax(0, 1fr) 110px 120px 130px; gap: 16px; align-items: center; width: 100%; min-width: 760px; min-height: 48px; padding: 8px 16px; border: 0; border-bottom: 1px solid {{t.soft}}; background: transparent; text-align: left;">
 <span style="display: inline-flex; width: fit-content; align-items: center; gap: 5px; padding: 3px 7px; border-radius: 5px; font-size: 12px; font-weight: 500; background: {{p.toneBg}}; color: {{p.toneText}};"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="{{p.icon}}"></path></svg>{{p.label}}</span>
 <span style="font-family: 'IBM Plex Mono', monospace; font-size: 13px;">{{p.id}}</span>
+<span style="color: {{t.muted}};">{{p.merchant}}</span>
 <span style="color: {{t.muted}};">{{p.created}}</span>
 <span style="text-align: right; font-weight: 500;">{{p.amount}}</span>
 </button>
@@ -132,11 +153,16 @@ button:focus-visible,input:focus-visible,select:focus-visible,textarea:focus-vis
 <button type="button" onClick="{{p.open}}" style="display: flex; flex-direction: column; gap: 6px; padding: 12px; border: 1px solid {{t.border}}; border-radius: 8px; background: {{t.surface}}; text-align: left;">
 <span style="display: flex; justify-content: space-between; align-items: center; gap: 8px; width: 100%;"><span style="font-size: 17px; font-weight: 600;">{{p.amount}}</span><span style="display: inline-flex; align-items: center; gap: 5px; padding: 3px 7px; border-radius: 5px; font-size: 12px; font-weight: 500; background: {{p.toneBg}}; color: {{p.toneText}};"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="{{p.icon}}"></path></svg>{{p.label}}</span></span>
 <span style="display: flex; justify-content: space-between; gap: 8px; width: 100%; color: {{t.muted}}; font-size: 12px;"><span style="font-family: 'IBM Plex Mono', monospace;">{{p.id}}</span><span>{{p.created}}</span></span>
+<span style="color: {{t.muted}}; font-size: 12px;">{{p.merchant}}</span>
 </button>
 </sc-for>
 <sc-if value="{{noRows}}" hint-placeholder-val="{{false}}"><p style="margin: 0; padding: 12px 0; color: {{t.muted}};">{{noRowsText}}</p></sc-if>
 </div>
 </sc-if>
+<div style="display: flex; flex-wrap: wrap; gap: 8px 12px; align-items: center; justify-content: space-between;">
+<span style="color: {{t.muted}}; font-size: 13px;">{{rowsCount}}</span>
+<sc-if value="{{hasMoreRows}}" hint-placeholder-val="{{false}}"><button type="button" class="ghost" onClick="{{moreRows}}" style="min-height: 44px; padding: 0 16px; border: 1px solid {{t.input}}; border-radius: 6px; background: {{t.surface}}; font-weight: 500;">Show more</button></sc-if>
+</div>
 </sc-if>
 </sc-if>
 
@@ -146,6 +172,7 @@ button:focus-visible,input:focus-visible,select:focus-visible,textarea:focus-vis
 <h1 style="margin: 0; font-size: 28px; line-height: 1.2; font-weight: 600;">{{cur.amount}}</h1>
 <span style="display: inline-flex; align-items: center; gap: 6px; padding: 4px 9px; border-radius: 6px; font-size: 13px; font-weight: 500; background: {{cur.toneBg}}; color: {{cur.toneText}};"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="{{cur.icon}}"></path></svg>{{cur.label}}</span>
 <span style="font-family: 'IBM Plex Mono', monospace; font-size: 13px; color: {{t.muted}};">{{cur.id}}</span>
+<span style="font-size: 13px; color: {{t.muted}};">{{cur.merchant}}</span>
 </div>
 <div style="padding: 14px 16px; border: 1px solid {{t.border}}; border-radius: 8px; background: {{t.surface}};">
 <p style="margin: 0; font-size: 15px; font-weight: 500;">{{cur.wording}}</p>
@@ -163,7 +190,7 @@ button:focus-visible,input:focus-visible,select:focus-visible,textarea:focus-vis
 <sc-if value="{{cur.hasOrphan}}" hint-placeholder-val="{{false}}">
 <section style="padding: 14px 16px; border-radius: 8px; background: {{t.warningBg}}; color: {{t.warningText}}; display: flex; flex-direction: column; gap: 8px;">
 <h2 style="margin: 0; font-size: 15px; font-weight: 600;">Action with no recorded result</h2>
-<p style="margin: 0;">{{cur.orphan}} Check the payment below. If the action ran, it appears in What happened.</p>
+<p style="margin: 0;">{{cur.orphan}} Check the payment below. If the action ran, it appears in What happened. Other actions wait until this is checked, so nothing runs twice.</p>
 <sc-if value="{{cur.canAct}}" hint-placeholder-val="{{false}}"><button type="button" class="ghost" onClick="{{clearOrphan}}" style="align-self: flex-start; min-height: 44px; padding: 0 16px; border: 1px solid {{t.warningText}}; border-radius: 6px; background: transparent; color: inherit; font-weight: 500;">Mark as checked</button></sc-if>
 </section>
 </sc-if>
@@ -173,6 +200,13 @@ button:focus-visible,input:focus-visible,select:focus-visible,textarea:focus-vis
 <span style="flex: 1 1 240px; font-weight: 500;">{{cur.checking}}: still checking. The result will appear here. Don't repeat this action.</span>
 <button type="button" class="ghost" onClick="{{resolveChecking}}" style="min-height: 44px; padding: 0 12px; border: 1px solid {{t.warningText}}; border-radius: 6px; background: transparent; color: inherit; font-size: 13px;">Prototype only: result arrives</button>
 </div>
+</sc-if>
+
+<sc-if value="{{cur.hasStuck}}" hint-placeholder-val="{{false}}">
+<section style="padding: 14px 16px; border-radius: 8px; background: {{t.warningBg}}; color: {{t.warningText}}; display: flex; flex-direction: column; gap: 4px;">
+<h2 style="margin: 0; font-size: 15px; font-weight: 600;">{{cur.stuckTitle}}</h2>
+<p style="margin: 0;">{{cur.stuckText}}</p>
+</section>
 </sc-if>
 
 <sc-if value="{{cur.hasActions}}" hint-placeholder-val="{{false}}">
@@ -370,6 +404,11 @@ button:focus-visible,input:focus-visible,select:focus-visible,textarea:focus-vis
 <button type="button" onClick="{{goAudit}}" style="display: flex; justify-content: space-between; align-items: center; width: 100%; min-height: 52px; padding: 0 16px; border: 0; border-bottom: 1px solid {{t.soft}}; background: transparent; text-align: left;">Audit log<span aria-hidden="true" style="color: {{t.muted}};">›</span></button>
 <button type="button" onClick="{{goStaff}}" style="display: flex; justify-content: space-between; align-items: center; width: 100%; min-height: 52px; padding: 0 16px; border: 0; background: transparent; text-align: left;">Staff<span aria-hidden="true" style="color: {{t.muted}};">›</span></button>
 </div>
+<div role="group" aria-label="Data shown" style="display: flex; gap: 4px; padding: 3px; border-radius: 8px; background: {{t.sunken}};">
+<sc-for list="{{modes}}" as="m" hint-placeholder-count="2">
+<button type="button" onClick="{{m.pick}}" aria-pressed="{{m.pressed}}" style="flex: 1 1 0; min-height: 44px; border: 0; border-radius: 6px; background: {{m.bg}}; color: {{m.color}}; font-size: 13px; font-weight: {{m.weight}};">{{m.label}}</button>
+</sc-for>
+</div>
 <div style="padding: 0 4px; font-size: 13px; color: {{t.muted}};">Signed in as Alex Chen, {{roleLabel}}</div>
 </sc-if>
 
@@ -436,6 +475,12 @@ const OUTCOMES = {
 };
 const DECIMALS = { USD: 2, EUR: 2, JPY: 0 };
 const SYMBOLS = { USD: '$', EUR: '€', JPY: '¥' };
+const DONE = { refund: 'Started a refund of', capture: 'Captured', void: 'Voided', cancel: 'Canceled' };
+const MONTHS = { Jul: 7, Aug: 8, Sep: 9, Oct: 10, Nov: 11, Dec: 12 };
+function createdKey(p) {
+  const m = p.created.match(/^(\d+) (\w+), (\d+):(\d+)$/);
+  return m ? MONTHS[m[2]] * 1000000 + Number(m[1]) * 10000 + Number(m[3]) * 100 + Number(m[4]) : 0;
+}
 const CAN = { Viewer: 'Search and read', Operator: 'Actions and proposals', Approver: 'Actions and approvals', Admin: 'Staff and roles' };
 
 function money(minor, cur) {
@@ -456,7 +501,7 @@ function parseMoney(text, cur) {
   return Number(parts[0]) * scale + Number((fraction + '000').slice(0, d) || 0);
 }
 function seed() {
-  return [
+  const rows = [
     { id: 'pay_8f3a…c21d', state: 'UNKNOWN', minor: 2400, cur: 'USD', captured: 0, refunded: 0, pending: 0, created: '6 Nov, 10:50', days: 0, psp: 'not returned', extra: 'The PSP timed out 3 h 12 min ago. No new attempt can start until this is settled.', queue: 'unresolved', queueDetail: 'Outcome unknown for 3 h 12 min', timeline: [{ at: '6 Nov, 10:50', text: 'Sale attempt sent to the PSP' }, { at: '6 Nov, 10:50', text: 'The PSP timed out, so the outcome is unknown' }] },
     { id: 'pay_41be…07fa', state: 'REVIEW', minor: 31050, cur: 'USD', captured: 0, refunded: 0, pending: 0, created: '6 Nov, 09:14', days: 0, psp: 'psp_ch_7c21', extra: 'We expected 310.50 USD. The PSP answered 301.50 USD.', queue: 'review', queueDetail: 'PSP answered $301.50, we expected $310.50', outcomes: ['authorize', 'awaiting', 'capture'], kind: 'payment', timeline: [{ at: '6 Nov, 09:14', text: 'Authorize attempt sent to the PSP' }, { at: '6 Nov, 09:14', text: 'The PSP answered with a different amount, so no ledger entry was made' }] },
     { id: 'pay_d14f…8a07', state: 'CAPTURED', minor: 15000, cur: 'USD', captured: 15000, refunded: 0, pending: 5000, pendingLocked: true, created: '4 Nov, 13:05', days: 2, psp: 'psp_ch_c7e0', queue: 'review', queueDetail: 'Refund of $50.00: PSP answered $55.00', kind: 'refund', outcomes: ['confirm', 'release'], caseTitle: 'A refund on this payment needs review', caseText: 'We asked the PSP to refund 50.00 USD and it answered 55.00 USD. The payment itself is still captured, and the 50.00 USD stays reserved until this is decided.', timeline: [{ at: '4 Nov, 13:05', text: 'Sale approved by the PSP' }, { at: '6 Nov, 08:31', text: 'Refund of $50.00 USD started by Priya Nair' }, { at: '6 Nov, 08:31', text: "The PSP's refund amount didn't match, so the refund moved to review" }] },
@@ -468,13 +513,24 @@ function seed() {
     { id: 'pay_e5f0…6c3d', state: 'AWAITING_METHOD', minor: 4500, cur: 'USD', captured: 0, refunded: 0, pending: 0, created: '6 Nov, 08:02', days: 0, psp: 'none yet', timeline: [{ at: '6 Nov, 08:02', text: 'Payment created' }] },
     { id: 'pay_93ab…d802', state: 'REFUNDED', minor: 1875, cur: 'EUR', captured: 1875, refunded: 1875, pending: 0, created: '2 Nov, 09:40', days: 4, psp: 'psp_ch_18c2', timeline: [{ at: '2 Nov, 09:40', text: 'Sale approved by the PSP' }, { at: '3 Nov, 13:20', text: 'Full refund confirmed by the PSP' }] },
     { id: 'pay_60cc…47f9', state: 'CANCELED', minor: 56000, cur: 'USD', captured: 0, refunded: 0, pending: 0, created: '17 Oct, 15:11', days: 20, psp: 'none', timeline: [{ at: '17 Oct, 15:11', text: 'Payment created' }, { at: '18 Oct, 15:11', text: 'Payment window ended with no successful attempt' }] },
-    { id: 'pay_11de…0b7c', state: 'REFUNDED', minor: 9900, cur: 'USD', captured: 9900, refunded: 9900, pending: 0, created: '9 Jul, 10:02', days: 120, psp: 'psp_ch_02aa', timeline: [{ at: '9 Jul, 10:02', text: 'Sale approved by the PSP' }, { at: '11 Jul, 09:30', text: 'Full refund confirmed by the PSP' }] }
+    { id: 'pay_11de…0b7c', state: 'REFUNDED', minor: 9900, cur: 'USD', captured: 9900, refunded: 9900, pending: 0, created: '9 Jul, 10:02', days: 120, psp: 'psp_ch_02aa', timeline: [{ at: '9 Jul, 10:02', text: 'Sale approved by the PSP' }, { at: '11 Jul, 09:30', text: 'Full refund confirmed by the PSP' }] },
+    { id: 'pay_1b6e…f2c8', state: 'CAPTURED', minor: 20000, cur: 'USD', captured: 20000, refunded: 0, pending: 7500, pendingLocked: true, created: '5 Nov, 09:12', days: 1, psp: 'psp_ch_b21d', queue: 'unresolved', queueDetail: 'Refund of $75.00: outcome unknown for 5 h', stuckTitle: 'A refund is taking too long', stuckText: "The PSP hasn't confirmed this refund of $75.00 USD for 5 hours. The amount stays reserved while we keep checking.", timeline: [{ at: '5 Nov, 09:12', text: 'Sale approved by the PSP' }, { at: '6 Nov, 09:02', text: 'Refund of $75.00 USD started by Priya Nair' }, { at: '6 Nov, 09:03', text: 'The PSP timed out, so the refund outcome is unknown' }] },
+    { id: 'pay_5c39…90de', state: 'AUTHORIZED', minor: 88000, cur: 'USD', captured: 0, refunded: 0, pending: 0, created: '4 Nov, 10:30', days: 2, psp: 'psp_ch_77f4', blockActions: true, queue: 'unresolved', queueDetail: 'Capture: outcome unknown for 2 h 40 min', stuckTitle: 'A capture is taking too long', stuckText: "We don't yet know if this capture went through. Don't capture or void until it's settled. We're checking automatically.", timeline: [{ at: '4 Nov, 10:30', text: 'Authorized by the PSP' }, { at: '6 Nov, 11:22', text: 'Capture sent to the PSP' }, { at: '6 Nov, 11:22', text: 'The PSP timed out, so the capture outcome is unknown' }] },
+    { id: 'pay_e802…14ab', state: 'AUTHORIZED', minor: 9500, cur: 'USD', captured: 0, refunded: 0, pending: 0, created: '3 Nov, 16:40', days: 3, psp: 'psp_ch_4ad9', blockActions: true, queue: 'unresolved', queueDetail: 'Void: outcome unknown for 6 h', stuckTitle: 'A void is taking too long', stuckText: "We don't yet know if this void went through, and this console can't settle a stuck void. Check the PSP's dashboard and handle it there.", timeline: [{ at: '3 Nov, 16:40', text: 'Authorized by the PSP' }, { at: '6 Nov, 08:01', text: 'Void sent to the PSP' }, { at: '6 Nov, 08:01', text: 'The PSP timed out, so the void outcome is unknown' }] },
+    { id: 'pay_3c88…a61f', state: 'PSP_PENDING', minor: 12900, cur: 'USD', captured: 0, refunded: 0, pending: 0, created: '6 Nov, 14:02', days: 0, psp: 'not returned yet', timeline: [{ at: '6 Nov, 14:02', text: 'Sale attempt sent to the PSP' }] },
+    { id: 'pay_9e27…b3d4', state: 'ACTION_REQUIRED', minor: 24000, cur: 'EUR', captured: 0, refunded: 0, pending: 0, created: '6 Nov, 13:55', days: 0, psp: 'psp_ch_6b02', extra: 'The customer has 11 minutes left to finish this step.', timeline: [{ at: '6 Nov, 13:55', text: 'The PSP asked the customer to complete 3D Secure' }] },
+    { id: 'pay_75f1…c0e9', state: 'EXPIRED', minor: 31500, cur: 'USD', captured: 0, refunded: 0, pending: 0, created: '27 Oct, 11:20', days: 10, psp: 'psp_ch_c3e8', timeline: [{ at: '27 Oct, 11:20', text: 'Authorized by the PSP' }, { at: '3 Nov, 11:20', text: 'The authorization window ended without capture' }] },
+    { id: 'pay_aa40…7d15', state: 'VOIDED', minor: 4200, cur: 'USD', captured: 0, refunded: 0, pending: 0, created: '1 Nov, 15:48', days: 5, psp: 'psp_ch_88a1', timeline: [{ at: '1 Nov, 15:48', text: 'Authorized by the PSP' }, { at: '2 Nov, 09:10', text: 'Voided by Sam Rivera' }] },
+    { id: 'pay_test_4a1c…77e2', mode: 'test', state: 'CAPTURED', minor: 5000, cur: 'USD', captured: 5000, refunded: 0, pending: 0, created: '6 Nov, 12:10', days: 0, psp: 'test_ch_0041', timeline: [{ at: '6 Nov, 12:10', text: 'Test sale approved by the mock PSP' }] },
+    { id: 'pay_test_b09d…10fa', mode: 'test', state: 'AUTHORIZED', minor: 2000, cur: 'USD', captured: 0, refunded: 0, pending: 0, created: '6 Nov, 12:12', days: 0, psp: 'test_ch_0042', queue: 'expiring', queueDetail: 'Authorization ends in 2 hours', extra: 'This test authorization ends in 2 hours if it is not captured.', timeline: [{ at: '6 Nov, 12:12', text: 'Test authorization approved by the mock PSP' }] },
+    { id: 'pay_test_e11f…3c90', mode: 'test', state: 'UNKNOWN', minor: 1000, cur: 'USD', captured: 0, refunded: 0, pending: 0, created: '6 Nov, 12:15', days: 0, psp: 'not returned', timeline: [{ at: '6 Nov, 12:15', text: 'Test sale attempt timed out on purpose' }] }
   ];
+  return rows.map((p, i) => ({ merchant: i % 3 === 2 ? 'Outlet store' : 'Main store', mode: 'live', ...p }));
 }
 class Component extends DCLogic {
   constructor(props) {
     super(props);
-    this.state = { screen: 'attention', returnTo: 'detail', payments: seed(), curId: null, action: null, step: 'form', amountText: '', reason: '', amountError: '', reasonError: false, busyShown: false, busyError: false, verify: null, answer: '', evidence: '', outcome: null, proposeError: false, notice: '', noticeTone: 'accent', search: '', range: '7', stateFilter: '', minAmount: '', maxAmount: '', auditPayment: '', auditPerson: '', auditRange: '7', auditLimit: 5, newEmail: '', newRole: 'Viewer', staffAddError: false, staffError: '',
+    this.state = { screen: 'attention', returnTo: 'detail', payments: seed(), curId: null, action: null, step: 'form', amountText: '', reason: '', amountError: '', reasonError: false, busyShown: false, busyError: false, verify: null, answer: '', evidence: '', outcome: null, proposeError: false, notice: '', noticeTone: 'accent', mode: 'live', merchantFilter: '', paymentLimit: 8, search: '', range: '7', stateFilter: '', minAmount: '', maxAmount: '', auditPayment: '', auditPerson: '', auditRange: '7', auditLimit: 5, newEmail: '', newRole: 'Viewer', staffAddError: false, staffError: '',
       staff: [
         { id: 's1', name: 'Alex Chen', email: 'alex@example.com', role: 'Approver', disabled: false },
         { id: 's2', name: 'Sam Rivera', email: 'sam@example.com', role: 'Approver', disabled: false },
@@ -492,6 +548,13 @@ class Component extends DCLogic {
         { at: '11 Jul, 09:28', days: 118, who: 'Alex Chen', payment: 'pay_11de…0b7c', what: 'Refunded $99.00 USD on pay_11de…0b7c. Reason: duplicate order.' }
       ]
     };
+  }
+  scrollToTop() {
+    try {
+      let el = this.mainEl || document.querySelector('main');
+      while (el) { el.scrollTop = 0; el = el.parentElement; }
+      window.scrollTo(0, 0);
+    } catch (e) { /* nothing to scroll */ }
   }
   updatePayment(id, change) {
     this.setState((s) => ({ payments: s.payments.map((p) => p.id === id ? { ...p, ...change(p) } : p) }));
@@ -514,14 +577,14 @@ class Component extends DCLogic {
   }
   decorate(p, t) {
     const view = STATES[p.state];
-    return { id: p.id, label: view.label, wording: view.wording, icon: ICONS[view.icon], toneBg: t[view.tone + 'Bg'], toneText: t[view.tone + 'Text'], amount: money(p.minor, p.cur), created: p.created, open: () => this.open(p.id) };
+    return { id: p.id, label: view.label, wording: view.wording, icon: ICONS[view.icon], toneBg: t[view.tone + 'Bg'], toneText: t[view.tone + 'Text'], amount: money(p.minor, p.cur), created: p.created, merchant: p.merchant, open: () => this.open(p.id) };
   }
   curView(p, role, t) {
     const view = STATES[p.state];
     const canAct = role === 'Operator' || role === 'Approver';
     const canApprove = role === 'Approver';
     const hasProposal = Boolean(p.proposal);
-    const available = hasProposal || p.checking ? [] : view.actions;
+    const available = hasProposal || p.checking || p.blockActions || p.orphan ? [] : view.actions;
     const actions = canAct ? available.map((a) => ({ label: ACTIONS[a].label, start: () => this.startAction(a) })) : [];
     return {
       ...this.decorate(p, t),
@@ -533,6 +596,7 @@ class Component extends DCLogic {
       timeline: p.timeline, psp: p.psp,
       hasCase: Boolean(p.caseTitle) && !hasProposal, caseTitle: p.caseTitle || '', caseText: p.caseText || '', canPropose: canAct,
       hasOrphan: Boolean(p.orphan), orphan: p.orphan || '',
+      hasStuck: Boolean(p.stuckTitle), stuckTitle: p.stuckTitle || '', stuckText: p.stuckText || '',
       hasChecking: Boolean(p.checking), checking: p.checking ? ACTIONS[p.checking.type].label : '',
       hasProposal, proposal: p.proposal || {},
       canDecide: hasProposal && canApprove && !p.proposal.own,
@@ -570,7 +634,7 @@ class Component extends DCLogic {
       this.setState({ screen: 'detail', action: null, verify: null, notice: 'This payment changed while you were working, so nothing was done. Check its current status below before trying again.', noticeTone: 'warning' });
       return;
     }
-    this.log(ACTIONS[type].label + ' ' + stamp + ' on ' + cp.id + '. Reason: ' + reason, cp.id);
+    this.log(DONE[type] + ' ' + stamp + ' on ' + cp.id + '. Reason: ' + reason, cp.id);
     if (type === 'refund') {
       this.updatePayment(cp.id, (p) => ({ pending: p.pending + minor, pendingLocked: false, timeline: [...p.timeline, { at: 'Just now', text: 'Refund of ' + stamp + ' started by Alex Chen. Reason: ' + reason }] }));
       this.setState({ screen: 'detail', action: null, verify: null, notice: 'Refund started. It shows as in progress until the PSP confirms it.', noticeTone: 'accent' });
@@ -614,8 +678,13 @@ class Component extends DCLogic {
     const t = dark ? DARK : LIGHT;
     const isPhone = layout === 'phone';
     const s = this.state;
+    const viewKey = s.screen + '|' + s.curId + '|' + s.step;
+    if (this.viewKey !== undefined && this.viewKey !== viewKey) setTimeout(() => this.scrollToTop(), 0);
+    this.viewKey = viewKey;
+    if (!this.setMainRef) this.setMainRef = (el) => { this.mainEl = el; };
     const cp = s.payments.find((p) => p.id === s.curId);
-    const queueRows = (key) => s.payments.filter((p) => p.queue === key).map((p) => ({ amount: money(p.minor, p.cur), detail: p.queueDetail, id: p.id, open: () => this.open(p.id) }));
+    const visible = s.payments.filter((p) => p.mode === s.mode);
+    const queueRows = (key) => visible.filter((p) => p.queue === key).map((p) => ({ amount: money(p.minor, p.cur), detail: p.queueDetail, id: p.id, merchant: p.merchant, open: () => this.open(p.id) }));
     const queueDefs = [
       { key: 'review', title: 'Needs review', help: "The PSP's answer disagrees with our record, on a payment, refund or attempt." },
       { key: 'approval', title: 'Waiting for approval', help: 'Someone proposed a resolution. A second person must decide.' },
@@ -633,11 +702,14 @@ class Component extends DCLogic {
     const major = (p) => p.minor / Math.pow(10, DECIMALS[p.cur]);
     const minV = s.minAmount.trim() === '' ? null : Number(s.minAmount.replace(/,/g, ''));
     const maxV = s.maxAmount.trim() === '' ? null : Number(s.maxAmount.replace(/,/g, ''));
-    const matched = s.payments
+    const matched = visible
       .filter((p) => q ? p.id.toLowerCase().includes(q) : p.days <= Number(s.range))
       .filter((p) => !s.stateFilter || p.state === s.stateFilter)
+      .filter((p) => !s.merchantFilter || p.merchant === s.merchantFilter)
       .filter((p) => minV === null || isNaN(minV) || major(p) >= minV)
-      .filter((p) => maxV === null || isNaN(maxV) || major(p) <= maxV);
+      .filter((p) => maxV === null || isNaN(maxV) || major(p) <= maxV)
+      .slice().sort((a, b) => createdKey(b) - createdKey(a));
+    const activeFilters = [s.range !== '7', s.stateFilter, s.merchantFilter, s.minAmount.trim(), s.maxAmount.trim()].filter(Boolean).length;
     const rows = matched.map((p) => this.decorate(p, t));
     const searchStatus = this.props.searchStatus ?? 'Normal';
     const searchBlocked = searchStatus !== 'Normal' && !q;
@@ -655,7 +727,7 @@ class Component extends DCLogic {
     const activeAdmins = s.staff.filter((x) => x.role === 'Admin' && !x.disabled).length;
     const askVerify = (summary, back, run) => this.setState({ screen: 'verify', verify: { summary, back, run } });
     return {
-      t, colorScheme: dark ? 'dark' : 'light',
+      t, colorScheme: dark ? 'dark' : 'light', setMainRef: this.setMainRef,
       isDesktop: !isPhone, isPhone,
       rootHeight: isPhone ? '844px' : 'auto', rootMin: isPhone ? '0' : '900px', rootOverflow: isPhone ? 'hidden' : 'visible',
       mainPad: isPhone ? '16px' : '28px 32px', mainOverflow: isPhone ? 'auto' : 'visible', mainHeight: isPhone ? '772px' : 'auto',
@@ -666,7 +738,16 @@ class Component extends DCLogic {
       hasNotice: Boolean(s.notice), notice: s.notice, clearNotice: () => this.setState({ notice: '' }),
       noticeBg: t[noticeTone + 'Bg'], noticeText: t[noticeTone + 'Text'], noticeIcon: noticeTone === 'warning' ? ICONS.alert : ICONS.check,
       isAttention: s.screen === 'attention', isPayments: s.screen === 'payments', isDetail: s.screen === 'detail' && Boolean(cp), isAction: s.screen === 'action', isVerify: s.screen === 'verify', isPropose: s.screen === 'propose', isAudit: s.screen === 'audit', isStaff: s.screen === 'staff', isMore: s.screen === 'more',
-      queues, rows, showList: !searchBlocked, noRows: rows.length === 0,
+      modes: ['live', 'test'].map((m) => ({ label: m === 'live' ? 'Live' : 'Test', pressed: s.mode === m ? 'true' : 'false', bg: s.mode === m ? t.surface : 'transparent', color: s.mode === m ? t.text : t.muted, weight: s.mode === m ? 600 : 500, pick: () => this.setState({ mode: m, curId: null, action: null, verify: null, notice: '', paymentLimit: 8, screen: ['detail', 'action', 'propose', 'verify'].includes(s.screen) ? 'attention' : s.screen }) })),
+      isTest: s.mode === 'test',
+      showFilterFields: !isPhone || Boolean(s.filtersOpen),
+      filtersExpanded: s.filtersOpen ? 'true' : 'false',
+      filtersLabel: (s.filtersOpen ? 'Hide filters' : 'Show filters') + (activeFilters ? ' (' + activeFilters + ' on)' : ''),
+      toggleFilters: () => this.setState({ filtersOpen: !s.filtersOpen }),
+      merchantFilter: s.merchantFilter, setMerchantFilter: (e) => this.setState({ merchantFilter: e.target.value, paymentLimit: 8 }),
+      queues, rows: rows.slice(0, s.paymentLimit), showList: !searchBlocked, noRows: rows.length === 0,
+      rowsCount: rows.length ? 'Showing ' + Math.min(s.paymentLimit, rows.length) + ' of ' + rows.length : '',
+      hasMoreRows: rows.length > s.paymentLimit, moreRows: () => this.setState({ paymentLimit: s.paymentLimit + 8 }),
       noRowsText: looksLikeId ? 'No payment found with that ID. Check it and try again.' : 'No payments match. Try a longer range or a different status.',
       hasFoundOutside: Boolean(q) && matched.some((p) => p.days > Number(s.range)),
       hasSearchProblem: searchBlocked,
