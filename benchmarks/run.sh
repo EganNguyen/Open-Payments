@@ -205,7 +205,23 @@ try:
 except Exception:
  print("")' || true)
   if [[ -n "$METRIC" ]]; then
-    DB_COUNT=$(psql "$CHECKS_DB_URL" -XAtq -c "select count(*) from payments where state in ('CAPTURED','PARTIALLY_REFUNDED','REFUNDED')" 2>/dev/null || echo 0)
+    DB_COUNT=$(psql "$CHECKS_DB_URL" -XAtq -c "
+      select
+        (select count(*) from payment_attempts
+          where operation = 'sale' and state = 'SUCCEEDED')
+        + (select count(*) from payments p
+            where exists (select 1 from payment_attempts a
+                          where a.payment_id = p.id and a.operation = 'authorize' and a.state = 'SUCCEEDED')
+              and exists (select 1 from payment_attempts c
+                          where c.payment_id = p.id and c.operation = 'capture' and c.state = 'SUCCEEDED'))
+        + (select count(*) from payment_attempts a
+            where a.operation = 'authorize' and a.state = 'SUCCEEDED'
+              and not exists (select 1 from payment_attempts c
+                              where c.payment_id = a.payment_id and c.operation = 'capture' and c.state = 'SUCCEEDED'))
+        + (select count(*) from payment_attempts
+            where operation in ('authorize', 'sale') and state = 'FAILED'
+              and coalesce(failure_code, '') not in ('fraud_blocked', 'timeout'))
+    " 2>/dev/null || echo 0)
     printf '{"metric": %s, "db": %s}\n' "$METRIC" "$DB_COUNT" > "$RUN_DIR/counts.json"
   fi
 fi
