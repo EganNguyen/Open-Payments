@@ -92,12 +92,6 @@ if psql "$CHECKS_DB_URL" -XAtq -c 'select 1' >/dev/null 2>&1; then
   fi
 fi
 
-if [[ -n "${MOCK_EFFECTS_DIR:-}" && -f "$MOCK_EFFECTS_DIR/effects.csv" ]]; then
-  cp "$MOCK_EFFECTS_DIR/effects.csv" "$EFFECTS_PATH"
-else
-  printf 'key,op,amount_minor,currency,at\n' > "$EFFECTS_PATH"
-fi
-
 STARTED_AT=$(date -u +%Y-%m-%dT%H:%M:%SZ)
 echo "run $RUN_ID: step $STEP, $RATE req/s for ${DURATION}s, $TARGET_OVERRIDE, $STAGE"
 set +e
@@ -170,6 +164,14 @@ with open(os.path.join(os.environ["RUN_DIR"], "config.json"), "w", encoding="utf
 PY
 
 sleep "${DRAIN_SECONDS:-3}"
+
+# Copy the effect log only after the drain: CK2 must include the effects from this run,
+# not just the ones already in the log when the run started.
+if [[ -n "${MOCK_EFFECTS_DIR:-}" && -f "$MOCK_EFFECTS_DIR/effects.csv" ]]; then
+  cp "$MOCK_EFFECTS_DIR/effects.csv" "$EFFECTS_PATH"
+else
+  printf 'key,op,amount_minor,currency,at\n' > "$EFFECTS_PATH"
+fi
 
 OP_CHECKS_BIN=${OP_CHECKS_BIN:-$REPO/tools/OpenPayments.Checks/bin/Debug/net10.0/OpenPayments.Checks.dll}
 if [[ ! -f "$OP_CHECKS_BIN" ]]; then
