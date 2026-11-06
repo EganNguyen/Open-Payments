@@ -1,4 +1,6 @@
 # Local replicated database stack for the spike and for development.
+# Export PG_CONFIG=primary.macbook.conf before starting the stack so the primary and
+# both standbys read the same file; the primary data volume was initialized with it.
 # Local numbers are comparative only. Ports bind to 127.0.0.1, and the password is
 # a local-only development value, never used anywhere else.
 name: open-payments
@@ -15,7 +17,8 @@ x-postgres: &postgres
     STANDBY_SHARED_BUFFERS: ${STANDBY_SHARED_BUFFERS:-3GB}
 
 x-pgbouncer: &pgbouncer
-  build: ./pgbouncer
+  image: edoburu/pgbouncer:v1.26.1-p0
+  entrypoint: ["pgbouncer", "/etc/pgbouncer/pgbouncer.ini"]
   depends_on:
     primary:
       condition: service_healthy
@@ -76,6 +79,37 @@ services:
       - ./postgres/start-standby.sh:/usr/local/bin/start-standby.sh:ro
       - standby2-data:/var/lib/postgresql
     healthcheck: *standby-health
+
+  mock-psp:
+    build:
+      context: ../..
+      dockerfile: deploy/compose/mock-psp/Dockerfile
+    environment:
+      ASPNETCORE_URLS: http://+:8080
+    ports:
+      - "127.0.0.1:18080:8080"
+    healthcheck:
+      test: ["CMD-SHELL", "curl -fsS http://127.0.0.1:8080/health || exit 1"]
+      interval: 2s
+      timeout: 3s
+      retries: 30
+
+  api:
+    build:
+      context: ../..
+      dockerfile: deploy/compose/api/Dockerfile
+    environment:
+      ASPNETCORE_URLS: http://+:8080
+      DATABASE_URL: postgres://op_app:op_local_only@pgbouncer:6432/openpayments
+      PSP_URL: http://mock-psp:8080
+      INFLIGHT_CAP: "500"
+    depends_on:
+      pgbouncer:
+        condition: service_healthy
+      mock-psp:
+        condition: service_healthy
+    ports:
+      - "127.0.0.1:8080:8080"
 
   pgbouncer:
     <<: *pgbouncer

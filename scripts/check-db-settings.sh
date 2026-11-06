@@ -36,9 +36,23 @@ check "log_lock_waits" "$DB_ADMIN_URL" "show log_lock_waits" "on"
 check "transaction_timeout" "$DB_ADMIN_URL" \
   "select case when current_setting('transaction_timeout', true) in ('', '0') then 'unset' else current_setting('transaction_timeout') end" \
   "unset"
-check "PgBouncer query_timeout" \
-  "${PGBOUNCER_ADMIN_URL:-postgres://postgres:op_local_only@127.0.0.1:16432/pgbouncer}" \
-  "show query_timeout" "0"
+# PgBouncer's admin console exposes parameters through SHOW CONFIG, not SHOW <name>.
+check_pgbouncer_query_timeout() {
+  local url=${PGBOUNCER_ADMIN_URL:-postgres://postgres:op_local_only@127.0.0.1:16432/pgbouncer} actual
+  if ! actual=$(psql "$url" -XAtq -v ON_ERROR_STOP=1 -c "show config" 2>&1); then
+    printf 'FAIL  PgBouncer query_timeout: could not query: %s\n' "$actual"
+    failed=1
+    return
+  fi
+  actual=$(printf '%s\n' "$actual" | awk -F'|' '$1 == "query_timeout" { print $2 }')
+  if [ "$actual" = "0" ]; then
+    printf 'ok    PgBouncer query_timeout = %s\n' "$actual"
+  else
+    printf 'FAIL  PgBouncer query_timeout: expected 0, got %s\n' "$actual"
+    failed=1
+  fi
+}
+check_pgbouncer_query_timeout
 
 for path in direct pgbouncer; do
   url=$DB_DIRECT_URL
