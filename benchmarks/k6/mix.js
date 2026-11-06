@@ -9,6 +9,7 @@ const stepNumber = Number(__ENV.STEP || 0);
 const step = steps.find((candidate) => candidate.step === stepNumber) || steps[0];
 const rate = Number(__ENV.RATE || step.rate);
 const durationSeconds = Number(__ENV.DURATION || step.duration_seconds);
+const rampSeconds = Number(__ENV.RAMP_SECONDS || 5);
 const targetOverride = (__ENV.TARGET_OVERRIDE || "api").toLowerCase();
 const mock = targetOverride === "mock";
 const baseUrl = __ENV.BASE_URL || (mock ? "http://127.0.0.1:18080" : "http://127.0.0.1:8080");
@@ -37,7 +38,10 @@ export const options = {
       timeUnit: "1s",
       preAllocatedVUs: Math.max(10, Math.ceil(rate * 0.3)),
       maxVUs: Math.max(100, Math.ceil(rate * 0.8)),
-      stages: [{ target: rate, duration: `${durationSeconds}s` }],
+      stages: [
+        { target: rate, duration: `${rampSeconds}s` },
+        { target: rate, duration: `${durationSeconds}s` },
+      ],
       gracefulStop: "30s",
     },
   },
@@ -102,15 +106,21 @@ function payment() {
     headers: headers(merchant, key, true),
   });
   record(response, mock ? [200, 402, 429, 503] : [200, 202, 402, 409, 429, 503]);
-  if (response.status === 200 && (!mock ? captureMode === "auto" : true)) {
-    completed.add(1);
-  }
 
   let payload = null;
   try {
     payload = response.json();
   } catch (error) {
     payload = null;
+  }
+
+  // Glossary: authorized, captured under auto-capture, and declined are completed.
+  // A manual create is authorized; a two-call auto create ends captured.
+  const state = payload && payload.state ? payload.state : "";
+  if (!mock
+      && ((response.status === 200 && (state === "AUTHORIZED" || state === "CAPTURED"))
+          || response.status === 402)) {
+    completed.add(1);
   }
   remember(
     recent,

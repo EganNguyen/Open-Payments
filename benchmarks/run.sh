@@ -99,14 +99,14 @@ echo "run $RUN_ID: step $STEP, $RATE req/s for ${DURATION}s, $TARGET_OVERRIDE, $
 set +e
 if [[ -x /usr/bin/time ]]; then
   /usr/bin/time -p env \
-    STEP="$STEP" RATE="$RATE" DURATION="$DURATION" BASE_URL="$BASE_URL" \
+    STEP="$STEP" RATE="$RATE" DURATION="$DURATION" RAMP_SECONDS="${RAMP_SECONDS:-5}" BASE_URL="$BASE_URL" \
     TARGET_OVERRIDE="$TARGET_OVERRIDE" API_TOKEN="${API_TOKEN:-}" MOCK_URL="$MOCK_URL" \
     AUTO_CAPTURE_SHARE="${AUTO_CAPTURE_SHARE:-0.5}" REFUND_TARGETS="$REFUND_TARGETS" \
     k6 run --summary-export "$RUN_DIR/k6-summary.json" benchmarks/k6/mix.js \
     > "$RUN_DIR/k6.log" 2> "$RUN_DIR/k6.time"
 else
   env \
-    STEP="$STEP" RATE="$RATE" DURATION="$DURATION" BASE_URL="$BASE_URL" \
+    STEP="$STEP" RATE="$RATE" DURATION="$DURATION" RAMP_SECONDS="${RAMP_SECONDS:-5}" BASE_URL="$BASE_URL" \
     TARGET_OVERRIDE="$TARGET_OVERRIDE" API_TOKEN="${API_TOKEN:-}" MOCK_URL="$MOCK_URL" \
     AUTO_CAPTURE_SHARE="${AUTO_CAPTURE_SHARE:-0.5}" REFUND_TARGETS="$REFUND_TARGETS" \
     k6 run --summary-export "$RUN_DIR/k6-summary.json" benchmarks/k6/mix.js \
@@ -127,7 +127,7 @@ CORES=$(getconf _NPROCESSORS_ONLN 2>/dev/null || nproc 2>/dev/null || echo 1)
 GEN_CPU=$(python3 -c "u=float('${USER_CPU:-0}'); s=float('${SYS_CPU:-0}'); r=max(float('${REAL_SECONDS:-1}'),0.001); print(round((u+s)/r/${CORES}*100,2))")
 
 RUN_ID="$RUN_ID" COMMIT="$COMMIT" STEP="$STEP" ENV="$ENV" STAGE="$STAGE" \
-PSP_LATENCY="$PSP_LATENCY" RATE="$RATE" DURATION="$DURATION" STARTED_AT="$STARTED_AT" \
+PSP_LATENCY="$PSP_LATENCY" RATE="$RATE" DURATION="$DURATION" RAMP_SECONDS="${RAMP_SECONDS:-5}" STARTED_AT="$STARTED_AT" \
 GEN_CPU="$GEN_CPU" K6_EXIT="$K6_EXIT" BASE_URL="$BASE_URL" TARGET_OVERRIDE="$TARGET_OVERRIDE" \
 MOCK_CONFIG="$MOCK_CONFIG" AUTO_CAPTURE_SHARE="${AUTO_CAPTURE_SHARE:-0.5}" \
 MOCK_ADDED_P99_MS="${MOCK_ADDED_P99_MS:-}" RUN_DIR="$RUN_DIR" \
@@ -143,6 +143,7 @@ config = {
     "psp_latency_ms": int(os.environ["PSP_LATENCY"]),
     "rate": int(os.environ["RATE"]),
     "duration_seconds": int(os.environ["DURATION"]),
+    "ramp_seconds": int(os.environ["RAMP_SECONDS"]),
     "started_at": os.environ["STARTED_AT"],
     "generator_cpu_pct": float(os.environ["GEN_CPU"]),
     "k6_exit": int(os.environ["K6_EXIT"]),
