@@ -18,6 +18,7 @@ public sealed class CorruptionTests : IClassFixture<DbFixture>
     private static readonly Guid Payable = Guid.Parse("00000000-0000-7000-8000-000000000032");
     private static readonly Guid Outbox = Guid.Parse("00000000-0000-7000-8000-000000000041");
     private static readonly Guid LedgerTxn = Guid.Parse("00000000-0000-7000-8000-000000000051");
+    private static readonly Guid AppendedTxn = Guid.Parse("00000000-0000-7000-8000-000000000052");
 
     private readonly DbFixture _fixture;
 
@@ -72,6 +73,32 @@ public sealed class CorruptionTests : IClassFixture<DbFixture>
             .Single(result => result.Check == "CK1");
         Assert.False(check.Passed);
         Assert.Contains(check.SampleIds, sample => sample.Contains("manifest", StringComparison.OrdinalIgnoreCase));
+    }
+
+    [Fact]
+    public async Task CK1_allows_new_ledger_rows()
+    {
+        await _fixture.ResetAsync();
+        await SeedCleanFixtureAsync();
+        Assert.True((await RunChecksAsync("phase1", BaselineEffect()))
+            .Single(result => result.Check == "CK1").Passed);
+
+        await ExecuteAsync($"""
+            insert into ledger_transactions
+              (id, merchant_id, payment_id, kind, source_event_id, effective_at)
+            values
+              ('{AppendedTxn}', '{Merchant}', '{Payment}', 'capture', '{AppendedTxn}', now());
+
+            insert into ledger_entries
+              (txn_id, entry_no, merchant_id, account_id, subject_id, direction, amount_minor, currency)
+            values
+              ('{AppendedTxn}', 1, '{Merchant}', '{Receivable}', '{Payment}', 'D', 50, 'USD'),
+              ('{AppendedTxn}', 2, '{Merchant}', '{Payable}', '{Payment}', 'C', 50, 'USD');
+            """);
+
+        var check = (await RunChecksAsync("phase1", BaselineEffect()))
+            .Single(result => result.Check == "CK1");
+        Assert.True(check.Passed);
     }
 
     [Fact]

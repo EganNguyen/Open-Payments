@@ -52,11 +52,11 @@ public static class CheckRunner
               amount_minor bigint not null,
               currency text not null,
               at timestamptz not null);
-            create table if not exists ck.ledger_manifest (
-              id int primary key,
-              row_count bigint not null,
-              checksum numeric not null,
-              captured_at timestamptz not null default now());
+            create table if not exists ck.ledger_rows (
+              txn_id uuid not null,
+              entry_no smallint not null,
+              row_hash text not null,
+              primary key (txn_id, entry_no));
             truncate ck.psp_effects;
             """,
             cancellationToken);
@@ -87,16 +87,12 @@ public static class CheckRunner
         }
 
         var violations = await QueryViolationsAsync(connection, "ck1.sql", cancellationToken);
-        var current = await LedgerManifestAsync(connection, cancellationToken);
-        var previous = await ReadManifestAsync(connection, cancellationToken);
-        if (previous is null)
+        if (violations.Count == 0)
         {
-            if (violations.Count == 0)
-            {
-                await SaveManifestAsync(connection, current, cancellationToken);
-            }
+            await RememberLedgerRowsAsync(connection, cancellationToken);
         }
-        else if (previous.Value.RowCount != current.RowCount || previous.Value.Checksum != current.Checksum)
+
+        if (await LedgerRowsChangedAsync(connection, cancellationToken))
         {
             violations.Add(new Violation("ledger_manifest", 0));
         }
@@ -414,59 +410,52 @@ public static class CheckRunner
             : Convert.ToInt64(value, CultureInfo.InvariantCulture);
     }
 
-    private static async Task<(long RowCount, decimal Checksum)> LedgerManifestAsync(
+    private static async Task RememberLedgerRowsAsync(
         NpgsqlConnection connection,
         CancellationToken cancellationToken)
     {
-        await using var command = new NpgsqlCommand(
+        await ExecuteAsync(
+            connection,
             """
-            select count(*)::bigint,
-                   coalesce(sum(hashtextextended(
-                     txn_id::text || '|' || entry_no::text || '|' || merchant_id::text || '|'
-                     || account_id::text || '|' || subject_id::text || '|' || direction || '|'
-                     || amount_minor::text || '|' || currency || '|' || created_at::text, 0))::numeric, 0)
-            from ledger_entries
+            insert into ck.ledger_rows (txn_id, entry_no, row_hash)
+            select e.txn_id,
+                   e.entry_no,
+                   md5(concat_ws('|',
+                     e.txn_id::text, e.entry_no::text, e.merchant_id::text,
+                     e.account_id::text, e.subject_id::text, e.direction,
+                     e.amount_minor::text, e.currency, e.created_at::text))
+            from ledger_entries e
+            on conflict (txn_id, entry_no) do nothing
             """,
-            connection);
-        await using var reader = await command.ExecuteReaderAsync(cancellationToken);
-        await reader.ReadAsync(cancellationToken);
-        return (reader.GetInt64(0), reader.GetDecimal(1));
+            cancellationToken);
     }
 
-    private static async Task<(long RowCount, decimal Checksum)?> ReadManifestAsync(
+    private static async Task<bool> LedgerRowsChangedAsync(
         NpgsqlConnection connection,
         CancellationToken cancellationToken)
     {
-        await using var command = new NpgsqlCommand(
-            "select row_count, checksum from ck.ledger_manifest where id = 1",
-            connection);
-        await using var reader = await command.ExecuteReaderAsync(cancellationToken);
-        if (!await reader.ReadAsync(cancellationToken))
-        {
-            return null;
-        }
-
-        return (reader.GetInt64(0), reader.GetDecimal(1));
-    }
-
-    private static async Task SaveManifestAsync(
-        NpgsqlConnection connection,
-        (long RowCount, decimal Checksum) manifest,
-        CancellationToken cancellationToken)
-    {
-        await using var command = new NpgsqlCommand(
+        var changed = await ScalarLongAsync(
+            connection,
             """
-            insert into ck.ledger_manifest (id, row_count, checksum, captured_at)
-            values (1, @rows, @checksum, now())
-            on conflict (id) do update
-              set row_count = excluded.row_count,
-                  checksum = excluded.checksum,
-                  captured_at = excluded.captured_at
+            select count(*)::bigint
+            from (
+              select 1
+              from ck.ledger_rows m
+              join ledger_entries e using (txn_id, entry_no)
+              where m.row_hash <> md5(concat_ws('|',
+                e.txn_id::text, e.entry_no::text, e.merchant_id::text,
+                e.account_id::text, e.subject_id::text, e.direction,
+                e.amount_minor::text, e.currency, e.created_at::text))
+              union all
+              select 1
+              from ck.ledger_rows m
+              where not exists (
+                select 1 from ledger_entries e
+                where e.txn_id = m.txn_id and e.entry_no = m.entry_no)
+            ) changed
             """,
-            connection);
-        command.Parameters.AddWithValue("rows", manifest.RowCount);
-        command.Parameters.AddWithValue("checksum", manifest.Checksum);
-        await command.ExecuteNonQueryAsync(cancellationToken);
+            cancellationToken);
+        return changed > 0;
     }
 
     private sealed record Violation(string? SampleId, long ImpactMinor);
