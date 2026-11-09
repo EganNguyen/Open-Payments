@@ -59,6 +59,17 @@ The console index comparison is finished: see [the result](../../benchmarks/cons
 | D54 | `0056f0d` | `dotnet test` with the new in-transaction `lock_timeout` test | PASS, test first: it read `2s` before the fix and `200ms` after. Test fixtures now give `op_app` D1's `lock_timeout`; without it the C43 tests waited on locks with no limit. |
 | k6 VUs | `7dd42a7` | report tests | Built: `preAllocatedVUs` equals `maxVUs`, so no VU starts mid-run. Not yet proven by a rerun of step 6. |
 
+### Owner decisions and final runs (2026-11-09, afternoon)
+
+| Item | Commit | Command | Result |
+|---|---|---|---|
+| D53-D55 | `7dd42a7` | none | The owner chose the recommended answers. Task 17 closes on laptop evidence (D53), `TxRunner` uses the role `lock_timeout` (D54), and the console accepts `acr` (D55). E2, E3 and E4 are closed for Stage 1. k6 now starts every VU before the load. |
+| E9 | `0056f0d` | `dotnet test --filter D54_runner_uses_the_role_lock_timeout`; the whole suite | PASS, test first: it failed with `2s`, then read `200ms`. Fixtures now give `op_app` D1's `lock_timeout`; without it the C43 tests waited on locks with no limit. |
+| E10 | `a4d0dc4` | 123 console tests; the whole suite; a real Keycloak sign-in | PASS: a password-and-TOTP sign-in through the local realm reaches Payments. Verifying it found that the OIDC handler deleted `acr` from the session; now fixed, with a test. A caught-up replica now reports zero lag. |
+| C13 step 5 | `7323d59` | `benchmarks/run.sh 3` twice after a full reset; `console-search-load.sh` at 5 queries/s on standby1 | INCONCLUSIVE: both runs are invalid on the completed count, because another session rebuilt and restarted the API at 08:04 UTC, 4 minutes into the idle run. Under search load: payment p99 13.95 ms, 0 errors, replica lag at most 21.0 s, search queries at 9.6 ms average. Both meet the pass condition, but not in a valid run. |
+| Step 6 rerun | `7323d59` | `benchmarks/run.sh 6` on a fresh database | FAIL: 500.03 completed payments/s, but p99 was 173.47 ms against the 100 ms gate. 0 errors, CK1-CK3 pass. API CPU 186.9%, lock waits 2,219 held, database CPU 0.67. The run is also invalid on the count, because of the same restart. Earlier, with D54 not yet applied, at 184,428 to 639,315 payments, step 6 passed its gates at p99 58.43 ms but was invalid. |
+| Step 6 stall | `0056f0d` | step 6 on 1,152,650 payments | FAIL: p99 657.81 ms. A stall at 06:48:34 left 43 PSP calls `UNKNOWN`, which is correct and moved no money without a record. CK5 fails until Stage 2's reconciler resolves them. |
+
 ### Build brief (design session, 2026-11-09)
 
 For the builder. Follow the [build gate](../delivery-workflow.md#build-gate): test first, one commit per item, one progress line per item in the correction table format above, labelled `B1` and `B2`. Nothing here changes `docs/decisions.md`, the API contract or a gate's value.
