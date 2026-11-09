@@ -108,6 +108,10 @@ public sealed class C43Fixture : IAsyncLifetime
 
         await ExecAdminAsync(
             "do $$ begin if not exists (select from pg_roles where rolname = 'op_app') then create role op_app login password 'op_local_only'; end if; end $$; alter role op_app set lock_timeout = '200ms';");
+        // D1: deadlock_timeout below the role's lock_timeout, so a deadlock is detected (40P01)
+        // before a waiter times out (55P03). The server default of 1 s would invert that.
+        await ExecAdminAsync("alter system set deadlock_timeout = '100ms'");
+        await ExecAdminAsync("select pg_reload_conf()");
         await ResetAsync();
         await EnableSynchronousAsync();
     }

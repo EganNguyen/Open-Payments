@@ -56,6 +56,50 @@ public sealed class TxRunnerTests(DbFixture db)
     }
 
     [Fact]
+    public async Task Real_deadlock_under_D1_settings_is_detected_and_retried()
+    {
+        // Review M6: the fixture runs D1's pair, deadlock_timeout 100 ms under lock_timeout 200 ms,
+        // so opposite lock orders deadlock (40P01) and are retried, instead of timing out (55P03).
+        await db.ResetAsync();
+        var seed = await db.SeedMerchantAsync();
+        var first = await db.SeedPaymentAsync(seed, "AUTHORIZED");
+        var second = await db.SeedPaymentAsync(seed, "AUTHORIZED");
+        await using var runner = new TxRunner(db.AppConnectionString);
+        using var bothHoldOne = new Barrier(2);
+        var arrivals = 0;
+
+        Task<int> Touch(PaymentId a, PaymentId b) => runner.RunAsync(
+            seed.Merchant,
+            async (connection, transaction, cancellationToken) =>
+            {
+                await Update(connection, transaction, a, cancellationToken);
+                // Only the two first attempts meet at the barrier; the retry runs alone.
+                if (Interlocked.Increment(ref arrivals) <= 2)
+                {
+                    bothHoldOne.SignalAndWait(TimeSpan.FromSeconds(2), CancellationToken.None);
+                }
+                await Update(connection, transaction, b, cancellationToken);
+                return 0;
+            },
+            CancellationToken.None);
+
+        await Task.WhenAll(
+            Task.Run(() => Touch(first.PaymentId, second.PaymentId)),
+            Task.Run(() => Touch(second.PaymentId, first.PaymentId)));
+
+        Assert.True(runner.Metrics.Retries.GetValueOrDefault("40P01") >= 1, "No 40P01 was retried.");
+        Assert.Equal(2L, await db.ScalarAsync(
+            $"select count(*) from payments where id in ('{first.PaymentId.Value}', '{second.PaymentId.Value}') and version = 2"));
+
+        static async Task Update(NpgsqlConnection connection, NpgsqlTransaction transaction, PaymentId id, CancellationToken ct)
+        {
+            await using var command = new NpgsqlCommand("update payments set version = version + 1 where id = @id", connection, transaction);
+            command.Parameters.AddWithValue("id", id.Value);
+            await command.ExecuteNonQueryAsync(ct);
+        }
+    }
+
+    [Fact]
     public async Task Does_not_retry_55P03()
     {
         await db.ResetAsync();

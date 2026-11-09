@@ -268,11 +268,13 @@ public sealed class TxRunner : IAsyncDisposable
         {
             await commit;
             _metrics.LateSuccess();
+            _logger?.LogWarning("abandoned_commit_completed");
         }
         catch (Exception exception)
         {
             _metrics.LateFailure();
-            Debug.WriteLine("Abandoned commit ended with " + exception.GetType().Name);
+            // E1 item 5: the continuation logs how the abandoned commit ended.
+            _logger?.LogError(exception, "abandoned_commit_failed");
         }
         finally
         {
