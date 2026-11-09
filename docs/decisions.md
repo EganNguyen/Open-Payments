@@ -448,7 +448,7 @@ All values are starting points until measured. Other docs state the resulting ru
 
 **Stage 1's Task 17 closes on laptop evidence.** Status: `Committed`, owner decision 2026-11-09. Answers [E4](gates/stage-1-escalations.md#e4-task-17-has-no-linux-host-for-steps-4-5-escalation-e4) for Stage 1.
 
-- **Decision:** Task 17 is complete when the laptop limit search has valid runs through step 6 and every bottleneck it names cites its numbers. `C`, `N` and the mock PSP's 25,000 req/s check move to the first Linux run, before Stage 4's load tests.
+- **Decision:** Task 17 is complete when the laptop limit search has run until its first failed gate, and that limit is recorded with its numbers. `C`, `N`, the mock PSP's 25,000 req/s check and step 6's scaling past one API instance move to the first Linux run, before Stage 4's load tests. *Amended by the owner on 2026-11-09:* the first version required valid runs through step 6, but step 6 fails its p99 gate on the laptop with one API instance.
 - **Why:** No Linux host exists, and waiting for one blocks every later stage. A laptop run can't give `C`, so none is claimed.
 - **Consequence:** Stage 1 reports no capacity number. The first Linux run is a required step in Stage 4's plan, and E4 stays open there.
 
