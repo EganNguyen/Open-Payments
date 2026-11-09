@@ -4,6 +4,9 @@
     <AssemblyName>OpenPayments.Transitions</AssemblyName>
   </PropertyGroup>
   <ItemGroup>
+    <InternalsVisibleTo Include="OpenPayments.Integration.Tests" />
+  </ItemGroup>
+  <ItemGroup>
     <ProjectReference Include="../OpenPayments.Domain/OpenPayments.Domain.csproj" />
     <PackageReference Include="Npgsql" />
     <PackageReference Include="Microsoft.Extensions.Logging.Abstractions" />

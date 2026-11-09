@@ -33,12 +33,12 @@ public sealed class DbFixture : IAsyncLifetime
     public async Task InitializeAsync()
     {
         var repo = FindRepositoryRoot();
-        var migration = Path.Combine(repo, "db", "migrations", "0001_initial.sql");
+        var migrations = Path.Combine(repo, "db", "migrations");
         _container = new PostgreSqlBuilder("postgres:18.6")
             .WithDatabase("openpayments")
             .WithUsername("postgres")
             .WithPassword("op_local_only")
-            .WithBindMount(migration, "/schema/0001_initial.sql")
+            .WithBindMount(migrations, "/schema/migrations")
             .Build();
         await _container.StartAsync();
         await ExecAdminAsync(
@@ -50,7 +50,10 @@ public sealed class DbFixture : IAsyncLifetime
     {
         await ExecAdminAsync(
             "drop schema if exists public cascade; create schema public; create table schema_migrations (version text primary key, checksum text not null, applied_at timestamptz not null default now()); grant usage on schema public to public;");
-        await ExecAdminAsync("-f", "/schema/0001_initial.sql");
+        foreach (var name in MigrationNames())
+        {
+            await ExecAdminAsync("-f", "/schema/migrations/" + name);
+        }
     }
 
     public async Task<MerchantSeed> SeedMerchantAsync(
@@ -191,6 +194,12 @@ public sealed class DbFixture : IAsyncLifetime
     }
 
     public async Task DisposeAsync() => await _container.DisposeAsync();
+
+    // Every migration, in the name order scripts/migrate.sh applies them.
+    private static IEnumerable<string> MigrationNames() =>
+        Directory.GetFiles(Path.Combine(FindRepositoryRoot(), "db", "migrations"), "*.sql")
+            .Select(Path.GetFileName)
+            .Order(StringComparer.Ordinal)!;
 
     private static string FindRepositoryRoot()
     {

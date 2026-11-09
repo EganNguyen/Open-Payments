@@ -59,12 +59,12 @@ public sealed class AcceptanceFixture : IAsyncLifetime
     public async Task InitializeAsync()
     {
         var repo = FindRepositoryRoot();
-        var migration = Path.Combine(repo, "db", "migrations", "0001_initial.sql");
+        var migrations = Path.Combine(repo, "db", "migrations");
         _container = new PostgreSqlBuilder("postgres:18.6")
             .WithDatabase("openpayments")
             .WithUsername("postgres")
             .WithPassword("op_local_only")
-            .WithBindMount(migration, "/schema/0001_initial.sql")
+            .WithBindMount(migrations, "/schema/migrations")
             .Build();
         await _container.StartAsync();
         await ExecAsync(
@@ -95,7 +95,10 @@ public sealed class AcceptanceFixture : IAsyncLifetime
     {
         await ExecAsync("drop schema if exists public cascade; create schema public; grant usage on schema public to public;");
         await ExecAsync("create table schema_migrations (version text primary key, checksum text not null, applied_at timestamptz not null default now());");
-        await ExecAsync("-f", "/schema/0001_initial.sql");
+        foreach (var name in MigrationNames())
+        {
+            await ExecAsync("-f", "/schema/migrations/" + name);
+        }
         MerchantA = await SeedMerchantAsync("live_key_a");
         MerchantB = await SeedMerchantAsync("live_key_b");
         PspAccountA = await PspAccountAsync(MerchantA);
@@ -229,6 +232,12 @@ public sealed class AcceptanceFixture : IAsyncLifetime
                 $"Container command failed ({result.ExitCode}): {string.Join(' ', arguments)}\n{result.Stderr}");
         }
     }
+
+    // Every migration, in the name order scripts/migrate.sh applies them.
+    private static IEnumerable<string> MigrationNames() =>
+        Directory.GetFiles(Path.Combine(FindRepositoryRoot(), "db", "migrations"), "*.sql")
+            .Select(Path.GetFileName)
+            .Order(StringComparer.Ordinal)!;
 
     private static string FindRepositoryRoot()
     {

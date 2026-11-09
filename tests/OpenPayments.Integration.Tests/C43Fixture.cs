@@ -50,7 +50,7 @@ public sealed class C43Fixture : IAsyncLifetime
     public async Task InitializeAsync()
     {
         var repo = FindRepositoryRoot();
-        var migration = Path.Combine(repo, "db", "migrations", "0001_initial.sql");
+        var migrations = Path.Combine(repo, "db", "migrations");
         _network = new NetworkBuilder().Build();
         await _network.CreateAsync();
 
@@ -65,7 +65,7 @@ public sealed class C43Fixture : IAsyncLifetime
                 "-c", "wal_level=replica",
                 "-c", "max_wal_senders=10",
                 "-c", "hot_standby=on")
-            .WithBindMount(migration, "/schema/0001_initial.sql")
+            .WithBindMount(migrations, "/schema/migrations")
             .Build();
         await _postgres.StartAsync();
 
@@ -117,7 +117,10 @@ public sealed class C43Fixture : IAsyncLifetime
         await UnblockAsync(terminateBackends: true);
         await ExecAdminAsync(
             "drop schema if exists public cascade; create schema public; create table schema_migrations (version text primary key, checksum text not null, applied_at timestamptz not null default now()); grant usage on schema public to public;");
-        await ExecAdminAsync("-f", "/schema/0001_initial.sql");
+        foreach (var name in MigrationNames())
+        {
+            await ExecAdminAsync("-f", "/schema/migrations/" + name);
+        }
         await WaitForStandbyAsync();
     }
 
@@ -374,6 +377,12 @@ public sealed class C43Fixture : IAsyncLifetime
                 $"Container command failed ({result.ExitCode}): {string.Join(' ', arguments)}\n{result.Stderr}");
         }
     }
+
+    // Every migration, in the name order scripts/migrate.sh applies them.
+    private static IEnumerable<string> MigrationNames() =>
+        Directory.GetFiles(Path.Combine(FindRepositoryRoot(), "db", "migrations"), "*.sql")
+            .Select(Path.GetFileName)
+            .Order(StringComparer.Ordinal)!;
 
     private static string FindRepositoryRoot()
     {
