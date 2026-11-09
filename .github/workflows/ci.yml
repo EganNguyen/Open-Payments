@@ -47,6 +47,9 @@ jobs:
         run: |
           dotnet tool install --global nuget-license --version 4.0.18
           export PATH="$PATH:$HOME/.dotnet/tools"
+          # Deque.AxeCore.Commons is MPL-2.0. Only the browser accessibility tests use it and no
+          # service image ships it, so it is ignored by name rather than allowing MPL-2.0 for all.
           nuget-license -i OpenPayments.slnx -t \
             -a "MIT;Apache-2.0;BSD-3-Clause;BSD-2-Clause;MS-PL;PostgreSQL" \
+            -ignore scripts/license-ignored-packages.json \
             -mapping scripts/license-url-mappings.json -err
