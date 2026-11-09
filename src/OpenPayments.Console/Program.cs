@@ -72,8 +72,11 @@ builder.Services.Configure<SearchOptions>(options =>
     }
 });
 
-// Cookies are Secure everywhere except the Testing host, whose browser tests use plain http.
-var secureCookies = builder.Environment.IsEnvironment("Testing") ? CookieSecurePolicy.SameAsRequest : CookieSecurePolicy.Always;
+// Cookies are Secure in production. The Testing host and the local compose stack (Development)
+// serve plain http, so there they follow the request.
+var secureCookies = builder.Environment.IsEnvironment("Testing") || builder.Environment.IsDevelopment()
+    ? CookieSecurePolicy.SameAsRequest
+    : CookieSecurePolicy.Always;
 
 builder.Services
     .AddAuthentication(options =>

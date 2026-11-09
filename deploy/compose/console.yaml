@@ -3,6 +3,7 @@
 # Reads come from standby1, writes and reads after an action from the primary, and money moves
 # only through the API. Keycloak is a pinned local identity provider; its admin user must set up
 # TOTP at first sign-in, so the session carries MFA in amr. Local values only.
+# Apply migrations first, as for the rest of the stack: scripts/migrate.sh.
 services:
   console-init:
     image: postgres:18.6
@@ -18,7 +19,7 @@ services:
 
   keycloak:
     image: quay.io/keycloak/keycloak:26.0.7
-    command: ["start-dev", "--import-realm", "--http-port=8180", "--hostname=http://localhost:8180"]
+    command: ["start-dev", "--import-realm", "--http-port=8180", "--hostname=http://localhost:8180", "--hostname-backchannel-dynamic=true"]
     environment:
       KC_BOOTSTRAP_ADMIN_USERNAME: kcadmin
       KC_BOOTSTRAP_ADMIN_PASSWORD: op_local_only
@@ -27,7 +28,7 @@ services:
     ports:
       - "127.0.0.1:8180:8180"
     healthcheck:
-      test: ["CMD-SHELL", "exec 3<>/dev/tcp/127.0.0.1/8180 && printf 'GET /realms/open-payments/.well-known/openid-configuration HTTP/1.0\\r\\n\\r\\n' >&3 && grep -q issuer <&3"]
+      test: ["CMD-SHELL", "exec 3<>/dev/tcp/127.0.0.1/8180 && printf 'GET /realms/open-payments/.well-known/openid-configuration HTTP/1.0\\r\\nHost: localhost:8180\\r\\n\\r\\n' >&3 && grep -q issuer <&3"]
       interval: 5s
       timeout: 5s
       retries: 60
@@ -59,13 +60,14 @@ services:
       keycloak:
         condition: service_healthy
       api:
-        condition: service_healthy
+        condition: service_started
       standby1:
         condition: service_healthy
     ports:
       - "127.0.0.1:8090:8090"
     healthcheck:
-      test: ["CMD-SHELL", "exec 3<>/dev/tcp/127.0.0.1/8090 && printf 'GET /health HTTP/1.0\\r\\n\\r\\n' >&3 && grep -q ok <&3"]
+      # The aspnet image's sh is dash, which has no /dev/tcp, so run bash.
+      test: ["CMD", "bash", "-c", "exec 3<>/dev/tcp/127.0.0.1/8090 && printf 'GET /health HTTP/1.0\\r\\nHost: localhost:8090\\r\\n\\r\\n' >&3 && grep -q ok <&3"]
       interval: 5s
       timeout: 5s
       retries: 30

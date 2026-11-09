@@ -10,15 +10,26 @@
       "secret": "op_local_only",
       "standardFlowEnabled": true,
       "directAccessGrantsEnabled": false,
-      "redirectUris": ["http://localhost:8090/signin-oidc"],
-      "webOrigins": ["http://localhost:8090"],
-      "attributes": { "pkce.code.challenge.method": "S256", "post.logout.redirect.uris": "http://localhost:8090/" },
+      "redirectUris": [
+        "http://localhost:8090/signin-oidc"
+      ],
+      "webOrigins": [
+        "http://localhost:8090"
+      ],
+      "attributes": {
+        "pkce.code.challenge.method": "S256",
+        "post.logout.redirect.uris": "http://localhost:8090/"
+      },
       "protocolMappers": [
         {
           "name": "amr",
           "protocol": "openid-connect",
           "protocolMapper": "oidc-amr-mapper",
-          "config": { "id.token.claim": "true", "access.token.claim": "true", "introspection.token.claim": "true" }
+          "config": {
+            "id.token.claim": "true",
+            "access.token.claim": "true",
+            "introspection.token.claim": "true"
+          }
         }
       ]
     }
@@ -30,8 +41,18 @@
       "email": "admin@console.local",
       "emailVerified": true,
       "enabled": true,
-      "credentials": [{ "type": "password", "value": "op_local_only", "temporary": false }],
-      "requiredActions": ["CONFIGURE_TOTP"]
+      "credentials": [
+        {
+          "type": "password",
+          "value": "op_local_only",
+          "temporary": false
+        }
+      ],
+      "requiredActions": [
+        "CONFIGURE_TOTP"
+      ],
+      "firstName": "Local",
+      "lastName": "Admin"
     }
   ]
 }
