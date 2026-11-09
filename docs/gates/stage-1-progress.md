@@ -81,7 +81,7 @@ Fixes for the findings in [the Stage 1 review](stage-1-review.md), built by Opus
 | M1 | A two-call auto-capture runs its capture under an internal key no client can send, stores the capture's final answer under the create key, and retries the capture when an unresolved create is replayed | R4 |
 | M2 | New attempt answers 503 with `Retry-After` on `BusyException` | R2 |
 | M3 | An unknown outcome (202) stores no answer and leaves `resolved_at` null | R3; `M3_refund_timeout_…` |
-| M4 | A key with a payment but no answer replays the current state. Within `PaymentStore.InFlightWindow` (10 s, above D34's 5 s request budget), a key whose operation hasn't recorded `UNKNOWN` answers 409 (E2). After it, or once `UNKNOWN`, the replay renders the state (E27). Refund keys render the refund. Answers are written without the request's token. Void, refund and capture look up the key when a state check refuses, so a replay of a finished void or full refund returns its answer; the S3 query counts are unchanged | `PaymentStoreTests` (both cases), `D31_replays_…`, E2, E27 and C5 |
+| M4 | A key with a payment but no answer replays the current state. Within `PaymentStore.InFlightWindow` (30 s since the re-check; see N2), a key whose operation hasn't recorded `UNKNOWN` answers 409 (E2). After it, or once `UNKNOWN`, the replay renders the state (E27). Refund keys render the refund. Answers are written without the request's token. Void, refund and capture look up the key when a state check refuses, so a replay of a finished void or full refund returns its answer; the S3 query counts are unchanged | `PaymentStoreTests` (both cases), `D31_replays_…`, E2, E27 and C5 |
 | M5 | A resubmitted console action sends the amount recorded in its intent, and the field is read-only after a busy answer | `Resubmit_after_busy_sends_the_recorded_amount_not_an_edited_one`, failing first with 50.00 sent |
 | M6 | The three API fixtures set D1's `deadlock_timeout` of 100 ms | `Real_deadlock_under_D1_settings_is_detected_and_retried`: two runner transactions in opposite order. It fails with `55P03` at the 1 s default and passes at 100 ms |
 | M7 | The Task 17 line and BASELINE say step 6's run is invalid on its count; BASELINE's stale "rerun three times" is removed | none (records) |
@@ -91,7 +91,17 @@ Fixes for the findings in [the Stage 1 review](stage-1-review.md), built by Opus
 | L4 | `deploy/compose/prometheus/alerts.yml`: `CommitWarning` pages on any commit warning; `AbandonedCommitsStuck` pages after a minute. Routing to a pager stays with Stage 5 | `promtool check config` and `check rules` pass |
 | L5 | Capture, void, refund and cancel enter the D34 request limiter; the two-call capture reuses its create's permit | the whole suite |
 
-Whole suite at this point: 385 tests (Domain 70, analyzers 1, mock PSP 20, checks 24, console 124, integration 40, console browser 34, acceptance 72), 0 warnings.
+**After the re-check (`bf90596`):**
+
+| Finding | Fix | Tests |
+|---|---|---|
+| H1, remainder | `AfterPspAsync` treats every failure in transaction B as an unknown outcome under D28, including a dropped connection, a statement timeout or a failed key write after the commit: 202 with the stored state, key unresolved | **R8** (added unchanged), capture and refund, failing first with 500 |
+| N1 | A database failure in transaction A, before any PSP call, answers 503 with `Retry-After` on capture, void, refund, cancel, create and new attempt. The transaction rolled back, so the same key runs again | `N1_connection_loss_in_transaction_A_answers_503_and_frees_the_key`, capture and refund, failing first with 500 |
+| N2 | `InFlightWindow` is 30 s, derived from the longest path, a two-call auto-capture at about 17 s, rather than from D34's unenforced 5 s budget | the whole suite |
+
+Whole suite after the re-check fixes: 389 tests (acceptance 76), 0 warnings.
+
+Whole suite at the first fixes: 385 tests (Domain 70, analyzers 1, mock PSP 20, checks 24, console 124, integration 40, console browser 34, acceptance 72), 0 warnings.
 
 ### Build brief (design session, 2026-11-09)
 

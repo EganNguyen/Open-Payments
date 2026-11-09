@@ -144,11 +144,12 @@ public abstract record ApplyResult
 public sealed class PaymentStore
 {
     /// <summary>
-    /// No request outlives this: D34 caps a request at 5 s, with the PSP call stopping at 2.5 s
-    /// and the commit wait at 3 s. A key with no answer that is older than this belongs to a
-    /// request that has ended.
+    /// No request outlives this, so a key with no answer that is older belongs to a request that
+    /// has ended. Derived from the longest path, not from D34's 5 s budget, which no timer
+    /// enforces yet (review N2): a two-call auto-capture makes two PSP calls of at most 2.5 s and
+    /// up to four commits that may each wait 3 s, about 17 s. 30 s leaves room for retries.
     /// </summary>
-    public static readonly TimeSpan InFlightWindow = TimeSpan.FromSeconds(10);
+    public static readonly TimeSpan InFlightWindow = TimeSpan.FromSeconds(30);
 
     private readonly TxRunner _runner;
 

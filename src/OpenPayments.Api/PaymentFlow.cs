@@ -138,6 +138,13 @@ public sealed class PaymentFlow(
             log.Record(Entry(merchant, null, null, null, "BUSY", exception.Reason, "authorize"));
             return ApiAnswer.Problem(503, "The database is busy.", "busy", retryAfter: 1);
         }
+        catch (Npgsql.NpgsqlException)
+        {
+            // N1: a database failure that escaped the attempt's own handling. The attempt's PSP
+            // call, if any, answers through ExecuteAttemptAsync, so this is before it.
+            log.Record(Entry(merchant, null, null, null, "BUSY", "database_unavailable", "authorize"));
+            return ApiAnswer.Problem(503, "The database is unavailable.", "database_unavailable", retryAfter: 1);
+        }
         finally
         {
             limiter.Exit();
@@ -226,6 +233,11 @@ public sealed class PaymentFlow(
             // M2, D1: a lock timeout here is before any PSP call, so 503 with Retry-After.
             log.Record(Entry(merchant, paymentId, null, null, "BUSY", exception.Reason, "attempt"));
             return ApiAnswer.Problem(503, "The database is busy.", "busy", retryAfter: 1);
+        }
+        catch (Npgsql.NpgsqlException)
+        {
+            log.Record(Entry(merchant, paymentId, null, null, "BUSY", "database_unavailable", "attempt"));
+            return ApiAnswer.Problem(503, "The database is unavailable.", "database_unavailable", retryAfter: 1);
         }
         finally
         {
@@ -883,9 +895,10 @@ public sealed class PaymentFlow(
     }
 
     /// <summary>
-    /// Transaction B, after the PSP answered. A lock timeout, exhausted retries or an unknown
-    /// commit here can't undo what the PSP did, so it answers 202 with the state as stored and
-    /// leaves the key unresolved: a same-key retry shows the state as it is then (D28, D1, H1).
+    /// Transaction B, after the PSP answered. Any failure here, a lock timeout, exhausted retries,
+    /// an unknown commit or a dropped connection, can't undo what the PSP did, so the outcome is
+    /// unknown (D28): 202 with the state as stored, and the key left unresolved, so a same-key
+    /// retry shows the state as it is then (D1, H1).
     /// </summary>
     private async Task<ApiAnswer> AfterPspAsync(
         PaymentId paymentId,
@@ -899,9 +912,16 @@ public sealed class PaymentFlow(
         {
             return await apply();
         }
-        catch (Exception exception) when (exception is BusyException or CommitOutcomeUnknownException)
+#pragma warning disable CA1031 // After the PSP answered, every failure is an unknown outcome, never a 500.
+        catch (Exception exception)
+#pragma warning restore CA1031
         {
-            var reason = exception is BusyException busy ? busy.Reason : ((CommitOutcomeUnknownException)exception).Reason;
+            var reason = exception switch
+            {
+                BusyException busy => busy.Reason,
+                CommitOutcomeUnknownException unknown => unknown.Reason,
+                _ => exception.GetType().Name,
+            };
             log.Record(Entry(merchant, paymentId, attemptId, null, "UNKNOWN", "transaction_b_" + reason, requestClass));
             var current = await store.GetPaymentAsync(merchant, paymentId, CancellationToken.None);
             return current is null
@@ -1013,6 +1033,12 @@ public sealed class PaymentFlow(
         {
             log.Record(Entry(merchant, paymentId, attemptId, null, "BUSY", exception.Reason, requestClass));
             return (null, ApiAnswer.Problem(503, "The database is busy.", "busy", retryAfter: 1));
+        }
+        catch (Npgsql.NpgsqlException)
+        {
+            // N1: before any PSP call the transaction rolled back, so it is safe to retry.
+            log.Record(Entry(merchant, paymentId, attemptId, null, "BUSY", "database_unavailable", requestClass));
+            return (null, ApiAnswer.Problem(503, "The database is unavailable.", "database_unavailable", retryAfter: 1));
         }
     }
 

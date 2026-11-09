@@ -117,6 +117,48 @@ public sealed class ReviewFixTests(AcceptanceFixture db)
         Assert.True(JsonElement.DeepEquals(JsonDocument.Parse(firstRefundBody).RootElement, await ReadAsync(replayRefund)));
     }
 
+    [Theory]
+    [InlineData("capture")]
+    [InlineData("refund")]
+    public async Task N1_connection_loss_in_transaction_A_answers_503_and_frees_the_key(string route)
+    {
+        // Review N1: before any PSP call, a dropped connection is retryable: 503 with Retry-After,
+        // nothing moved, and the same key can run again.
+        await db.ResetAsync();
+        using var client = Authorized();
+        var paymentId = route == "capture"
+            ? await AuthorizedPaymentAsync(client, "n1", 1000)
+            : await CapturedPaymentAsync(client, "n1", 1000);
+        var store = db.Factory.Services.GetRequiredService<PaymentStore>();
+        var calls = 0;
+        store.BeforeOutboxInsert = () =>
+        {
+            if (Interlocked.Increment(ref calls) == 1)
+            {
+                throw new NpgsqlException("simulated connection loss during transaction A");
+            }
+        };
+        var pspCalls = db.Psp.Calls.Count;
+        try
+        {
+            using var first = route == "capture"
+                ? await PostAsync(client, $"/v1/payments/{paymentId}/capture", "n1-op", new { amount_minor = 1000 })
+                : await PostAsync(client, $"/v1/payments/{paymentId}/refunds", "n1-op", new { amount_minor = 400 });
+            Assert.Equal(HttpStatusCode.ServiceUnavailable, first.StatusCode);
+            Assert.NotNull(first.Headers.RetryAfter);
+            Assert.Equal(pspCalls, db.Psp.Calls.Count);
+
+            using var again = route == "capture"
+                ? await PostAsync(client, $"/v1/payments/{paymentId}/capture", "n1-op", new { amount_minor = 1000 })
+                : await PostAsync(client, $"/v1/payments/{paymentId}/refunds", "n1-op", new { amount_minor = 400 });
+            Assert.Equal(HttpStatusCode.OK, again.StatusCode);
+        }
+        finally
+        {
+            store.BeforeOutboxInsert = null;
+        }
+    }
+
     /// <summary>Holds the payment row from another connection when the store makes its second
     /// update, transaction B, so that B hits the role's 200 ms lock_timeout after the PSP answered.</summary>
     private Locker LockPaymentOnSecondUpdate(string paymentId)
