@@ -23,6 +23,12 @@ jobs:
       - name: Build with warnings as errors
         run: dotnet build OpenPayments.slnx --no-restore -warnaserror
 
+      # The browser tests download Chromium and WebKit themselves, but WebKit also needs
+      # system libraries (GTK 4, GStreamer, ...) that only an apt install with sudo can add.
+      - name: Install Playwright browsers and system dependencies
+        shell: pwsh
+        run: tests/OpenPayments.Console.Browser.Tests/bin/Debug/net10.0/playwright.ps1 install --with-deps chromium webkit
+
       - name: Test
         run: dotnet test OpenPayments.slnx --no-build --logger "console;verbosity=normal"
 

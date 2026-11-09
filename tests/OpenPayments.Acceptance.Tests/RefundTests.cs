@@ -161,7 +161,11 @@ public sealed class RefundTests(AcceptanceFixture db)
                     return;
                 }
 
-                if (response.StatusCode == HttpStatusCode.Conflict && response.Headers.RetryAfter is not null)
+                // Both are documented answers to a live-refund race: 409 while another refund on the
+                // payment is in flight, and 503 when the row lock outlasts lock_timeout (D1, D54).
+                if ((response.StatusCode == HttpStatusCode.Conflict
+                        || (response.StatusCode == HttpStatusCode.ServiceUnavailable && code == "busy"))
+                    && response.Headers.RetryAfter is not null)
                 {
                     await Task.Delay(20);
                     continue;
@@ -183,6 +187,43 @@ public sealed class RefundTests(AcceptanceFixture db)
         var pending = payment.GetProperty("refund_pending_minor").GetInt64();
         Assert.Equal(10000, refunded + pending);
         Assert.True(refunded + pending <= captured);
+    }
+
+    [Theory]
+    [InlineData("refunds")]
+    [InlineData("capture")]
+    [InlineData("void")]
+    [InlineData("cancel")]
+    public async Task Lock_timeout_on_a_money_route_answers_503_busy_with_retry_after(string route)
+    {
+        await db.ResetAsync();
+        using var client = Authorized("live_key_a");
+        var paymentId = route switch
+        {
+            "refunds" => await CapturedPaymentAsync(client, $"busy-{route}", 1000),
+            "cancel" => await PaymentWithoutMethodAsync(client, $"busy-{route}"),
+            _ => await AuthorizedPaymentAsync(client, $"busy-{route}"),
+        };
+
+        // Another session holds the payment row past op_app's 200 ms lock_timeout (D1, D54).
+        await using var holder = await db.OpenAdminAsync();
+        await using var hold = await holder.BeginTransactionAsync();
+        await using (var lockRow = new Npgsql.NpgsqlCommand(
+            "select 1 from payments where id = @id for update", holder, hold))
+        {
+            lockRow.Parameters.AddWithValue("id", Guid.Parse(paymentId));
+            await lockRow.ExecuteScalarAsync();
+        }
+
+        using var response = await PostAsync(
+            client, $"/v1/payments/{paymentId}/{route}", $"busy-{route}-op", new { amount_minor = 1000 });
+
+        Assert.True(
+            response.StatusCode == HttpStatusCode.ServiceUnavailable,
+            $"{(int)response.StatusCode}: {await response.Content.ReadAsStringAsync()}");
+        Assert.NotNull(response.Headers.RetryAfter);
+        Assert.Equal("busy", await ProblemCodeAsync(response));
+        await hold.RollbackAsync();
     }
 
     [Fact]
@@ -218,6 +259,13 @@ public sealed class RefundTests(AcceptanceFixture db)
             currency = "USD",
             method = new { type = "card", @ref = "tok_test" },
         });
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        return (await ReadAsync(response)).GetProperty("id").GetString()!;
+    }
+
+    private async Task<string> PaymentWithoutMethodAsync(HttpClient client, string key)
+    {
+        using var response = await PostAsync(client, "/v1/payments", key, new { amount_minor = 1000, currency = "USD" });
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);
         return (await ReadAsync(response)).GetProperty("id").GetString()!;
     }

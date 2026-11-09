@@ -232,7 +232,7 @@ public sealed class PaymentFlow(
             return ApiAnswer.Problem(404, "Payment not found.", "not_found");
         }
 
-        var result = await store.BeginOperationAsync(
+        var (result, refused) = await BeginOperationAsync(
             merchant,
             paymentId,
             key,
@@ -240,7 +240,13 @@ public sealed class PaymentFlow(
             new PaymentCommand.Cancel(DateTimeOffset.UtcNow),
             attemptId: null,
             refundId: null,
+            "cancel",
             cancellationToken);
+        if (result is null)
+        {
+            return refused!;
+        }
+
         if (result is BeginOperationResult.Started started)
         {
             var body = JsonSerializer.Serialize(PaymentBody.From(started.Payment), ApiJson.Options);
@@ -280,7 +286,7 @@ public sealed class PaymentFlow(
         }
 
         var attemptId = new AttemptId(Guid.NewGuid());
-        var begin = await store.BeginOperationAsync(
+        var (begin, refused) = await BeginOperationAsync(
             merchant,
             paymentId,
             key,
@@ -288,7 +294,13 @@ public sealed class PaymentFlow(
             new PaymentCommand.Capture(attemptId, view.Amount, DateTimeOffset.UtcNow),
             attemptId,
             refundId: null,
+            "capture",
             cancellationToken);
+        if (begin is null)
+        {
+            return refused!;
+        }
+
         if (begin is not BeginOperationResult.Started started)
         {
             return FromOperation(begin);
@@ -350,7 +362,7 @@ public sealed class PaymentFlow(
         }
 
         var attemptId = new AttemptId(Guid.NewGuid());
-        var begin = await store.BeginOperationAsync(
+        var (begin, refused) = await BeginOperationAsync(
             merchant,
             paymentId,
             key,
@@ -358,7 +370,13 @@ public sealed class PaymentFlow(
             new PaymentCommand.Void(attemptId, authorized.Value, DateTimeOffset.UtcNow),
             attemptId,
             refundId: null,
+            "void",
             cancellationToken);
+        if (begin is null)
+        {
+            return refused!;
+        }
+
         if (begin is not BeginOperationResult.Started started)
         {
             return FromOperation(begin);
@@ -417,7 +435,7 @@ public sealed class PaymentFlow(
 
         var refundId = RefundId.New();
         var amount = new Money(request.AmountMinor, view.Amount.Currency);
-        var begin = await store.BeginOperationAsync(
+        var (begin, refused) = await BeginOperationAsync(
             merchant,
             paymentId,
             key,
@@ -425,7 +443,13 @@ public sealed class PaymentFlow(
             new PaymentCommand.RefundReserve(refundId, amount, DateTimeOffset.UtcNow),
             attemptId: null,
             refundId,
+            "refund",
             cancellationToken);
+        if (begin is null)
+        {
+            return refused!;
+        }
+
         if (begin is not BeginOperationResult.Started started)
         {
             return FromOperation(begin);
@@ -692,6 +716,41 @@ public sealed class PaymentFlow(
             { State: AttemptState.Failed, FailureCode: not "fraud_blocked" and not "timeout" } => "declined",
         _ => null,
     };
+
+    /// <summary>
+    /// Transaction A of a money operation. A lock timeout, exhausted retries or an unknown
+    /// commit here happens before any PSP call, so it answers 503 with Retry-After, as the
+    /// create route does. Exactly one of Result and Refused is set. Failures after the PSP call
+    /// are handled by each route, not here.
+    /// </summary>
+    private async Task<(BeginOperationResult? Result, ApiAnswer? Refused)> BeginOperationAsync(
+        MerchantId merchant,
+        PaymentId paymentId,
+        string key,
+        byte[] requestHash,
+        PaymentCommand command,
+        AttemptId? attemptId,
+        RefundId? refundId,
+        string requestClass,
+        CancellationToken cancellationToken)
+    {
+        try
+        {
+            var result = await store.BeginOperationAsync(
+                merchant, paymentId, key, requestHash, command, attemptId, refundId, cancellationToken);
+            return (result, null);
+        }
+        catch (CommitOutcomeUnknownException exception)
+        {
+            log.Record(Entry(merchant, paymentId, attemptId, null, "UNKNOWN", "transaction_a_unknown", requestClass));
+            return (null, ApiAnswer.Problem(503, "The outcome is not known yet.", exception.Reason, retryAfter: 1));
+        }
+        catch (BusyException exception)
+        {
+            log.Record(Entry(merchant, paymentId, attemptId, null, "BUSY", exception.Reason, requestClass));
+            return (null, ApiAnswer.Problem(503, "The database is busy.", "busy", retryAfter: 1));
+        }
+    }
 
     private static CanonicalEntry Entry(
         MerchantId merchant,
