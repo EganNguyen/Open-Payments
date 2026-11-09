@@ -134,11 +134,20 @@ public sealed class PaymentStoreTests(DbFixture db)
         await using var runner = new TxRunner(db.AppConnectionString);
         var store = new PaymentStore(runner);
 
-        var result = await store.BeginAttemptAsync(
+        // E2: a fresh unresolved key may belong to a running request.
+        var running = await store.BeginAttemptAsync(
             Command(seed, payment.PaymentId, "same", "body"),
             CancellationToken.None);
+        Assert.IsType<BeginResult.KeyInFlight>(running);
 
-        Assert.IsType<BeginResult.KeyInFlight>(result);
+        // D31, review M4: past the in-flight window the request has ended without its answer, so
+        // a replay renders the current state instead of 409 forever.
+        await db.ExecAdminAsync("update idempotency_keys set created_at = now() - interval '1 minute' where key = 'same'");
+        var ended = await store.BeginAttemptAsync(
+            Command(seed, payment.PaymentId, "same", "body"),
+            CancellationToken.None);
+        var pending = Assert.IsType<BeginResult.Pending>(ended);
+        Assert.Equal(payment.PaymentId, pending.Payment.Id);
     }
 
     [Fact]

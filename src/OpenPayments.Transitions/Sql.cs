@@ -29,7 +29,9 @@ internal static class Sql
         """;
 
     public const string ReadKey = """
-        select request_hash, response_code, response_body, payment_id, attempt_id, refund_id, resolved_at
+        select request_hash, response_code, response_body, payment_id, attempt_id, refund_id, resolved_at,
+               now() - created_at as age,
+               (select r.state from refunds r where r.id = idempotency_keys.refund_id) as refund_state
         from idempotency_keys
         where merchant_id = @merchant and key = @key
         """;

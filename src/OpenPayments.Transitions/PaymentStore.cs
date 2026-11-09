@@ -92,7 +92,9 @@ public abstract record KeyLookup
 {
     public sealed record NotFound : KeyLookup;
     public sealed record Finished(StoredResponse Response) : KeyLookup;
-    public sealed record Unresolved(PaymentView Payment) : KeyLookup;
+    // The key has its payment, or refund, but no stored answer: the operation is running, or it
+    // ended without one (an unknown outcome, or a crash before the answer was stored).
+    public sealed record Unresolved(PaymentView Payment, RefundId? Refund = null) : KeyLookup;
     public sealed record InFlight : KeyLookup;
     public sealed record HashMismatch : KeyLookup;
 }
@@ -103,6 +105,8 @@ public abstract record BeginResult
     public sealed record Created(PaymentView Payment) : BeginResult;
     public sealed record Replay(StoredResponse Response) : BeginResult;
     public sealed record KeyInFlight : BeginResult;
+    // D31, E27: an unresolved key replays the operation's current state.
+    public sealed record Pending(PaymentView Payment, RefundId? Refund) : BeginResult;
     public sealed record HashMismatch : BeginResult;
     public sealed record LiveAttemptExists(PaymentView Payment) : BeginResult;
     public sealed record CapExceeded(PaymentView Payment) : BeginResult;
@@ -114,6 +118,7 @@ public abstract record BeginOperationResult
     public sealed record Started(PaymentView Payment) : BeginOperationResult;
     public sealed record Replay(StoredResponse Response) : BeginOperationResult;
     public sealed record KeyInFlight : BeginOperationResult;
+    public sealed record Pending(PaymentView Payment, RefundId? Refund) : BeginOperationResult;
     public sealed record HashMismatch : BeginOperationResult;
     public sealed record Rejected(string ReasonCode, PaymentView? Payment = null) : BeginOperationResult;
 }
@@ -138,6 +143,13 @@ public abstract record ApplyResult
 /// </summary>
 public sealed class PaymentStore
 {
+    /// <summary>
+    /// No request outlives this: D34 caps a request at 5 s, with the PSP call stopping at 2.5 s
+    /// and the commit wait at 3 s. A key with no answer that is older than this belongs to a
+    /// request that has ended.
+    /// </summary>
+    public static readonly TimeSpan InFlightWindow = TimeSpan.FromSeconds(10);
+
     private readonly TxRunner _runner;
 
     public PaymentStore(TxRunner runner)
@@ -176,7 +188,8 @@ public sealed class PaymentStore
                 return new BeginResult.Replay(finished.Response);
             case KeyLookup.HashMismatch:
                 return new BeginResult.HashMismatch();
-            case KeyLookup.Unresolved:
+            case KeyLookup.Unresolved unresolved:
+                return new BeginResult.Pending(unresolved.Payment, unresolved.Refund);
             case KeyLookup.InFlight:
                 return new BeginResult.KeyInFlight();
         }
@@ -200,7 +213,8 @@ public sealed class PaymentStore
                     return new BeginResult.Replay(finished.Response);
                 case KeyLookup.HashMismatch:
                     return new BeginResult.HashMismatch();
-                case KeyLookup.Unresolved:
+                case KeyLookup.Unresolved unresolved:
+                    return new BeginResult.Pending(unresolved.Payment, unresolved.Refund);
                 case KeyLookup.InFlight:
                     return new BeginResult.KeyInFlight();
             }
@@ -320,6 +334,7 @@ public sealed class PaymentStore
             {
                 KeyLookup.Finished finished => new BeginResult.Replay(finished.Response),
                 KeyLookup.HashMismatch => new BeginResult.HashMismatch(),
+                KeyLookup.Unresolved unresolved => new BeginResult.Pending(unresolved.Payment, unresolved.Refund),
                 _ => new BeginResult.KeyInFlight(),
             };
         }
@@ -878,7 +893,8 @@ public sealed class PaymentStore
                 return new BeginResult.Replay(finished.Response);
             case KeyLookup.HashMismatch:
                 return new BeginResult.HashMismatch();
-            case KeyLookup.Unresolved:
+            case KeyLookup.Unresolved unresolved:
+                return new BeginResult.Pending(unresolved.Payment, unresolved.Refund);
             case KeyLookup.InFlight:
                 return new BeginResult.KeyInFlight();
         }
@@ -898,6 +914,7 @@ public sealed class PaymentStore
                     {
                         KeyLookup.Finished finished => new BeginResult.Replay(finished.Response),
                         KeyLookup.HashMismatch => new BeginResult.HashMismatch(),
+                        KeyLookup.Unresolved unresolved => new BeginResult.Pending(unresolved.Payment, unresolved.Refund),
                         _ => new BeginResult.KeyInFlight(),
                     };
                 }
@@ -1084,6 +1101,7 @@ public sealed class PaymentStore
                     {
                         KeyLookup.Finished finished => new BeginResult.Replay(finished.Response),
                         KeyLookup.HashMismatch => new BeginResult.HashMismatch(),
+                        KeyLookup.Unresolved unresolved => new BeginResult.Pending(unresolved.Payment, unresolved.Refund),
                         _ => new BeginResult.KeyInFlight(),
                     };
                 }
@@ -1143,7 +1161,8 @@ public sealed class PaymentStore
                 return new BeginOperationResult.Replay(finished.Response);
             case KeyLookup.HashMismatch:
                 return new BeginOperationResult.HashMismatch();
-            case KeyLookup.Unresolved:
+            case KeyLookup.Unresolved unresolved:
+                return new BeginOperationResult.Pending(unresolved.Payment, unresolved.Refund);
             case KeyLookup.InFlight:
                 return new BeginOperationResult.KeyInFlight();
         }
@@ -1182,6 +1201,7 @@ public sealed class PaymentStore
                     {
                         KeyLookup.Finished finished => new BeginOperationResult.Replay(finished.Response),
                         KeyLookup.HashMismatch => new BeginOperationResult.HashMismatch(),
+                        KeyLookup.Unresolved unresolved => new BeginOperationResult.Pending(unresolved.Payment, unresolved.Refund),
                         _ => new BeginOperationResult.KeyInFlight(),
                     };
                 }
@@ -1249,9 +1269,26 @@ public sealed class PaymentStore
         }
 
         var paymentId = new PaymentId(reader.GetGuid(3));
+        RefundId? refundId = reader.IsDBNull(5) ? null : new RefundId(reader.GetGuid(5));
+        var age = reader.GetFieldValue<TimeSpan>(7);
+        var refundUnknown = !reader.IsDBNull(8) && reader.GetString(8) == "UNKNOWN";
         await reader.DisposeAsync();
         var view = await LoadPaymentAsync(paymentId, merchant, cancellationToken, connection, transaction);
-        return view is null ? new KeyLookup.InFlight() : new KeyLookup.Unresolved(view);
+        if (view is null)
+        {
+            return new KeyLookup.InFlight();
+        }
+
+        // E27: an operation that recorded UNKNOWN has ended; a replay renders its state.
+        // E2: otherwise a key younger than any request can live may belong to a running request,
+        // so it answers 409 with Retry-After. An older one ended without storing its answer, such as
+        // a transaction B failure after the PSP call (review H1, M4), and renders its state.
+        var unknown = refundId is null
+            ? view.State == PaymentState.Unknown || view.Attempt?.State == AttemptState.Unknown
+            : refundUnknown;
+        return unknown || age >= InFlightWindow
+            ? new KeyLookup.Unresolved(view, refundId)
+            : new KeyLookup.InFlight();
     }
 
     private async Task<PaymentView?> LoadPaymentAsync(

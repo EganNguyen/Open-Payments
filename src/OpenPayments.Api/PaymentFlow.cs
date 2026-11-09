@@ -49,16 +49,30 @@ public sealed class PaymentFlow(
                 return ApiAnswer.Problem(422, "The key was used for another request.", "idempotency_key_reused");
             }
 
-            if (early is KeyLookup.Unresolved or KeyLookup.InFlight)
+            var account = await store.GetPspAccountAsync(merchant, cancellationToken);
+            var supportsSale = account is not null
+                && adapters.Capabilities(new PspAccount(
+                    account.Id, merchant, account.Psp, account.Mode, account.CredentialRef)).SupportsSale;
+
+            if (early is KeyLookup.Unresolved unresolved)
+            {
+                // M1: a two-call auto-capture whose capture didn't finish runs it again. Its own key
+                // replays a capture that already happened, so the PSP is never asked twice.
+                if (request.CaptureMode == "auto" && !supportsSale
+                    && unresolved.Payment.State == PaymentState.Authorized)
+                {
+                    return await CaptureForCreateAsync(unresolved.Payment.Id, unresolved.Payment.Amount, merchant, key, cancellationToken);
+                }
+
+                return await PendingAsync(unresolved.Payment, unresolved.Refund, merchant);
+            }
+
+            if (early is KeyLookup.InFlight)
             {
                 return ApiAnswer.Problem(409, "A request is in flight.", "request_in_flight", retryAfter: 1);
             }
 
             var paymentId = new PaymentId(Guid.NewGuid());
-            var account = await store.GetPspAccountAsync(merchant, cancellationToken);
-            var supportsSale = account is not null
-                && adapters.Capabilities(new PspAccount(
-                    account.Id, merchant, account.Psp, account.Mode, account.CredentialRef)).SupportsSale;
             var operation = request.CaptureMode == "auto" && supportsSale
                 ? AttemptOperation.Sale
                 : AttemptOperation.Authorize;
@@ -95,21 +109,20 @@ public sealed class PaymentFlow(
             var begin = await store.BeginAttemptAsync(command, cancellationToken);
             if (request.CaptureMode == "auto" && !supportsSale && begin is BeginResult.Started started)
             {
+                // M1: the create key stores the answer the client gets, which is the capture's.
                 var authorized = await ExecuteAttemptAsync(
-                    started, merchant, key, method, cancellationToken, countCompleted: false);
+                    started, merchant, key, method, cancellationToken, countCompleted: false, resolveKey: false);
                 if (authorized.StatusCode != 200)
                 {
+                    if (authorized.StatusCode != 202)
+                    {
+                        await ResolveWithAsync(merchant, key, authorized);
+                    }
+
                     return authorized;
                 }
 
-                return await CaptureAsync(
-                    paymentId,
-                    new CaptureRequest(amount.Minor),
-                    merchant,
-                    key + ":capture",
-                    RequestHash("POST", "/internal/capture", ReadOnlySpan<byte>.Empty),
-                    cancellationToken,
-                    countCompleted: true);
+                return await CaptureForCreateAsync(paymentId, amount, merchant, key, cancellationToken);
             }
 
             return await FromBeginAsync(
@@ -164,7 +177,12 @@ public sealed class PaymentFlow(
                 return ApiAnswer.Problem(422, "The key was used for another request.", "idempotency_key_reused");
             }
 
-            if (early is KeyLookup.Unresolved or KeyLookup.InFlight)
+            if (early is KeyLookup.Unresolved unresolved)
+            {
+                return await PendingAsync(unresolved.Payment, unresolved.Refund, merchant);
+            }
+
+            if (early is KeyLookup.InFlight)
             {
                 return ApiAnswer.Problem(409, "A request is in flight.", "request_in_flight", retryAfter: 1);
             }
@@ -200,7 +218,14 @@ public sealed class PaymentFlow(
         }
         catch (CommitOutcomeUnknownException exception)
         {
+            log.Record(Entry(merchant, paymentId, null, null, "UNKNOWN", "transaction_a_unknown", "attempt"));
             return ApiAnswer.Problem(503, "The outcome is not known yet.", exception.Reason, retryAfter: 1);
+        }
+        catch (BusyException exception)
+        {
+            // M2, D1: a lock timeout here is before any PSP call, so 503 with Retry-After.
+            log.Record(Entry(merchant, paymentId, null, null, "BUSY", exception.Reason, "attempt"));
+            return ApiAnswer.Problem(503, "The database is busy.", "busy", retryAfter: 1);
         }
         finally
         {
@@ -220,6 +245,29 @@ public sealed class PaymentFlow(
     }
 
     public async Task<ApiAnswer> CancelAsync(
+        PaymentId paymentId,
+        MerchantId merchant,
+        string key,
+        byte[] requestHash,
+        CancellationToken cancellationToken)
+    {
+        // L5, D34: every money route counts against the request limit.
+        if (!limiter.TryEnter())
+        {
+            return ApiAnswer.Problem(503, "The service is busy.", "busy", retryAfter: 1);
+        }
+
+        try
+        {
+            return await CancelCoreAsync(paymentId, merchant, key, requestHash, cancellationToken);
+        }
+        finally
+        {
+            limiter.Exit();
+        }
+    }
+
+    private async Task<ApiAnswer> CancelCoreAsync(
         PaymentId paymentId,
         MerchantId merchant,
         string key,
@@ -250,8 +298,14 @@ public sealed class PaymentFlow(
         if (result is BeginOperationResult.Started started)
         {
             var body = JsonSerializer.Serialize(PaymentBody.From(started.Payment), ApiJson.Options);
-            await store.ResolveKeyAsync(merchant, key, new StoredResponse(200, body), cancellationToken);
+            // M4: the state has committed, so a disconnected client mustn't stop the answer's write.
+            await store.ResolveKeyAsync(merchant, key, new StoredResponse(200, body), CancellationToken.None);
             return new ApiAnswer(200, null, RawJson: body);
+        }
+
+        if (result is BeginOperationResult.Pending pending)
+        {
+            return await PendingAsync(pending.Payment, pending.Refund, merchant);
         }
 
         return result switch
@@ -272,7 +326,37 @@ public sealed class PaymentFlow(
         string key,
         byte[] requestHash,
         CancellationToken cancellationToken,
-        bool countCompleted = false)
+        bool countCompleted = false,
+        bool enterLimiter = true)
+    {
+        // L5, D34: every money route counts against the request limit. The two-call create
+        // already holds a permit for its capture.
+        if (enterLimiter && !limiter.TryEnter())
+        {
+            return ApiAnswer.Problem(503, "The service is busy.", "busy", retryAfter: 1);
+        }
+
+        try
+        {
+            return await CaptureCoreAsync(paymentId, request, merchant, key, requestHash, cancellationToken, countCompleted);
+        }
+        finally
+        {
+            if (enterLimiter)
+            {
+                limiter.Exit();
+            }
+        }
+    }
+
+    private async Task<ApiAnswer> CaptureCoreAsync(
+        PaymentId paymentId,
+        CaptureRequest request,
+        MerchantId merchant,
+        string key,
+        byte[] requestHash,
+        CancellationToken cancellationToken,
+        bool countCompleted)
     {
         var view = await store.GetPaymentAsync(merchant, paymentId, cancellationToken);
         if (view is null)
@@ -281,8 +365,9 @@ public sealed class PaymentFlow(
         }
 
         if (request.AmountMinor != view.Amount.Minor)
-                {
-            return ApiAnswer.Problem(422, "The amount must equal the authorized amount.", "capture_amount_mismatch");
+        {
+            return await ReplayAsync(merchant, key, requestHash, cancellationToken)
+                ?? ApiAnswer.Problem(422, "The amount must equal the authorized amount.", "capture_amount_mismatch");
         }
 
         var attemptId = new AttemptId(Guid.NewGuid());
@@ -303,7 +388,7 @@ public sealed class PaymentFlow(
 
         if (begin is not BeginOperationResult.Started started)
         {
-            return FromOperation(begin);
+            return await FromOperationAsync(begin, merchant);
         }
 
         var attempt = started.Payment.Attempt ?? throw new InvalidOperationException("Capture has no attempt.");
@@ -319,13 +404,16 @@ public sealed class PaymentFlow(
         catch (Exception exception) when (
             exception is OperationCanceledException or PspTimeoutException or PspUnavailableException)
         {
-            var timedOut = await store.ApplyAsync(
-                paymentId,
-                new PaymentCommand.CaptureAnswer(
-                    attempt.Id, false, null, "timeout", TimedOut: true, DateTimeOffset.UtcNow),
-                null,
-                CancellationToken.None);
-            return await FromAppliedAsync(timedOut, merchant, key, 202, 0, timedOut: true, countCompleted: false);
+            return await AfterPspAsync(paymentId, null, merchant, attempt.Id, "capture", async () =>
+            {
+                var timedOut = await store.ApplyAsync(
+                    paymentId,
+                    new PaymentCommand.CaptureAnswer(
+                        attempt.Id, false, null, "timeout", TimedOut: true, DateTimeOffset.UtcNow),
+                    null,
+                    CancellationToken.None);
+                return await FromAppliedAsync(timedOut, merchant, key, 202, 0, timedOut: true, countCompleted: false);
+            });
         }
 
         var answer = result switch
@@ -338,11 +426,37 @@ public sealed class PaymentFlow(
                 attempt.Id, false, null, "action_required", false, DateTimeOffset.UtcNow),
         };
         var status = result is PspResult.Declined ? 402 : 200;
-        var applied = await store.ApplyAsync(paymentId, answer, null, CancellationToken.None);
-        return await FromAppliedAsync(applied, merchant, key, status, 0, timedOut: false, countCompleted: countCompleted);
+        return await AfterPspAsync(paymentId, null, merchant, attempt.Id, "capture", async () =>
+        {
+            var applied = await store.ApplyAsync(paymentId, answer, null, CancellationToken.None);
+            return await FromAppliedAsync(applied, merchant, key, status, 0, timedOut: false, countCompleted: countCompleted);
+        });
     }
 
     public async Task<ApiAnswer> VoidAsync(
+        PaymentId paymentId,
+        MerchantId merchant,
+        string key,
+        byte[] requestHash,
+        CancellationToken cancellationToken)
+    {
+        // L5, D34: every money route counts against the request limit.
+        if (!limiter.TryEnter())
+        {
+            return ApiAnswer.Problem(503, "The service is busy.", "busy", retryAfter: 1);
+        }
+
+        try
+        {
+            return await VoidCoreAsync(paymentId, merchant, key, requestHash, cancellationToken);
+        }
+        finally
+        {
+            limiter.Exit();
+        }
+    }
+
+    private async Task<ApiAnswer> VoidCoreAsync(
         PaymentId paymentId,
         MerchantId merchant,
         string key,
@@ -358,7 +472,10 @@ public sealed class PaymentFlow(
         var authorized = await store.GetAuthorizedAttemptAsync(merchant, paymentId, cancellationToken);
         if (authorized is null)
         {
-            return ApiAnswer.Problem(422, "The payment is not authorized.", "invalid_state");
+            // D31: the first request may have changed the state this checks, so a replay gets its
+            // answer, not this refusal. Read only on refusal, so the normal path costs nothing.
+            return await ReplayAsync(merchant, key, requestHash, cancellationToken)
+                ?? ApiAnswer.Problem(422, "The payment is not authorized.", "invalid_state");
         }
 
         var attemptId = new AttemptId(Guid.NewGuid());
@@ -379,7 +496,7 @@ public sealed class PaymentFlow(
 
         if (begin is not BeginOperationResult.Started started)
         {
-            return FromOperation(begin);
+            return await FromOperationAsync(begin, merchant);
         }
 
         var attempt = started.Payment.Attempt ?? throw new InvalidOperationException("Void has no attempt.");
@@ -395,12 +512,15 @@ public sealed class PaymentFlow(
         catch (Exception exception) when (
             exception is OperationCanceledException or PspTimeoutException or PspUnavailableException)
         {
-            var timedOut = await store.ApplyAsync(
-                paymentId,
-                new PaymentCommand.VoidAnswer(attempt.Id, false, TimedOut: true, "timeout", DateTimeOffset.UtcNow),
-                null,
-                CancellationToken.None);
-            return await FromAppliedAsync(timedOut, merchant, key, 202, 0, timedOut: true, countCompleted: false);
+            return await AfterPspAsync(paymentId, null, merchant, attempt.Id, "void", async () =>
+            {
+                var timedOut = await store.ApplyAsync(
+                    paymentId,
+                    new PaymentCommand.VoidAnswer(attempt.Id, false, TimedOut: true, "timeout", DateTimeOffset.UtcNow),
+                    null,
+                    CancellationToken.None);
+                return await FromAppliedAsync(timedOut, merchant, key, 202, 0, timedOut: true, countCompleted: false);
+            });
         }
 
         var answer = result is PspResult.Approved
@@ -410,11 +530,38 @@ public sealed class PaymentFlow(
                 (result as PspResult.Declined)?.FailureCode ?? "declined",
                 DateTimeOffset.UtcNow);
         var status = result is PspResult.Approved ? 200 : 402;
-        var applied = await store.ApplyAsync(paymentId, answer, null, CancellationToken.None);
-        return await FromAppliedAsync(applied, merchant, key, status, 0, timedOut: false, countCompleted: false);
+        return await AfterPspAsync(paymentId, null, merchant, attempt.Id, "void", async () =>
+        {
+            var applied = await store.ApplyAsync(paymentId, answer, null, CancellationToken.None);
+            return await FromAppliedAsync(applied, merchant, key, status, 0, timedOut: false, countCompleted: false);
+        });
     }
 
     public async Task<ApiAnswer> RefundAsync(
+        PaymentId paymentId,
+        RefundRequest request,
+        MerchantId merchant,
+        string key,
+        byte[] requestHash,
+        CancellationToken cancellationToken)
+    {
+        // L5, D34: every money route counts against the request limit.
+        if (!limiter.TryEnter())
+        {
+            return ApiAnswer.Problem(503, "The service is busy.", "busy", retryAfter: 1);
+        }
+
+        try
+        {
+            return await RefundCoreAsync(paymentId, request, merchant, key, requestHash, cancellationToken);
+        }
+        finally
+        {
+            limiter.Exit();
+        }
+    }
+
+    private async Task<ApiAnswer> RefundCoreAsync(
         PaymentId paymentId,
         RefundRequest request,
         MerchantId merchant,
@@ -430,7 +577,9 @@ public sealed class PaymentFlow(
 
         if (request.AmountMinor <= 0 || request.AmountMinor > view.Amount.Minor - view.RefundedMinor - view.RefundPendingMinor)
         {
-            return ApiAnswer.Problem(422, "The refund amount is invalid.", "refund_exceeds_captured");
+            // D31: a replay of a refund that reserved this amount gets its answer, not this refusal.
+            return await ReplayAsync(merchant, key, requestHash, cancellationToken)
+                ?? ApiAnswer.Problem(422, "The refund amount is invalid.", "refund_exceeds_captured");
         }
 
         var refundId = RefundId.New();
@@ -452,7 +601,7 @@ public sealed class PaymentFlow(
 
         if (begin is not BeginOperationResult.Started started)
         {
-            return FromOperation(begin);
+            return await FromOperationAsync(begin, merchant);
         }
 
         var attempt = started.Payment.Attempt;
@@ -473,12 +622,15 @@ public sealed class PaymentFlow(
         catch (Exception exception) when (
             exception is OperationCanceledException or PspTimeoutException or PspUnavailableException)
         {
-            var timedOut = await store.ApplyAsync(
-                paymentId,
-                new PaymentCommand.RefundTimeout(refundId, DateTimeOffset.UtcNow),
-                null,
-                CancellationToken.None);
-            return await FromRefundAppliedAsync(timedOut, merchant, key, 202, refundId, cancellationToken);
+            return await AfterPspAsync(paymentId, refundId, merchant, null, "refund", async () =>
+            {
+                var timedOut = await store.ApplyAsync(
+                    paymentId,
+                    new PaymentCommand.RefundTimeout(refundId, DateTimeOffset.UtcNow),
+                    null,
+                    CancellationToken.None);
+                return await FromRefundAppliedAsync(timedOut, merchant, key, 202, refundId);
+            });
         }
 
         PaymentCommand answer = result switch
@@ -489,8 +641,11 @@ public sealed class PaymentFlow(
             _ => new PaymentCommand.RefundTimeout(refundId, DateTimeOffset.UtcNow),
         };
         var status = result is PspResult.Approved ? 200 : 402;
-        var applied = await store.ApplyAsync(paymentId, answer, null, CancellationToken.None);
-        return await FromRefundAppliedAsync(applied, merchant, key, status, refundId, cancellationToken);
+        return await AfterPspAsync(paymentId, refundId, merchant, null, "refund", async () =>
+        {
+            var applied = await store.ApplyAsync(paymentId, answer, null, CancellationToken.None);
+            return await FromRefundAppliedAsync(applied, merchant, key, status, refundId);
+        });
     }
 
     public async Task<ApiAnswer> GetRefundAsync(
@@ -509,28 +664,38 @@ public sealed class PaymentFlow(
         MerchantId merchant,
         string key,
         int status,
-        RefundId refundId,
-        CancellationToken cancellationToken)
+        RefundId refundId)
     {
         if (result is not ApplyResult.Applied applied)
         {
-            return FromOperation(new BeginOperationResult.Rejected("invalid_state"));
+            return Refusal(new BeginOperationResult.Rejected("invalid_state"));
         }
 
         if (applied.Payment.Refund is null)
         {
-            return FromOperation(new BeginOperationResult.Rejected("invalid_state", applied.Payment));
+            return Refusal(new BeginOperationResult.Rejected("invalid_state", applied.Payment));
         }
 
         var refund = applied.Payment.Refund;
         var body = JsonSerializer.Serialize(
             RefundBody.From(refund, applied.Payment.Id), ApiJson.Options);
-        await store.ResolveKeyAsync(
-            merchant, key, new StoredResponse(status, body), cancellationToken);
+        // M3: an unknown outcome leaves the key unresolved, so it can't expire (D19) and a replay
+        // shows the refund as it is then (M4). M4: written without the request's token.
+        if (status != 202)
+        {
+            await store.ResolveKeyAsync(
+                merchant, key, new StoredResponse(status, body), CancellationToken.None);
+        }
+
         return new ApiAnswer(status, null, RawJson: body);
     }
 
-    private static ApiAnswer FromOperation(BeginOperationResult result) => result switch
+    private async Task<ApiAnswer> FromOperationAsync(BeginOperationResult result, MerchantId merchant) =>
+        result is BeginOperationResult.Pending pending
+            ? await PendingAsync(pending.Payment, pending.Refund, merchant)
+            : Refusal(result);
+
+    private static ApiAnswer Refusal(BeginOperationResult result) => result switch
     {
         BeginOperationResult.Replay replay => new ApiAnswer(
             replay.Response.StatusCode, null, RawJson: replay.Response.Body),
@@ -568,6 +733,8 @@ public sealed class PaymentFlow(
                     : ApiAnswer.Problem(409, "A request is in flight.", "request_in_flight", retryAfter: 1);
             case BeginResult.HashMismatch:
                 return ApiAnswer.Problem(422, "The key was used for another request.", "idempotency_key_reused");
+            case BeginResult.Pending pending:
+                return await PendingAsync(pending.Payment, pending.Refund, merchant);
             case BeginResult.LiveAttemptExists:
             case BeginResult.CapExceeded:
                 return ApiAnswer.Problem(409, "An attempt is already live.", "attempt_live", retryAfter: 1);
@@ -598,7 +765,8 @@ public sealed class PaymentFlow(
         string key,
         PaymentMethodRef method,
         CancellationToken cancellationToken,
-        bool countCompleted)
+        bool countCompleted,
+        bool resolveKey = true)
     {
         var view = started.Payment;
         var attempt = view.Attempt ?? throw new InvalidOperationException("A started attempt has no row.");
@@ -631,7 +799,7 @@ public sealed class PaymentFlow(
                 CancellationToken.None);
             return await FromAppliedAsync(
                 timedOut, merchant, key, 202, pspWatch.ElapsedMilliseconds, timedOut: true,
-                countCompleted: false);
+                countCompleted: false, resolveKey);
         }
 
         pspWatch.Stop();
@@ -659,7 +827,7 @@ public sealed class PaymentFlow(
             }
 
             return await FromAppliedAsync(
-                applied, merchant, key, status, pspWatch.ElapsedMilliseconds, false, countCompleted);
+                applied, merchant, key, status, pspWatch.ElapsedMilliseconds, false, countCompleted, resolveKey);
         }
         catch (Exception)
         {
@@ -676,7 +844,8 @@ public sealed class PaymentFlow(
         int status,
         long pspWaitMs,
         bool timedOut,
-        bool countCompleted)
+        bool countCompleted,
+        bool resolveKey = true)
     {
         switch (result)
         {
@@ -687,8 +856,13 @@ public sealed class PaymentFlow(
             case ApplyResult.Applied applied:
                 var finalStatus = timedOut ? 202 : status;
                 var body = JsonSerializer.Serialize(PaymentBody.From(applied.Payment), ApiJson.Options);
-                await store.ResolveKeyAsync(
-                    merchant, key, new StoredResponse(finalStatus, body), CancellationToken.None);
+                // M3: an unknown outcome (202) leaves the key unresolved, so it can't expire under
+                // D19 and a replay renders the state as it is then (M4).
+                if (resolveKey && finalStatus != 202)
+                {
+                    await store.ResolveKeyAsync(
+                        merchant, key, new StoredResponse(finalStatus, body), CancellationToken.None);
+                }
                 if (countCompleted && CompletedOutcome(applied.Payment) is { } outcome)
                 {
                     metrics.Completed(outcome);
@@ -706,6 +880,96 @@ public sealed class PaymentFlow(
             default:
                 return ApiAnswer.Problem(500, "Unhandled answer.", "internal");
         }
+    }
+
+    /// <summary>
+    /// Transaction B, after the PSP answered. A lock timeout, exhausted retries or an unknown
+    /// commit here can't undo what the PSP did, so it answers 202 with the state as stored and
+    /// leaves the key unresolved: a same-key retry shows the state as it is then (D28, D1, H1).
+    /// </summary>
+    private async Task<ApiAnswer> AfterPspAsync(
+        PaymentId paymentId,
+        RefundId? refundId,
+        MerchantId merchant,
+        AttemptId? attemptId,
+        string requestClass,
+        Func<Task<ApiAnswer>> apply)
+    {
+        try
+        {
+            return await apply();
+        }
+        catch (Exception exception) when (exception is BusyException or CommitOutcomeUnknownException)
+        {
+            var reason = exception is BusyException busy ? busy.Reason : ((CommitOutcomeUnknownException)exception).Reason;
+            log.Record(Entry(merchant, paymentId, attemptId, null, "UNKNOWN", "transaction_b_" + reason, requestClass));
+            var current = await store.GetPaymentAsync(merchant, paymentId, CancellationToken.None);
+            return current is null
+                ? new ApiAnswer(202, null, RawJson: "{}")
+                : await PendingAsync(current, refundId, merchant);
+        }
+    }
+
+    /// <summary>
+    /// The answer for a key already used on this route: the stored answer, the current state of
+    /// an unresolved operation, 409 while one may still be running (E2), or 422 for another
+    /// request's key. Null when the key is new.
+    /// </summary>
+    private async Task<ApiAnswer?> ReplayAsync(MerchantId merchant, string key, byte[] requestHash, CancellationToken cancellationToken) =>
+        await store.ReadKeyAsync(merchant, key, requestHash, cancellationToken) switch
+        {
+            KeyLookup.Finished finished => new ApiAnswer(finished.Response.StatusCode, null, RawJson: finished.Response.Body),
+            KeyLookup.HashMismatch => ApiAnswer.Problem(422, "The key was used for another request.", "idempotency_key_reused"),
+            KeyLookup.Unresolved unresolved => await PendingAsync(unresolved.Payment, unresolved.Refund, merchant),
+            KeyLookup.InFlight => ApiAnswer.Problem(409, "A request is in flight.", "request_in_flight", retryAfter: 1),
+            _ => null,
+        };
+
+    /// <summary>The current state of an operation whose outcome isn't stored yet: 202 with the
+    /// refund when the key belongs to one, otherwise the payment (D31, E27).</summary>
+    private async Task<ApiAnswer> PendingAsync(PaymentView payment, RefundId? refundId, MerchantId merchant)
+    {
+        if (refundId is { } id
+            && await store.GetRefundAsync(merchant, id, CancellationToken.None) is { } refund)
+        {
+            return new ApiAnswer(202, null, RawJson: JsonSerializer.Serialize(RefundBody.From(refund), ApiJson.Options));
+        }
+
+        var current = await store.GetPaymentAsync(merchant, payment.Id, CancellationToken.None) ?? payment;
+        return new ApiAnswer(202, null, RawJson: JsonSerializer.Serialize(PaymentBody.From(current), ApiJson.Options));
+    }
+
+    /// <summary>The capture half of a two-call auto-capture (M1). It runs under an internal key no
+    /// client can send, since headers can't carry a control character, and the create key stores
+    /// the capture's final answer, which is what the client was told.</summary>
+    private async Task<ApiAnswer> CaptureForCreateAsync(
+        PaymentId paymentId,
+        Money amount,
+        MerchantId merchant,
+        string key,
+        CancellationToken cancellationToken)
+    {
+        var captured = await CaptureAsync(
+            paymentId,
+            new CaptureRequest(amount.Minor),
+            merchant,
+            "\u0001capture:" + key,
+            RequestHash("POST", "/internal/capture", ReadOnlySpan<byte>.Empty),
+            cancellationToken,
+            countCompleted: true,
+            enterLimiter: false);
+        if (captured.StatusCode is 200 or 402)
+        {
+            await ResolveWithAsync(merchant, key, captured);
+        }
+
+        return captured;
+    }
+
+    private async Task ResolveWithAsync(MerchantId merchant, string key, ApiAnswer answer)
+    {
+        var body = answer.RawJson ?? JsonSerializer.Serialize(answer.Body, ApiJson.Options);
+        await store.ResolveKeyAsync(merchant, key, new StoredResponse(answer.StatusCode, body), CancellationToken.None);
     }
 
     private static string? CompletedOutcome(PaymentView payment) => payment.State switch
