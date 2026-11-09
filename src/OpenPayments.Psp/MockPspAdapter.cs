@@ -144,6 +144,23 @@ public sealed class MockPspAdapter : IPspAdapter
 
     private async Task<PspResult> SendAsync(HttpRequestMessage request, CancellationToken ct)
     {
+        try
+        {
+            return await SendOnceAsync(request, ct);
+        }
+        catch (HttpRequestException exception)
+        {
+            // D27: the request may have reached the PSP, so the outcome is unknown, never failed.
+            throw new PspUnavailableException("The PSP connection failed.", exception);
+        }
+        catch (System.Text.Json.JsonException exception)
+        {
+            throw new PspUnavailableException("The PSP answer couldn't be read.", exception);
+        }
+    }
+
+    private async Task<PspResult> SendOnceAsync(HttpRequestMessage request, CancellationToken ct)
+    {
         using var response = await _client.SendAsync(request, ct);
         if (response.StatusCode == HttpStatusCode.TooManyRequests)
         {
