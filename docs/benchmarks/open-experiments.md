@@ -1,8 +1,8 @@
 # Open Experiments
 
-What's still unmeasured on the way to proving maximum sustainable payments/s, what has already been compared, and what order to run the rest in. How to run things is in the [benchmark guide](benchmark-guide.md).
+What's still unmeasured on the way to proving maximum sustainable payments/s, what has already been compared, and what order to run the rest in. How to run the database spike is in the [benchmark guide](benchmark-guide.md); how to run a platform ramp step is in the [load harness README](../../benchmarks/README.md). Problems already found and fixed are in [Development challenges](../development-challenges.md).
 
-Status: **No capacity number is proven yet.** Every result so far is a preview · Last updated: 2026-11-06
+Status: **No capacity number is proven yet.** Every result so far is a preview · Last updated: 2026-11-09
 
 The repository rarely says "experiment". These are its spikes, variants (V), ramp steps, load tests (L), chaos tests (C) and comparisons.
 
@@ -26,10 +26,10 @@ The criteria are already set, so a run is judged against these and not new ones:
 
 | Experiment | Repository name | Status | Waiting on |
 |---|---|---|---|
-| Baseline | Ramp steps 0-1 | **Stale.** Old-mix runs in [BASELINE](../../benchmarks/BASELINE.md); not rerun at D47 | Index comparison |
-| Index comparison | Task C2 | **Stopped early by the owner.** No cost detected in three valid runs ([details](#index-comparison-task-c2)) | Linux, for `EXPLAIN` checks only |
+| Baseline | Ramp steps 0-1 | **Done at D47,** both valid previews in [BASELINE](../../benchmarks/BASELINE.md) | — |
+| Index comparison | Task C2 | **Stopped early by the owner.** No cost detected in three valid runs ([record](../../benchmarks/console-indexes.md)) | Linux, for `EXPLAIN` checks only |
 | Concurrency | V4 pools, step 6 instance scaling | Database pools partly measured, with aborts. No API-level or instance-scaling run | Steps 5-6 |
-| Load | L1, ramp steps 0-9 | **At D47, only steps 2 and 4 have valid runs.** Both previews | Linux for `C` and `N` |
+| Load | L1, ramp steps 0-9 | **Laptop search at D47 through step 6:** steps 0-5 valid, step 6 invalid (k6 dropped arrivals). Previews | Step 6 rerun; Linux for `C` and `N` |
 | Stress | L6 (step 11), L3 | Not run | Phase 4 |
 | Soak | L5 (60 min), L2 (24 h) | Not run. Longest API run is 10 min, longest spike run 60 s | Phase 4, Linux |
 | Recovery | L3's 2-min SLO return, C1, C2, C7, C10, C11 | Not run. C43 and the C5/C6 correctness tests pass | Phase 4 |
@@ -38,11 +38,11 @@ The criteria are already set, so a run is judged against these and not new ones:
 
 Stress and soak are expensive, so they run only on the final candidate:
 
-1. Ship `refunds_payment` under [D50](../decisions.md#d50), then fix the check query that scans `outbox` once per payment ([order](../gates/stage-1-progress.md#before-the-limit-search-2026-11-06)).
-2. Rerun steps 0, 1 and 3 at D47. [E4](../gates/stage-1-escalations.md#e4-task-17-has-no-linux-host-for-steps-4-5-escalation-e4) asks for steps 0-3 first, and only 2 and 4 have run.
-3. Continue the laptop limit search through steps 5, 6 and 7. Stop at the first failed gate or invalid run.
+1. ~~Ship `refunds_payment` under [D50](../decisions.md#d50), then fix the check query that scans `outbox` once per payment.~~ Done in `f400b50` and `d91cca9`.
+2. ~~Rerun steps 0, 1 and 3 at D47.~~ Done on 2026-11-09.
+3. Finish the laptop limit search: rerun step 6 with pre-started VUs (`7dd42a7`), three times from a reset for [D51](../decisions.md#d51)'s milestone, then step 7. Stop at the first failed gate or invalid run.
 4. For each bottleneck, change one thing and compare before and after at the same step, mix, configuration and database size.
-5. On Linux, repeat the mock capacity run, then steps 4-5 for `C` and `N`.
+5. On Linux, repeat the mock capacity run, then steps 4-5 for `C` and `N` ([D53](../decisions.md#d53)).
 6. After Phase 4, run L1, L5, L6, L3, L2 and the failure suite on the final candidate.
 7. After Phase 5, repeat L5. That's the reported number.
 
@@ -65,33 +65,22 @@ Stress and soak are expensive, so they run only on the final candidate:
 
 ### Index comparison (Task C2)
 
-Does adding the four console indexes change sustained throughput or p99? The pass condition is no measurable change ([spec](../superpowers/specs/2026-11-05-console-design.md#measurements)).
+No cost detected in three valid runs at step 4; the [record](../../benchmarks/console-indexes.md) has the runs and limits. Still open from it:
 
-The indexes are `payments_review`, `payment_attempts_review`, `refunds_review` and `refunds_payment`. The console needs them, so **this measures their cost and doesn't pick a winner.** `refunds_payment` ships regardless, and earlier, under [D50](../decisions.md#d50).
+1. **On the first Linux run, check instead of repeating.** Confirm with `EXPLAIN` that the queries use these indexes, and watch `refunds_payment`'s cost in the normal results ([gate](../gates/stage-c-design.md#risks-to-watch)).
+2. **Check run 3's `DB CPU 0.02`.** Runs 1 and 2 report 1.96 and 1.79 at the same load, so this looks like a collection fault, not a real drop.
 
-| | |
-|---|---|
-| Design | Step 4 (250 req/s for 10 min), D47 mix, runs ordered without, with, with, without so database growth cancels out |
-| Status | **Stopped early by the owner, no cost detected.** Three valid runs, only one of them without the indexes. Run 4 was stopped during its checks and is invalid |
-| Output | [Console index comparison](../../benchmarks/console-indexes.md) |
-| Trust | Laptop preview, approved by the owner on 2026-11-06. **The owner decided not to repeat it on Linux** |
-| Also open on this gate | Clickable prototype review, owner's signature ([gate](../gates/stage-c-design.md#must-finish-before-the-build)) |
-
-This can show a large cost but can't rule out a small one, because the without, with, with, without order lost its last run. So these stay open:
-
-1. **On the first Linux run, check instead of repeating.** Confirm with `EXPLAIN` that the queries use these indexes, and watch `refunds_payment`'s cost in the normal results. If it looks significant, bring it to the owner ([gate](../gates/stage-c-design.md#risks-to-watch)).
-2. **Fix the check query.** Check time rose from 3.4 to over 67 min across the four runs, mainly from a query that scans `outbox` once per payment. Unfixed, it would also stall long ramp steps and soaks.
-3. **Check run 3's `DB CPU 0.02`.** Runs 1 and 2 report 1.96 and 1.79 at the same load, so this looks like a collection fault, not a real drop. It's in the run's `result.md`, and the comparison doesn't rely on it.
+The slow check query it found is fixed (`d91cca9`).
 
 ### Other comparisons
 
 | Comparison | Status | Source |
 |---|---|---|
-| Steps 0, 1, 3 and 5-7 at D47 | Not run | [E4](../gates/stage-1-escalations.md#e4-task-17-has-no-linux-host-for-steps-4-5-escalation-e4) |
+| Step 6 rerun and step 7 at D47 | Step 6 invalid once; step 7 not run | [BASELINE](../../benchmarks/BASELINE.md) |
 | Linux steps 4-5 (`C`, `N`) | **Blocked:** no Linux host | [E4](../gates/stage-1-escalations.md#e4-task-17-has-no-linux-host-for-steps-4-5-escalation-e4) |
 | Mock PSP at 25,000 req/s, under 5 ms added p99 | Unproven. Valid preview at 10,000 req/s, 1.34 ms | [Mock capacity](../../benchmarks/mock-psp-capacity.md) |
 | Commits per payment against 2.8 | Needs Linux steps 4-5 | [E5](../gates/stage-1-escalations.md#e5-task-17-workload-mix-has-no-agreed-saletwo-call-shares) |
-| Console searches on the replica under load | Not run. Task C13 Step 5, with its own output file | [Plan](../superpowers/plans/2026-11-06-console.md#task-c13-audit-log-and-staff-screens-then-the-finish-checks) |
+| Console searches on the replica under load | Script `benchmarks/console-search-load.sh` exists; its one run was invalid (k6 dropped arrivals) | [Plan](../superpowers/plans/2026-11-06-console.md#task-c13-audit-log-and-staff-screens-then-the-finish-checks) |
 | One cell against two | Smoke test only, no results. Both share one SSD | [Guide](benchmark-guide.md#5-run-the-suite) |
 | Schema C at pools 200 and 400 | Pool 200 only. The pool 400 run was deleted before recording anything | [Spike](spike/macbook-2026-11-05/summary.md#schema-a-the-original-design-at-the-same-rates) |
 | Schema C result repeated | One run so far | [Spike](spike/macbook-2026-11-05/summary.md#schema-a-the-original-design-at-the-same-rates) |
@@ -117,18 +106,7 @@ The [matrix](../../db/spike/matrix.json) has 20 entries. Only `baseline` and a s
 
 ## Open bottlenecks
 
-From the [spike](spike/macbook-2026-11-05/summary.md#bottlenecks):
-
-| # | Bottleneck | State |
-|---|---|---|
-| 4 | Relation-extension lock | Largely fixed by schema C, in one run. Repeat on Linux |
-| 5 | Hot last pages (`BufferContent`) | Fix unmeasured: schema C has no fast-flush run |
-| 6 | Non-HOT updates, from `state` in partial-index predicates | Cost not measured |
-| 7 | `MultiXactGen` waits, up to 10% | Cause not investigated |
-| 8 | Statement round trips | Not measured with real flushes |
-| 9 | SSD flush | Saturated on this Mac. Only different hardware helps |
-
-Also unresolved: prepared statements aborted at both pools tried, `commit_delay` had one inconclusive run, and the native "unsafe-fsync" run is mislabeled and must not be used. Its script is fixed but it hasn't been rerun.
+The database spike's bottleneck list, with evidence and status, is kept once in the [spike summary](spike/macbook-2026-11-05/summary.md#bottlenecks). Open there: hot last pages, non-HOT updates, `MultiXactGen` waits, statement round trips and the SSD flush. The platform search through step 6 named no bottleneck: pool wait and deadlocks stayed at 0, and API CPU grew to about 1.9 cores at step 6 ([BASELINE](../../benchmarks/BASELINE.md)).
 
 ## Production validation
 
@@ -157,16 +135,11 @@ These come from the [spike's list](spike/macbook-2026-11-05/summary.md#still-nee
 | Fast flushes against real flushes | About 9,750 against 3,232 commits/s, pool 100 | Docker isn't durable, so never a result |
 | Mock at 10,000 against 25,000 req/s | 10,000 is a valid preview; 25,000 is invalid on this laptop | Laptop. 25,000 is unproven, not disproven |
 | S3 query counts per endpoint | Create 29, read 4, capture 37, refund 37, sale 29, cancel 16, void 33, attempt 34, replay 2 | Acceptance fixture ([record](../phase-gates/phase-1.md#checklist)) |
+| D47 laptop limit search, steps 0-6 | Valid through step 5 at 248 completed payments/s, p99 17.74 ms; step 6 498/s, p99 58.43 ms but invalid | Laptop, Docker stack ([BASELINE](../../benchmarks/BASELINE.md)) |
+| Deadlock lab, unordered against ordered locking | 2,591 against 0 deadlocks; 55.7 s against 0.94 s | Two hot rows, not the payment path ([lab](../../benchmarks/deadlock-lab/README.md)) |
+| CK4 correlated against set-based | Over 67 min against 0.353 s for the check at 312,613 payments | [Progress, B2](../gates/stage-1-progress.md#build-record-2026-11-09) |
 | Npgsql commit-cancel probe | A commit can be abandoned with no cancel. Settled [D28](../decisions.md#d28) | Behavior, not capacity ([probe](../../benchmarks/npgsql-commit-probe/README.md)) |
 
-## Records to correct
+## Where results live
 
-These don't change any result, but they disagree with the run directories or each other:
-
-| Record | Says | Actually |
-|---|---|---|
-| [BASELINE](../../benchmarks/BASELINE.md) | Only old-mix runs | E4 requires each laptop run recorded there. The D47 runs aren't |
-| [Stage 1 progress](../gates/stage-1-progress.md) and [Phase 1](../phase-gates/phase-1.md) | No run at the new mix | [E7](../gates/stage-1-escalations.md#e7-benchmark-reset-leaves-the-ck1-ledger-manifest-stale) records a passing step 2 |
-| [Stage 1 progress](../gates/stage-1-progress.md) | E2 and E3 remain open for the build gate | Both are marked answered by D46, and the same note was removed from Phase 1 in `1dda41e` |
-| `benchmarks/runs/` | Git-ignored | Results from D47 runs exist only on this laptop until they're copied into a tracked record |
-| [Benchmark guide](benchmark-guide.md#the-full-platform) | The API isn't built, so it covers only the database tier | Tasks 7-16 are complete and the k6 harness runs against the API |
+Run directories in `benchmarks/runs/` are git-ignored, so a result exists in the repository only once it's copied into a tracked record: [BASELINE](../../benchmarks/BASELINE.md) for ramp steps, a file under `benchmarks/` for a comparison, and a progress line for build evidence.

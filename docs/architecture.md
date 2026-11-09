@@ -2,9 +2,9 @@
 
 How Open Payments is built to process 5,000 completed payments/s without double-charging anyone or losing a record of money.
 
-Status: Draft · Last updated: 2026-11-05
+Status: Draft · Last updated: 2026-11-09
 
-Stack: C# / .NET 10, ASP.NET Core, PostgreSQL, Kafka-compatible broker, Kubernetes. Nothing here is built or measured yet. Reasoning behind major choices is in [Decisions](decisions.md).
+Stack: C# / .NET 10, ASP.NET Core, PostgreSQL, Kafka-compatible broker, Kubernetes. Stage 1 is built: the Payments API, payment-transition module, mock PSP adapter and staff console. Later components are design only. No production capacity is measured; laptop previews are in [BASELINE](../benchmarks/BASELINE.md). Reasoning behind major choices is in [Decisions](decisions.md).
 
 ## Goals and SLOs
 
@@ -498,6 +498,7 @@ Provider facts change, so recheck them at adapter time, and record results in th
 | Payments | Client-side API access | `Committed`; client secret design `Open` until Stage 4 |
 | Operations | Metrics, logs, traces, alerts; runbooks and drills for 51 failure scenarios | `Committed` (none rehearsed) |
 | Merchant experience | Dashboard and checkout screens | `Proposed`: prototype outside this repo |
+| Operations | Staff console: payment search and detail, money actions through the API, audit log, staff roles with MFA | `Committed` ([console spec](superpowers/specs/2026-11-05-console-design.md)); first screens built in Stage 1 |
 | Payments | Retry on the same payment, customer-action state, cancel | `Committed` ([D16](decisions.md#d16), [D17](decisions.md#d17)) |
 | Payments | Merchant test mode | `Committed` ([D20](decisions.md#d20)); isolation mechanism `Open` |
 | Payments | Delayed-result methods (`PROCESSING`), wider payment methods | `Proposed` |

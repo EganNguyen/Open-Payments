@@ -1,8 +1,8 @@
 # Benchmark Guide
 
-How to deploy the stack, run benchmarks, watch resources, verify the money and compare results on the MacBook. The design is in [Local deployment](../architecture/local-deployment.md), and the latest results are in the [MacBook summary](spike/macbook-2026-11-05/summary.md). What's still unmeasured is in [Open experiments](open-experiments.md).
+How to deploy the database stack, run the database spike, watch resources, verify the money and compare results on the MacBook. Platform ramp steps through the API use the [load harness](../../benchmarks/README.md). The design is in [Local deployment](../architecture/local-deployment.md), and the latest results are in the [MacBook summary](spike/macbook-2026-11-05/summary.md). What's still unmeasured is in [Open experiments](open-experiments.md).
 
-Status: Database tier only. The full platform has no benchmark until it's built · Last updated: 2026-11-06
+Status: Database tier · Last updated: 2026-11-09
 
 Run every command from the repository root.
 
@@ -210,7 +210,7 @@ One PgBouncer's pool. Repeat for ports 26433-26435:
 PGPASSWORD=op_local_only psql -h 127.0.0.1 -p 26432 -U postgres -d pgbouncer -c "show pools"
 ```
 
-**Application metrics don't exist yet,** because the application isn't built. Task 10 adds observability, and Task 11 adds the load harness.
+**Application metrics** come from the API's `/metrics` and the Prometheus stack described in [Metrics](../metrics.md).
 
 ## 7. Spot saturation
 
@@ -318,4 +318,4 @@ DB_ADMIN_URL=postgres://postgres:op_local_only@127.0.0.1:25432/openpayments scri
 
 ## The full platform
 
-The API, fraud, PSP adapters, broker and workers don't exist yet, so this guide covers only the database tier. After Tasks 7-17, the platform benchmark runs through the [mock PSP and k6 harness](../superpowers/plans/2026-11-05-open-payments-implementation-and-benchmark.md) and replaces the calculated platform numbers in the [summary](spike/macbook-2026-11-05/summary.md#realistic-end-to-end-performance-expectations).
+This guide covers only the database tier. The platform benchmark runs through the mock PSP and k6 harness: see the [load harness README](../../benchmarks/README.md) for commands, reset and validity rules, and [BASELINE](../../benchmarks/BASELINE.md) for results.

@@ -25,7 +25,7 @@ Unexpected errors were 0.000% at every step. CK1-CK6, CK9 and CK10 passed at eve
 
 **What the resources show, without naming a bottleneck:** API CPU grew with load, to about 1.9 cores at step 6. p99 rose from 17.74 ms at step 5 to 58.43 ms at step 6, still within the 100 ms gate. Database CPU stayed below half a core.
 
-Runs: `20261109T043519Z-3faaaf6-s0-14c1`, `20261109T044032Z-3faaaf6-s1-005e`, `20261109T044543Z-3faaaf6-s3-7dce`, `20261109T045857Z-e4bff52-s5-47d3`, `20261109T050918Z-786d8ef-s6-0bba`. Earlier attempts on 2026-11-09 are excluded: `…040109Z-3d728c1-s0-3b3c` sent no API token (every request 401), `…040758Z-4540c23-s0-2958` ran before the reset (count mismatch, E8), and `…042813Z-18d0f63-s0-2291` counted `setup()` latency (E8).
+Runs: `20261109T043519Z-3faaaf6-s0-14c1`, `20261109T044032Z-3faaaf6-s1-005e`, `20261109T044543Z-3faaaf6-s3-7dce`, `20261109T045857Z-e4bff52-s5-47d3`, `20261109T050918Z-786d8ef-s6-0bba`. **Next:** k6 now pre-allocates all VUs (`7dd42a7`); step 6 must be rerun three times from a reset before D51's milestone or Task 17 can close ([D53](../docs/decisions.md#d53)). Earlier attempts on 2026-11-09 are excluded: `…040109Z-3d728c1-s0-3b3c` sent no API token (every request 401), `…040758Z-4540c23-s0-2958` ran before the reset (count mismatch, E8), and `…042813Z-18d0f63-s0-2291` counted `setup()` latency (E8).
 
 ## Old-mix baseline (2026-11-06)
 
@@ -34,7 +34,7 @@ No `C` is recorded from it, and no number here should be used for capacity sizin
 
 These runs predate [D47](../docs/decisions.md#d47): half their payments are authorized and never
 captured, and every one counts as completed. The ramp profile in them was also later corrected.
-They must be replaced by a rerun of steps 0-3 at the new mix.
+They are replaced by the D47 search above and kept only for history.
 
 ### Configuration
 

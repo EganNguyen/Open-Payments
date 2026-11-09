@@ -48,6 +48,8 @@ Eight deployables, two libraries and four infrastructure parts. Our own vault is
 
 Observability and the Kubernetes platform support all of these. The mock PSP and load harness are test tools, built first.
 
+The staff console (`src/OpenPayments.Console`) is a ninth deployable, added by the [console spec](superpowers/specs/2026-11-05-console-design.md) after this catalog was written. It reads the database through read-only roles, signs staff in through an OIDC provider, and moves money only by calling the Payments API. It is not on the payment path: if it is down, payments are unaffected.
+
 ## Dependencies
 
 | From | To | Type | Purpose | If the dependency fails |

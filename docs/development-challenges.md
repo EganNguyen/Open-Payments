@@ -2,7 +2,7 @@
 
 Engineering problems found while building and benchmarking Stage 1, why they happened, how each was fixed, and the evidence that the fix worked. Every entry cites its source: an escalation (E), a decision (D), a run ID or a commit.
 
-Status: 23 challenges · 17 fixed and verified · 2 fixed, verification pending · 4 open · Last updated: 2026-11-09
+Status: 23 challenges · 18 fixed and verified · 1 fixed, verification pending · 4 open · Last updated: 2026-11-09
 
 ## How each challenge is worked
 
@@ -15,7 +15,7 @@ Status: 23 challenges · 17 fixed and verified · 2 fixed, verification pending 
 | **5. Verify** | Rerun the same benchmark from the same state. Compare before and after, and confirm the correctness checks still pass. |
 | **6. Prevent regression** | Add a test, a plan check, a settings check, a metric or a gate so the problem can't come back silently. |
 
-**Trust rule:** every number below is a laptop preview (18-core MacBook, generator and database on one machine). It is good for comparing before and after, not for capacity claims ([D53](decisions.md#d53)).
+**Trust rule:** every number below is a laptop preview (18-core MacBook, generator and database on one machine). It is good for comparing before and after, not for capacity claims ([D53](decisions.md#d53)). The platform runs (DC-08 onward) used the Docker Compose stack, whose flushes don't reach stable storage ([Local deployment](architecture/local-deployment.md#two-stacks)), so their latencies are lower than a durable stack would give.
 
 ## Summary
 
@@ -40,7 +40,7 @@ Status: 23 challenges · 17 fixed and verified · 2 fixed, verification pending 
 | [DC-17](#dc-17-k6-metric-series-grew-without-bound) | k6 metric series grew without bound | Generator memory | Fixed, verified |
 | [DC-18](#dc-18-k6-dropped-arrivals-at-1000-reqs) | k6 dropped arrivals at 1,000 req/s | Generator | Fixed, **rerun pending** |
 | [DC-19](#dc-19-the-c6-refund-race-test-hid-unexpected-answers) | The C6 refund race test hid unexpected answers | Test quality | Fixed, verified |
-| [DC-20](#dc-20-the-console-stack-wouldnt-start-and-mfa-was-refused) | The console stack wouldn't start, and MFA was refused | Integration | Stack fixed; MFA **decided, not built** |
+| [DC-20](#dc-20-the-console-stack-wouldnt-start-and-mfa-was-refused) | The console stack wouldn't start, and MFA was refused | Integration | Fixed, verified |
 | [DC-21](#dc-21-no-linux-host-for-a-capacity-number) | No Linux host for a capacity number | Environment | **Open** |
 | [DC-22](#dc-22-mock-psp-capacity-unproven-at-25000-reqs) | Mock PSP capacity unproven at 25,000 req/s | Environment | **Open** |
 | [DC-23](#dc-23-scope-gaps-found-at-the-phase-1-gate) | Scope gaps found at the Phase 1 gate | Scope | Moved to Stage 2 |
@@ -283,8 +283,9 @@ About 59× faster. Retries matched deadlocks exactly, and nothing was lost or du
 | **Detect** | Running the compose stack for console Task C13. |
 | **Investigate and fix** (`87257fd`) | API had no healthcheck → wait for start. Keycloak needed a Host header and dynamic back-channel URLs to serve keys. The aspnet image's `sh` has no `/dev/tcp`. Keycloak 26 required names on the realm user. `Secure`-only cookies broke every form over local http → Development follows the request scheme, like Testing. |
 | **Then** | Sign-in with password + TOTP showed "No access" ([E10](gates/stage-1-escalations.md#e10-local-keycloak-sign-in-carries-no-mfa-claim-so-the-console-refuses-it)). `kcadm` showed the OTP authenticator `configurable: false`, so Keycloak 26.0's `amr` mapper had nothing to emit. The console failed closed, as designed. |
-| **Fix decided** | [D55](decisions.md#d55): accept MFA from `acr` (level-of-authentication flow, TOTP = level 2) as well as `amr`. Rejected: lowering `RequiredAmr` locally, which removes MFA. |
-| **Status** | **Not built yet:** no `RequiredAcr` in `src/`. Verify by signing in through local Keycloak with TOTP and reaching the console, plus a test that a password-only session is refused. |
+| **Fix** | [D55](decisions.md#d55), built in `a4d0dc4`: accept MFA from `acr` (level-of-authentication flow, TOTP = level 2) as well as `amr`. Rejected: lowering `RequiredAmr` locally, which removes MFA. |
+| **Verify** | A real sign-in through local Keycloak then found that ASP.NET's OIDC handler drops `acr` from the session by default. The console now keeps `acr`, `amr` and `auth_time`, with a test, and logs each refusal with its reason. |
+| **Prevent** | An empty `RequiredAcr` keeps the `amr`-only rule, so each deployment states which claim its provider sends. |
 
 ### DC-21: No Linux host for a capacity number
 
@@ -314,13 +315,7 @@ About 59× faster. Retries matched deadlocks exactly, and nothing was lost or du
 
 ## Open work
 
-| Item | Next step | Done when |
-|---|---|---|
-| DC-18 step 6 rerun | Full reset, rerun step 6 three times with pre-started VUs | Three valid 10-min windows at ≥ 500 completed payments/s, all checks pass |
-| DC-20 MFA by `acr` | Build D55 in the console and the local realm | TOTP sign-in reaches the console; password-only is refused |
-| DC-21 / DC-22 Linux | Provision a host meeting E4's list | Mock at 25,000 req/s under 5 ms; steps 4-5 give `C` and `N` |
-| DC-04 on Linux | `EXPLAIN` the refund and review queries | Plans use the indexes |
-| DC-06 open bottlenecks | Linux spike: non-HOT updates, `MultiXactGen`, round trips | Each measured, fixed or ruled out one at a time |
+What's left, in order, is kept once in [Open experiments](benchmarks/open-experiments.md#run-order). From this list: DC-18 needs its step 6 rerun, DC-21 and DC-22 need a Linux host, DC-04 needs an `EXPLAIN` check there, and DC-06's open bottlenecks need a Linux spike.
 
 ## Regression guards added
 

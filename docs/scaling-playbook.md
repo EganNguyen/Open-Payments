@@ -131,9 +131,9 @@ After every run, execute CK1-CK6 against the database. A fast run with wrong mon
 
 ## First ramp results
 
-The local preview of steps 0-3 is in [BASELINE](../benchmarks/BASELINE.md). It is a laptop
-preview only: it records no `C`, and the Linux steps 4-5 have not run. The per-run evidence
-is linked from that file.
+The laptop limit search at the [D47](decisions.md#d47) mix, steps 0-6, is in
+[BASELINE](../benchmarks/BASELINE.md). It is a preview only: it records no `C`, and the Linux
+steps 4-5 have not run ([D53](decisions.md#d53)). The per-run evidence is linked from that file.
 
 Results from a laptop are good for comparing before and after a change, not as absolute capacity numbers. Run the final steps on Linux machines, with load generators elsewhere.
 

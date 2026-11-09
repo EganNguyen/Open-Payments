@@ -45,7 +45,7 @@ It starts a throwaway PostgreSQL 18.6 container on port 35432, runs 5 rounds per
 
 ## Found while building it
 
-`TxRunner` sets `lock_timeout` to 2 s inside every transaction, `set_config('lock_timeout', '2s', true)`, which overrides D1's role setting of 200 ms. `check-db-settings.sh` reads `lock_timeout` outside a transaction, so it doesn't see this. It's raised as [E9](../../docs/gates/stage-1-escalations.md#e9-txrunner-overrides-the-d1-lock_timeout) and not changed here.
+`TxRunner` sets `lock_timeout` to 2 s inside every transaction, `set_config('lock_timeout', '2s', true)`, which overrides D1's role setting of 200 ms. `check-db-settings.sh` reads `lock_timeout` outside a transaction, so it doesn't see this. It was raised as [E9](../../docs/gates/stage-1-escalations.md#e9-txrunner-overrides-the-d1-lock_timeout) and removed under [D54](../../docs/decisions.md#d54) in `0056f0d`. The results above predate that fix: rerun the lab before comparing lock-timeout counts with them.
 
 ## Limits
 

@@ -2,7 +2,7 @@
 
 How the repository is organized, which project may depend on which, and where new code goes. What each service does is in the [service catalog](../service-catalog.md), and why is in [Architecture](../architecture.md).
 
-Status: Stage 1 layout `Committed` by the [plan](../superpowers/plans/2026-11-05-open-payments-implementation-and-benchmark.md) · Later stages `Proposed`, adopted at each stage's [design gate](../delivery-workflow.md#design-gate) · Last updated: 2026-11-05
+Status: Stage 1 layout `Committed` by the [plan](../superpowers/plans/2026-11-05-open-payments-implementation-and-benchmark.md) · Later stages `Proposed`, adopted at each stage's [design gate](../delivery-workflow.md#design-gate) · Last updated: 2026-11-09
 
 **Summary:** one repository and one solution, with one project per deployable and a few libraries around one write path. The project graph itself should block the expensive mistakes: `Domain` can't do I/O, and `Transitions` can't reach a PSP.
 
@@ -28,14 +28,17 @@ tests/                 One test project per kind of proof
 
 ### Stage 1
 
-| Project | Kind | Job | State at `cd1cbca` |
+| Project | Kind | Job | References |
 |---|---|---|---|
-| `src/OpenPayments.Domain` | Library | Money, IDs, states, commands, postings and `Decide`. No I/O | Partly built; Task 12 in progress |
-| `src/OpenPayments.Transitions` | Library | `TxRunner`, `PaymentStore` and SQL. The only money writer ([D2](../decisions.md#d2)) | Task 13 |
-| `src/OpenPayments.Psp` | Library | `IPspAdapter` and adapters | Task 14 |
-| `src/OpenPayments.Api` | Deployable | Routes, `PaymentFlow`, auth, limits, metrics | Task 14 |
-| `tools/OpenPayments.MockPsp` | Test tool | Test PSP with an effect log | Built |
-| `tools/OpenPayments.Checks` | Test tool | CK1-CK10 as raw SQL. Independent of `src/` | Built |
+| `src/OpenPayments.Domain` | Library | Money, IDs, states, commands, postings and `Decide`. No I/O | Nothing |
+| `src/OpenPayments.Transitions` | Library | `TxRunner`, `PaymentStore` and SQL. The only money writer ([D2](../decisions.md#d2)) | `Domain`, Npgsql |
+| `src/OpenPayments.Psp` | Library | `IPspAdapter` and `MockPspAdapter` | `Domain` |
+| `src/OpenPayments.Api` | Deployable | Routes, `PaymentFlow`, auth, limits, metrics | `Domain`, `Psp`, `Transitions` |
+| `src/OpenPayments.Console` | Deployable | Staff console: Razor Pages and htmx, OIDC sign-in, money actions through the API ([console spec](../superpowers/specs/2026-11-05-console-design.md)) | Npgsql only, with the read-only `op_console_read` and `op_console` roles |
+| `tools/OpenPayments.MockPsp` | Test tool | Test PSP with an effect log | Nothing |
+| `tools/OpenPayments.Checks` | Test tool | CK1-CK10 as raw SQL. Independent of `src/` | Npgsql |
+
+All of these are built, as of Stage 1. The API's routes are in `Program.cs` and `PaymentFlow.cs`, not the planned `Endpoints/` folder; this is a recorded deviation in [Stage 1 progress](../gates/stage-1-progress.md).
 
 ### Later stages (`Proposed`)
 
@@ -85,7 +88,7 @@ Solid lines are the core and dashed lines are `Proposed`. `Hosting` and `Messagi
 | `Domain` references nothing | Keeps `Decide` pure, so it can be tested exhaustively |
 | `Transitions` doesn't reference `Psp`, and `Psp` doesn't reference `Transitions` | A PSP call inside a transaction becomes hard to write. `Api` and `Reconciler` sequence the two |
 | `Psp` doesn't use Npgsql | An adapter can't write money state |
-| Only `Api` and `Reconciler` reference `Transitions` | These are the two hosts [allowed to write money state](../architecture.md#components-and-boundaries) |
+| Only `Api` and `Reconciler` reference `Transitions` | These are the two hosts [allowed to write money state](../architecture.md#components-and-boundaries). The console moves money only through the API |
 | `OutboxPublisher`, `LedgerProjector`, `WebhookDispatcher` and `Fraud` reference neither `Domain` nor `Transitions` | They can lag or fail without affecting payment rules, and can't start making payment decisions |
 | Deployables never reference each other | They talk over HTTP or the broker, through `Contracts` |
 | `Domain` doesn't reference `Contracts` | `Transitions` maps `Decide`'s output to the published payload, so a published field can't shape the state machine |
@@ -96,7 +99,7 @@ Solid lines are the core and dashed lines are `Proposed`. `Hosting` and `Messagi
 
 - **Group by feature, not by layer.** Use `Endpoints/Refunds.cs` rather than `Controllers/`, `Services/` and `Repositories/`. Start flat, and add a folder when several files share a feature.
 - **Keep the logic in `Decide`.** The shell loads, calls `Decide` and writes. If adding a transition changes the shell, a business rule has probably leaked.
-- **Keep SQL in `Transitions/Sql.cs`, parameterized through Dapper.** Money SQL in one place is easy to review against the [lock order](../implementation-guide.md#lock-order).
+- **Keep SQL in `Transitions/Sql.cs`, parameterized through Npgsql commands.** Stage 1 uses no Dapper; the plan named it, and the hand-written commands met S3 without it. Money SQL in one place is easy to review against the [lock order](../implementation-guide.md#lock-order).
 - **Match the namespace to the project,** such as `OpenPayments.Transitions`.
 - **Keep one adapter per folder in `Psp`,** such as `Adapters/<Psp>/`. Split out a project only if an adapter brings a dependency the others shouldn't load.
 
@@ -125,6 +128,8 @@ Any project may read what its job needs. A migration is never edited once applie
 | `tests/OpenPayments.MockPsp.Tests` | The mock's outcomes and effect log | The mock |
 | `tests/OpenPayments.Integration.Tests` | `TxRunner`, `PaymentStore`, query plans (Task 13 on) | Real Postgres |
 | `tests/OpenPayments.Acceptance.Tests` | Behavior through the real API (Task 14 on) | API, Postgres, mock PSP |
+| `tests/OpenPayments.Console.Tests` | Console authorization, roles, money actions, audit | Real Postgres, test sign-in |
+| `tests/OpenPayments.Console.Browser.Tests` | Console screens with Playwright and axe, at 1280 px and 390 px, both themes | Browser, console |
 
 Test names carry the doc's ID where one exists, such as `C5_...`, so proof is searchable. A later deployable gets its own `tests/OpenPayments.<Project>.Tests`.
 
@@ -137,8 +142,8 @@ A rule without a check tends to wear away, so each one below names its check.
 | Warnings fail the build; CA2000 and CA2016 are errors | `Directory.Build.props`, CI | Exists |
 | One version per package | `Directory.Packages.props` | Exists |
 | Package licenses and known vulnerabilities | CI scans over `OpenPayments.slnx` | Exists |
-| No blocking calls on the request path | `BannedSymbols.txt` | **Only `Domain` is wired up.** Tasks 13-14 must add it to each new project |
-| `Domain` references no I/O | `Decide_project_references_no_io` | Planned, Task 12 |
+| No blocking calls on the request path | `BannedSymbols.txt` | Exists in every `src/` project |
+| `Domain` references no I/O | `Decide_project_references_no_io` | Exists |
 | The other dependency rules above | None yet | **Gap** |
 | `Checks` references nothing in `src/` | None yet; true today only by inspection | **Gap** |
 | Only `Transitions` writes money tables | None yet | **Gap** |
@@ -150,7 +155,7 @@ A rule without a check tends to wear away, so each one below names its check.
 2. Fails if any `.csproj` under `src/`, `tools/` or `tests/` is missing from `OpenPayments.slnx`.
 3. Fails if a `src/` project other than `Transitions` contains an `insert`, `update` or `delete` on a money table. This is a text search, so it's a guard against mistakes and can't prove the rule.
 
-Adding it before Task 13 costs the least, since `Transitions` and `Api` don't exist yet. It's a change to the plan, so it needs the owner's approval first.
+It's a change to the plan, so it needs the owner's approval first. Not yet approved.
 
 ## Where things go
 
@@ -158,7 +163,7 @@ Adding it before Task 13 costs the least, since `Transitions` and `Api` don't ex
 |---|---|---|
 | A state transition | `Decide` in `Domain` | [Transitions table](../payment-lifecycle.md#transitions) first, then state tests ([steps](../implementation-guide.md#adding-a-state-transition)) |
 | A money write | `PaymentStore` and `Sql.cs` in `Transitions` | Integration test |
-| An API route | `Api/Endpoints/` | `api/openapi.yaml`, acceptance test |
+| An API route | `Api/Program.cs` and `PaymentFlow.cs` today; move to `Api/Endpoints/` when they grow | `api/openapi.yaml`, acceptance test |
 | A PSP | `Psp/Adapters/<Psp>/`, behind `IPspAdapter` | Its declared recovery mode |
 | A published event | `Contracts`, mapped in `Transitions` | [Event catalog](../event-catalog.md), with a new `schema_version` for any incompatible change |
 | A schema change | A new file in `db/migrations/` | `scripts/check-migration.sh` |

@@ -2,7 +2,7 @@
 
 The metric contract between the API, the load harness, the dashboard and the correctness run. Task 14 emits these names; Task 11 reads them; this file is their one home.
 
-Status: Draft · Last updated: 2026-11-06
+Status: Draft · Last updated: 2026-11-09
 
 The stack is in [`deploy/compose/observability.yaml`](../deploy/compose/observability.yaml), with Prometheus at `http://127.0.0.1:9090`, Grafana at `http://127.0.0.1:3000` (`admin` / `admin` locally) and the [overview dashboard](../deploy/compose/grafana/dashboards/overview.json).
 
@@ -19,20 +19,20 @@ The stack is in [`deploy/compose/observability.yaml`](../deploy/compose/observab
 | Metric | Type | Labels | Meaning | Emitted by |
 |---|---|---|---|---|
 | `op_requests_admitted_total` | counter | none | Requests admitted by the in-flight and rate limiters | API edge |
-| `op_requests_rejected_total` | counter | `reason` | Requests refused before work. Reasons: `rate_limit`, `inflight_cap`, `pool_wait`, `lock_timeout`, `busy`, `auth`, `not_found`, `invalid_state` | API edge |
-| `op_payments_completed_total` | counter | `outcome` | Payments that reached a final, committed outcome. Outcomes: `captured`, `authorized`, `declined`, `action_required`, `canceled`, `voided`, `expired` | Payment flow, after the final commit only |
+| `op_requests_rejected_total` | counter | `reason` | Requests refused before work. Reasons emitted today, mapped from the status code: `auth` (401, 403), `not_found` (404), `invalid_state` (409, 422), `rate_limit` (429), `busy` (503). `inflight_cap`, `pool_wait` and `lock_timeout` are planned but not separated yet: all three are counted as `busy` | API edge |
+| `op_payments_completed_total` | counter | `outcome` | Payments that reached a final, committed outcome. Outcomes emitted today: `captured`, `authorized`, `declined` (excluding `fraud_blocked` and `timeout`). `action_required`, `canceled`, `voided` and `expired` are planned. The count starts at zero when the API process starts, so compare it with the database only for a run that began with the process | Payment flow, after the final commit only |
 | `op_platform_overhead_seconds` | histogram | none | Total request time minus PSP wait. The SLO applies to this, not to end-to-end time | Payment flow |
 | `op_threadpool_queue` | gauge | none | Pending ThreadPool work items | API `/metrics` |
 | `op_gen2_gc_per_second` | gauge | none | Gen 2 collections per second since process start | API `/metrics` |
 | `op_allocation_rate_bytes_per_second` | gauge | none | Managed allocation rate since process start | API `/metrics` |
-| `op_abandoned_commits` | gauge | none | Commits still running after the commit wait limit ([E1](../gates/stage-1-escalations.md#e1-task-13-npgsql-commit-cancellation-breaks-d28)) | Transaction runner, via API `/metrics` |
-| `op_commit_warnings_total` | counter | none | Commit-time replication warnings that make the outcome unknown ([E1](../gates/stage-1-escalations.md#e1-task-13-npgsql-commit-cancellation-breaks-d28)) | Transaction runner, via API `/metrics` |
+| `op_abandoned_commits` | gauge | none | Commits still running after the commit wait limit ([E1](gates/stage-1-escalations.md#e1-task-13-npgsql-commit-cancellation-breaks-d28)) | Transaction runner, via API `/metrics` |
+| `op_commit_warnings_total` | counter | none | Commit-time replication warnings that make the outcome unknown ([E1](gates/stage-1-escalations.md#e1-task-13-npgsql-commit-cancellation-breaks-d28)) | Transaction runner, via API `/metrics` |
 | `op_psp_wait_seconds` | histogram | none | Time spent inside the PSP adapter call | PSP adapter |
 | `op_inflight` | gauge | none | Requests currently in flight on this instance | API edge |
 | `op_tx_retries_total` | counter | `sqlstate` | Transaction retries. Only `40001` and `40P01` are retried, at most twice | Transaction runner |
 | `op_conditional_update_zero_rows_total` | counter | none | Conditional updates that changed no row, so the caller re-read and answered from current state | Payment store |
-| `op_outbox_oldest_age_seconds` | gauge | none | Age of the oldest unpublished outbox row | Outbox publisher, or a database query before Phase 3 |
-| `op_payments_by_state` | gauge | `state` | Current payment count by state | Reconciler or a periodic database query |
+| `op_outbox_oldest_age_seconds` | gauge | none | Age of the oldest unpublished outbox row. **Not emitted yet** | Outbox publisher, Phase 3 |
+| `op_payments_by_state` | gauge | `state` | Current payment count by state. **Not emitted yet** | Reconciler, Stage 2 |
 
 `op_platform_overhead_seconds` buckets, in seconds: `0.001, 0.0025, 0.005, 0.01, 0.015, 0.02, 0.025, 0.03, 0.04, 0.05, 0.06, 0.075, 0.1, 0.2, 0.5, 1`. The cluster between 25 ms and 100 ms is deliberate, because the p99 target is 100 ms and the p50 target is 25 ms.
 
@@ -58,7 +58,7 @@ The API scrape target is `host.docker.internal:8080` in local development. On Li
 
 ## Results log coverage
 
-The [Results log](../scaling-playbook.md#results-log) asks for these fields. The dashboard or the harness supplies each.
+The [Results log](scaling-playbook.md#results-log) asks for these fields. The dashboard or the harness supplies each.
 
 | Results log field | Source |
 |---|---|
@@ -88,4 +88,4 @@ Check `http://127.0.0.1:9090/api/v1/targets` shows `postgres`, `pgbouncer` and `
 
 ## Alerts and gates
 
-The metric stack is a measurement tool, not a gate. A missed gate, including a failed correctness check, makes the run fail even if every panel is green. Alerts and thresholds are in the [scaling playbook](../scaling-playbook.md#measures-and-gates) and are not duplicated here.
+The metric stack is a measurement tool, not a gate. A missed gate, including a failed correctness check, makes the run fail even if every panel is green. Alerts and thresholds are in the [scaling playbook](scaling-playbook.md#measures-and-gates) and are not duplicated here.

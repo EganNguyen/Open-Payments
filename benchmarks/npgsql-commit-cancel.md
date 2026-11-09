@@ -1,5 +1,7 @@
 # Npgsql Commit Cancellation Probe
 
+> **Superseded.** This is the evidence behind escalation [E1](../docs/gates/stage-1-escalations.md#e1-task-13-npgsql-commit-cancellation-breaks-d28). Its conclusion that the connection can't be dropped without a cancel was wrong, and so was its claim that `Command Timeout` doesn't cover `COMMIT`. The [later probe](npgsql-commit-probe/README.md) settled [D28](../docs/decisions.md#d28). Read this only for history.
+
 Task 13 requires the runner to check how Npgsql behaves before implementing D28. This probe ran on 2026-11-05 against PostgreSQL 18.6 with synchronous standbys configured but absent, so every commit waited for a standby that could not acknowledge it.
 
 ## Environment

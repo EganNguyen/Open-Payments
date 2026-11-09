@@ -1,11 +1,11 @@
 # Phase 1 exit record
 
-Status: **not achieved** · Last updated: 2026-11-06
+Status: **not achieved** · Last updated: 2026-11-09
 
 The build and its tests pass, but the Phase 1 checklist is not complete. The remaining gaps
-are the independent S5 review, S3's query rules ([D48](../decisions.md#d48)), the benchmark mix
-([D47](../decisions.md#d47)) and Task 17's Linux capacity run; the gate stays open until they
-are closed. C31a's scope was corrected by [D46](../decisions.md#d46): E4 and E9 now belong to
+are the independent S5 review and a valid step 6 run, which closes Task 17 under
+[D53](../decisions.md#d53). S3's rules ([D48](../decisions.md#d48)) and the
+[D47](../decisions.md#d47) mix are done. C31a's scope was corrected by [D46](../decisions.md#d46): E4 and E9 now belong to
 C31b in Phase 2, so C31a is complete without a fake callback route or expiry job.
 
 ## Evidence
@@ -13,7 +13,7 @@ C31b in Phase 2, so C31a is complete without a fake callback route or expiry job
 | Check | Result |
 |---|---|
 | `dotnet build OpenPayments.slnx -warnaserror` | PASS: 12 projects, 0 warnings. |
-| `dotnet test OpenPayments.slnx` | PASS: 196 tests. Domain 70, analyzers 1, mock PSP 17, checks 21, integration 31, acceptance 56. |
+| `dotnet test OpenPayments.slnx` | PASS at `7f3d4ad`: 365 tests. Domain 70, analyzers 1, mock PSP 17, checks 24, integration 39, acceptance 57, console 123, console browser 34. Phase 1's own projects were 196 tests at the time of the first record. |
 | `dotnet list OpenPayments.slnx package --vulnerable --include-transitive` | PASS: no vulnerable packages from the configured source. |
 | `scripts/check-db-settings.sh` | PASS against the running stack: quorum standbys 2, `transaction_timeout` unset, PgBouncer `query_timeout=0`, and the application timeouts direct and through PgBouncer. |
 | License scan | PASS: `nuget-license` 4.0.18 is pinned in `.config/dotnet-tools.json`; `dotnet tool restore` and `dotnet tool run nuget-license -i OpenPayments.slnx -t` exited 0. |
@@ -39,31 +39,8 @@ C31b in Phase 2, so C31a is complete without a fake callback route or expiry job
 ## Named gaps
 
 - S5: independent review at the review gate; the self-review recorded above is not a substitute.
-- Benchmark mix: the D47 mix and share-validity checks are implemented. The previous steps 0-3
-  are superseded by the mix change; no run at the new mix is recorded because the owner paused
-  the laptop limit search for the console index comparison.
-- Laptop only for now (owner, 2026-11-06): the E4 answer sets the rules for a laptop limit
-  search. Its results stay previews and can't close Task 17.
-- Task 17: steps 4-5 need a Linux host and remain unrun. No `C` or `N` is recorded. See
-  [E4](../gates/stage-1-escalations.md#e4-task-17-has-no-linux-host-for-steps-4-5-escalation-e4).
-- C31a has no open design gap after D46; edge case E4 and E9 are C31b tests, not Stage 1 evidence.
+- Task 17: the laptop limit search has valid runs through step 5. Step 6 is invalid because k6 dropped arrivals while starting VUs; the fix is in `7dd42a7` and needs a rerun. Results are in [BASELINE](../../benchmarks/BASELINE.md).
+- `C` and `N` are not Phase 1 evidence: [D53](../decisions.md#d53) moves them to the first Linux run, before Stage 4.
+- C31a has no open design gap after D46; edge cases E4 and E9 are C31b tests, not Stage 1 evidence.
 
-## Task 17 local preparation and preview
-
-On 2026-11-06 the stale local volumes were inspected and recreated. The primary volume had
-tables but no `schema_migrations` rows, and its old replication slots made `pg_basebackup` fail.
-After recreating all three volumes, the stack started with `PG_CONFIG=primary.macbook.conf` on
-the primary and both standbys. Both standbys reached `quorum`; `scripts/migrate.sh` applied
-`0001_initial`; and `scripts/check-db-settings.sh` passed. The API and mock PSP were added to
-`deploy/compose/compose.yaml`, with the mock effect log mounted so CK2 can see this run's
-effects.
-
-The harness exposed three bugs while running the preview. CK1 treated appended ledger rows as
-tampering, so its aggregate manifest was replaced with per-row hashes that flag only changed
-or deleted rows. CK2 read the effect log before the run; it now reads it after the drain. A
-failed optional Prometheus query no longer aborts the report.
-
-The earlier steps 0-3 used the old 60/15/10/10/5 mix and are superseded. The D47 mix,
-share validity, S3 checks, full metric contract and resource collection are committed; the
-owner paused the laptop limit search before a run at the new mix. No laptop number is reported
-as `C`. Linux steps 4-5 remain open ([E4](../gates/stage-1-escalations.md#e4-task-17-has-no-linux-host-for-steps-4-5-escalation-e4)).
+How the stack was prepared and which harness defects were fixed along the way is in [Stage 1 progress](../gates/stage-1-progress.md) and [Development challenges](../development-challenges.md).

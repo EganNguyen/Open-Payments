@@ -9,7 +9,7 @@ Status: Database tier only, stopped early by owner's choice · **Doesn't answer 
 - **Clean durable result:** 1,497 scripts/s, or about **3,000 commits/s**, with p50 49 ms, p99 195 ms, no aborts and verification passing. That's one 60-second run.
 - **Saturation:** 2,300-2,800 scripts/s, about 4,600-5,650 commits/s. This Mac can't reach the 17,499 commits/s required.
 - **The limit is the SSD's flush,** which can't be fixed here without weakening durability. `WALWrite` and `SyncRep` are 80-91% of waits, with only about 5 cores busy.
-- **Full platform on this Mac: about 650-750 payments/s, calculated, not measured,** because the platform isn't built.
+- **Full platform on this Mac: about 650-750 payments/s, calculated, not measured,** because the platform wasn't built at the time. The platform has since been built and run on the Docker stack, whose flushes aren't durable: through step 5 (248 completed payments/s) valid, and step 6 (498/s) invalid from a generator limit, with no bottleneck named ([BASELINE](../../../../benchmarks/BASELINE.md)). That isn't comparable with this durable estimate, and no durable platform run exists yet.
 - **5,000 payments/s in production is plausible with cells, and unproven.** One primary is not supported by this evidence.
 
 ## Environment

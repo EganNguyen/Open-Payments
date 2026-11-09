@@ -16,7 +16,7 @@ The probe found both halves of the stop condition:
 - `NpgsqlConnection.CloseAsync()`/`DisposeAsync()` during the commit threw `NpgsqlOperationInProgressException: The connection is already in state 'Executing'`. The commit stayed pending and the connection could not be dropped through the public API.
 - `statement_timeout` and `CommandTimeout` do not cover the synchronous commit wait.
 
-**Evidence:** [Npgsql commit cancellation probe](../benchmarks/npgsql-commit-cancel.md), from PostgreSQL 18.6 + Npgsql 10.0.3, with the server log lines and the two probe outputs. Reproduce by starting PostgreSQL with `synchronous_standby_names = 'ANY 1 (standby1, standby2)'` and no standby, then committing with and without a token as recorded. The earlier server observation is [commit-cancel.md](../benchmarks/spike/commit-cancel.md).
+**Evidence:** [Npgsql commit cancellation probe](../../benchmarks/npgsql-commit-cancel.md), from PostgreSQL 18.6 + Npgsql 10.0.3, with the server log lines and the two probe outputs. Reproduce by starting PostgreSQL with `synchronous_standby_names = 'ANY 1 (standby1, standby2)'` and no standby, then committing with and without a token as recorded. The earlier server observation is [commit-cancel.md](../../benchmarks/spike/commit-cancel.md).
 
 **Options seen:**
 
@@ -316,7 +316,7 @@ For latency: profile the step 0 path at 1 req/s, splitting time into API, PgBoun
 
 ## E9: TxRunner overrides the D1 lock_timeout
 
-**State:** Answered 2026-11-09 by [D54](../decisions.md#d54), option 1 · Raised 2026-11-09
+**State:** Answered 2026-11-09 by [D54](../decisions.md#d54), option 1, built in `0056f0d` · Raised 2026-11-09
 
 **Task:** 13, the transaction runner. Found by the deadlock lab in `benchmarks/deadlock-lab`.
 

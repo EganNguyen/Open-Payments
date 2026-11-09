@@ -1,8 +1,8 @@
 # Local Deployment
 
-How Open Payments' database tier runs on the owner's MacBook, and why. The commands are in the [benchmark guide](../benchmarks/benchmark-guide.md), and the evidence is in the [MacBook summary](../benchmarks/spike/macbook-2026-11-05/summary.md). Production is in [Production deployment](prd-deployment.md).
+How Open Payments runs on the owner's MacBook, and why. The commands are in the [benchmark guide](../benchmarks/benchmark-guide.md), and the evidence is in the [MacBook summary](../benchmarks/spike/macbook-2026-11-05/summary.md). Production is in [Production deployment](prd-deployment.md).
 
-Status: Database tier deployed and measured · Application tier not built · Last updated: 2026-11-05
+Status: Database tier measured on both stacks · Platform runs on the Docker stack only · Last updated: 2026-11-09
 
 ## Hardware
 
@@ -23,7 +23,9 @@ Status: Database tier deployed and measured · Application tier not built · Las
 | Scripts/s at saturation | 2,300-2,800 (schema C, pool 200) | 4,880 (schema A, pool 100) |
 | Same as production's OS | No, macOS | Closer, Linux in a VM |
 
-**Native is the deployment for results.** Docker is faster only because its flush doesn't reach stable storage, so its numbers can't count as durable. They're useful only as a view of how the software behaves when flushes are fast.
+**Native is the deployment for durable database results.** Docker is faster only because its flush doesn't reach stable storage, so its numbers can't count as durable. They're useful only as a view of how the software behaves when flushes are fast.
+
+**The platform (API, mock PSP, console) runs only on the Docker stack** (`deploy/compose/compose.yaml` and `console.yaml`). So every platform ramp step in [BASELINE](../../benchmarks/BASELINE.md) is a fast-flush preview, and its latency is lower than a durable stack would give. Running the API against the native stack is not set up yet.
 
 ## Topology
 
@@ -38,7 +40,7 @@ flowchart LR
 
 All ports bind to `127.0.0.1`. Passwords are local-only development values. Data lives in `~/.local/share/open-payments-native`.
 
-The API, fraud, PSP adapters, broker and workers aren't built. Their place on this machine is estimated in the [summary](../benchmarks/spike/macbook-2026-11-05/summary.md#realistic-end-to-end-performance-expectations).
+The topology above is the database tier. The Docker stack adds the API on `:8080`, the mock PSP on `:18080`, and, through `console.yaml`, the console and a pinned Keycloak.
 
 ## Resource allocation
 
@@ -61,16 +63,7 @@ macOS can't reserve cores for a process, so CPU isn't pinned. Each value below h
 
 ## Expected end-to-end throughput
 
-**About 650-750 payments/s, with p99 platform overhead around 250-300 ms. This is calculated, not measured,** because the API, fraud service, PSP adapters, broker and workers aren't built.
-
-| Step | Value | Type |
-|---|---|---|
-| Clean durable commits/s | About 3,000 | Measured, one 60 s run |
-| Divide by 3.5 commits per payment | About 857 payments/s | Design formula |
-| Subtract 10-25% for writes the spike doesn't include | 640-770 payments/s | Assumed |
-| Check CPU at 5-8.5 ms per payment | About 4-6.5 of 18 cores | Mostly assumed |
-
-The SSD's flush sets this limit, not CPU, so changing CPU or memory settings won't move it much. A measured full-platform run replaces this estimate after Tasks 7-17. The [summary](../benchmarks/spike/macbook-2026-11-05/summary.md#realistic-end-to-end-performance-expectations) has the full calculation.
+The durable estimate, about 650-750 payments/s with the SSD's flush as the limit, is calculated in the [summary](../benchmarks/spike/macbook-2026-11-05/summary.md#realistic-end-to-end-performance-expectations) and isn't repeated here. The measured platform previews are in [BASELINE](../../benchmarks/BASELINE.md); they ran on the Docker stack, so they don't test that estimate.
 
 ## What stays fixed
 

@@ -49,7 +49,7 @@ Claude changed or added these after the spec was approved, because of what the c
 
 - The API contract stays a draft until C39, so the console's API client may need changes after that.
 - Late-approved sale reversals can leave settlement lines with no match ([D44](../decisions.md#d44)). This is settled when settlement reconciliation is designed.
-- OIDC providers report MFA and passkeys differently, so `RequiredAmr` needs checking against each real provider.
+- OIDC providers report MFA and passkeys differently. Local Keycloak 26.0 couldn't put `otp` in `amr`, so the console also accepts `acr` ([D55](../decisions.md#d55), built in `a4d0dc4`). Each real provider still needs checking for which claim it sends.
 - The index measurement is a laptop preview, because [E4](stage-1-escalations.md#e4-task-17-has-no-linux-host-for-steps-4-5-escalation-e4) says no Linux host exists yet. It can show a large cost, but not prove there is none on benchmark hardware. The owner decided on 2026-11-06 not to repeat the comparison on Linux. The first Linux run confirms with `EXPLAIN` that the queries use these indexes and watches `refunds_payment`'s cost in the normal results. If that cost looks significant, bring it to the owner.
 
 ## Sign-off

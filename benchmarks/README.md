@@ -7,10 +7,9 @@ Drives one [ramp step](../docs/scaling-playbook.md#ramp-plan) with the [example 
 ## Quick start
 
 ```bash
-# One mock and one database with 0001_initial.sql applied
-EFFECTS_DIR=/tmp/op-effects dotnet tools/OpenPayments.MockPsp/bin/Debug/net10.0/OpenPayments.MockPsp.dll &
-
-# The API arriving in Task 14 listens on :8080; the mock is on :18080.
+# The compose stack runs the database, PgBouncer, the API on :8080 and the mock on :18080
+docker compose -f deploy/compose/compose.yaml up -d --wait
+scripts/migrate.sh
 benchmarks/run.sh 0 --env local --stage phase1 --psp-latency 200
 ```
 
@@ -50,8 +49,9 @@ With `TWO_CALL_SHARE=0.2` (the default), half of all requests create a payment. 
 - Refund targets come from `REFUND_TARGETS`, a JSON array seeded from `seed-refundable.sql`, so generators need no shared state. If no seed exists, the per-VU ring is the fallback.
 - Merchants are picked 80/20, using the local `k6/lib/keys.js` helper. No import from a URL runs at load time.
 - `TWO_CALL_SHARE` defaults to 0.2. It is recorded in `config.json`. A capture consumes an authorized payment from the per-VU queue; an empty queue sends an authorize instead and increments `k6_capture_substitutions_total`.
-- Before the load, `setup()` creates up to 200 authorized payments to seed those queues. They are real completed authorizations and are included in the completed count.
-- `shares.json` records the achieved request counts and shares. A share more than 2 percentage points from its D47 target makes the run invalid.
+- Before the load, `setup()` creates up to 200 authorized payments to seed those queues. They are real completed authorizations and are included in the completed count, but not in latency: `mix.js` exports `http_req_duration{scenario:mix}` and the report judges latency on it (`3faaaf6`).
+- `shares.json` records the achieved request counts and shares. A share is valid within `max(2 points, 3 × sqrt(p(1 − p) / n))` of its D47 target, where `n` is the run's mix requests (`share_limit` in `report.py`, from [E8](../docs/gates/stage-1-escalations.md#e8-step-0-cant-pass-at-the-d47-share-rule-and-fails-its-latency-gates-at-1-reqs)). Outside that, the run is invalid.
+- k6 pre-allocates all `maxVUs` before the load (`7dd42a7`), because starting VUs mid-run dropped arrivals at step 6.
 - 429 and 503 are counted as `k6_requests_rejected_total`, separately from `op_unexpected_error`. Declines (402) and conflicts (409) are expected outcomes, not errors.
 
 ## Mock and database
@@ -141,5 +141,5 @@ The tests are the validity rules themselves: dropped arrivals, generator CPU, mo
 ## Limitations
 
 - A laptop run is a **preview**. Only a Linux run from Phase 3 onward, with all applicable checks and a clean tree, is a recorded result.
-- The harness reads `http_req_duration` and subtracts the configured PSP latency to show platform overhead. The authoritative platform-overhead histogram is `op_platform_overhead_seconds` in Prometheus; the dashboard is in `deploy/compose/grafana/dashboards/overview.json`.
+- The harness reads `http_req_duration{scenario:mix}` and subtracts the configured PSP latency to show platform overhead. The authoritative platform-overhead histogram is `op_platform_overhead_seconds` in Prometheus; the dashboard is in `deploy/compose/grafana/dashboards/overview.json`.
 - Consumer lag is not measured before Phase 3, and `op-checks` reports CK6 as not applicable without `--prom`.

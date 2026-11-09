@@ -2,9 +2,9 @@
 
 How to build Open Payments and benchmark it, from an empty repository to a recorded result.
 
-Status: Draft · Last updated: 2026-11-05
+Status: Draft · Last updated: 2026-11-09
 
-**Nothing here is built yet.** Paths and commands below describe what the [plan](superpowers/plans/2026-11-05-open-payments-implementation-and-benchmark.md) will create, and no command works until its task is done. All numbers are targets or estimates until measured.
+Stage 1 (Tasks 1-18) is built; its evidence is in [Stage 1 progress](gates/stage-1-progress.md). Later stages are described as the [plan](superpowers/plans/2026-11-05-open-payments-implementation-and-benchmark.md) intends, and their commands don't work until their tasks are done. All numbers are targets or estimates until measured.
 
 ## How the documents fit together
 
@@ -26,19 +26,19 @@ Work can't pass these points without an answer. The recommendations are in the [
 
 | Decision | Blocks |
 |---|---|
-| Where recorded benchmarks run | The Linux runs in Tasks 6 and 17 |
+| Where recorded benchmarks run | `C`, `N` and the mock's 25,000 req/s check, moved to the first Linux run before Stage 4 ([D53](decisions.md#d53)) |
 | Which PSP sandbox to use | Stage 2 |
 
 ### Tools
 
-| Tool | Needed from | State on the current machine |
+| Tool | Needed from | Notes |
 |---|---|---|
-| Docker | Task 3 | Installed, not running. Start Docker Desktop yourself |
+| Docker | Task 3 | Start Docker Desktop before any stack or Testcontainers test |
 | `psql`, `pgbench` | Task 3 | Installed through `libpq` |
-| Python 3 with pytest | Task 5 | Python present, pytest missing |
-| .NET 10 SDK | Task 7 | Missing |
-| k6 | Task 8 | Installed |
-| `kubectl` and a cluster | Stage 4 | `kubectl` installed, no cluster chosen |
+| Python 3 with pytest | Task 5 | The harness tests run from `.venv` |
+| .NET 10 SDK | Task 7 | Pinned to 10.0.403 by `global.json` |
+| k6 | Task 8 | |
+| `kubectl` and a cluster | Stage 4 | No cluster chosen yet |
 
 Pin the SDK with `global.json` in Task 7. .NET 10 is the [chosen version](decisions.md#d11), so install that channel, not simply the newest SDK:
 
@@ -84,7 +84,7 @@ See [Codebase structure](architecture/codebase-structure.md) for the projects, d
 
 - **Read first:** [Stripe research](stripe-research.md), lessons 1, 2 and 3.
 - **Do:** record D21-D24 once accepted, then correct the docs and draft the API.
-- **Done when:** the docs agree with each other, the verification doc still has 133 unticked rows, and the contract passes lint.
+- **Done when:** the docs agree with each other, every verification row is still unticked, and the contract passes lint.
 - **Watch for:** freezing the API. It stays a draft until the 3D Secure flow passes ([D17](decisions.md#d17)), because that flow can reshape it.
 
 ### B: Run the database spike (Tasks 3-6)
