@@ -2,24 +2,56 @@
 
 The independent review of Stage 1, as [Delivery workflow](../delivery-workflow.md#review-gate) defines it. The reviewer didn't design or build this stage, and fixed nothing.
 
-Status: **Open: 2 high findings** · Reviewed: `6cc5f8c`..`b4d99a8` (`origin/main`) · Reviewer: Opus, fresh session · Date: 2026-11-09
+Status: **Open: 1 high finding (H1, narrowed)** · First review: `6cc5f8c`..`b4d99a8` · Re-check: `0d8ead1`..`c20d53f` · Reviewer: Opus, fresh session · Date: 2026-11-09
 
 ## Verdict
 
-**Stage 1 can't close.** Two high findings are open, H1 and H2. Both are the same kind of failure: after the PSP may have moved money, the API answers 500 and leaves the operation `PENDING` with its key unresolved, where [D27](../decisions.md#d27) and [D28](../decisions.md#d28) promise a 202 and an attempt that stays findable. No critical finding: the reviewer found no wrong money, no double charge, no lost ledger row and no data shared between merchants.
+**Stage 1 still can't close.** On re-check, 14 of the 15 findings are fixed, and L4's pager routing needs the owner's acceptance. One high finding stays open: **H1 is only partly fixed**. A lock timeout or unknown commit in transaction B now answers 202. But any other failure there, such as a dropped connection, still answers 500 after the PSP has captured or refunded. [D28](../decisions.md#d28) names a dropped connection as unknown in so many words. The new reviewer test R8 shows it, for capture and for refund. The re-check also records two new low findings, N1 and N2. As in the first review, nothing reviewed shows wrong money, a double charge, a lost ledger row or data shared between merchants.
 
-| Severity | Count | Open |
-|---|---:|---:|
-| Critical | 0 | 0 |
-| High | 2 | 2 |
-| Medium | 7 | 7 |
-| Low | 6 | 6 |
+| Severity | First review | Fixed | Open | Accepted or pending owner |
+|---|---:|---:|---:|---:|
+| Critical | 0 | 0 | 0 | 0 |
+| High | 2 | 1 (H2) | 1 (H1, narrowed) | 0 |
+| Medium | 7 | 7 | 0 | 0 |
+| Low | 6 + 2 new | 5 | 2 new (N1, N2) | 1 (L4 routing) |
 
 Findings go back through the gates: the builder fixes each with a failing test first, a design session handles any design question, and the reviewer then re-checks only those findings.
 
+## Re-check of the fixes (2026-11-09, evening)
+
+**Build and tests, from a clean worktree of `c20d53f`:** `dotnet build OpenPayments.slnx -warnaserror` gave 0 warnings and 0 errors. `dotnet test OpenPayments.slnx` passed 385 tests: Domain 70, analyzers 1, mock PSP 20, checks 24, console 124, integration 40, console browser 34, acceptance 72. That matches the progress log. `tests/OpenPayments.Acceptance.Tests/Review/ReviewerStage1Tests.cs` is byte-identical to the reviewer's file. R1-R7 all pass.
+
+| Finding | Status | What the reviewer checked |
+|---|---|---|
+| H1 | **Open, narrowed** | `AfterPspAsync` (`PaymentFlow.cs`) now wraps transaction B on capture, void and refund. It catches only `BusyException` and `CommitOutcomeUnknownException`, so R1 now answers 202. Anything else thrown in B still escapes as a 500: an `NpgsqlException` from a dropped connection, a `57014` statement timeout, or a failure in the `ResolveKeyAsync` that follows the commit. **R8** (new, below) throws `NpgsqlException` in transaction B: capture and refund both answer 500 after the PSP call. Authorize and sale catch every exception there (`ExecuteAttemptAsync`). The damage is now smaller than in the first review. The key stays unresolved, and after `InFlightWindow` a same-key retry renders the state rather than 409 forever. The one-live indexes and `refund_live` stop a second capture or refund under a new key. D28's "dropped connection is unknown" still doesn't hold on these routes |
+| H2 | Fixed | `MockPspAdapter.SendAsync` maps `HttpRequestException` and `JsonException` to `PspUnavailableException`, which every route treats as unknown. `AdapterTransportTests` covers a reset, a malformed body and a truncated body |
+| M1 | Fixed | The two-call capture runs under `"\u0001capture:" + key`. Kestrel refuses control characters in header values, so no client can send that key. The create key stores the capture's final answer (200 or 402) and stays unresolved on 202 or 503. Replaying an unresolved create whose payment is `AUTHORIZED` runs the capture again under its own key, which replays rather than calling the PSP twice. R4 passes. See N2 for one edge |
+| M2 | Fixed | `CreateAttemptAsync` catches `BusyException`, answering 503 with `Retry-After: 1`. R2 passes |
+| M3 | Fixed | `FromAppliedAsync` and `FromRefundAppliedAsync` store no answer for a 202, so `resolved_at` stays null. R3 and `M3_refund_timeout_…` pass |
+| M4 | Fixed | `ReadKeyOnConnectionAsync` returns `Unresolved` when the operation recorded `UNKNOWN` (payment, attempt, or the key's refund) or the key is at least 10 s old. Otherwise it returns `InFlight`, answering 409 (E2). Every route renders `Unresolved` as 202 with the current payment or refund. Answers are written with `CancellationToken.None`. Capture, void and refund read the key on a refusal path, so replays of finished operations return their stored answer. Covered by `ReviewFixTests` and `PaymentStoreTests`. Crash and disconnect cases now recover through the window rule; they were read from the code, not executed |
+| M5 | Fixed | On a resubmit, the amount comes from the recorded intent (`FindIntentAsync`), never from the form, so the server enforces it. `readonly` on the field is only a convenience. `Resubmit_after_busy_sends_the_recorded_amount_not_an_edited_one` passes |
+| M6 | Fixed | The three API fixtures set `deadlock_timeout = 100ms` by `alter system` plus reload. `Real_deadlock_under_D1_settings_is_detected_and_retried` forces a real deadlock through `TxRunner` and passes |
+| M7 | Fixed | The Task 17 line and BASELINE now say step 6's run is invalid on its count and that no valid step 6 run exists. The stale "rerun three times" is gone, and steps 2 and 4 are named as not run. The records now claim what the evidence supports |
+| L1 | Fixed | `c66da95` has a line, and the counts match this re-check |
+| L2 | Fixed (record) | The lab README has a D54 rerun with D1's full pair. The reviewer didn't rerun it, because the brief forbids running benchmarks. The result is plausible: deadlocks are still retried one for one, and most of a hot pair's waiters now fail fast with `55P03` |
+| L3 | Fixed | The continuation logs a late success as a warning and a late failure as an error |
+| L4 | Fixed, routing pending owner | `deploy/compose/prometheus/alerts.yml` has `CommitWarning` (any increase in a minute) and `AbandonedCommitsStuck` (for 1 minute). It is mounted and loaded through `rule_files`. Routing to a pager is left to Stage 5, which the owner should accept in writing |
+| L5 | Fixed | Capture, void, refund and cancel enter `InFlightLimiter`. The two-call capture reuses its create's permit |
+| L6 | Unchanged | The build deviations were judged acceptable. The fixes were again built by Opus under the owner's exception |
+
+### New findings from the re-check
+
+**N1. Low: a transaction A failure that isn't a lock or commit error still answers 500.** For example, an `NpgsqlException` from a dropped connection, in `BeginOperationAsync` or `BeginAttemptAsync`, escapes as a 500 rather than 503. It happens before any PSP call, and the transaction rolls back, so the key is free and nothing moved. It is the pre-PSP half of H1's gap, and the fix for H1 may cover both.
+
+**N2. Low: `InFlightWindow` can be shorter than a two-call auto-capture.** The 10 s window rests on D34's 5 s request budget, but no timer enforces a total budget. A two-call create makes two PSP calls of up to 2.5 s each and up to four commits that may each wait 3 s, all under one create key whose `created_at` is transaction A's start. A same-key replay after 10 s, while that request is still running, starts a second `CaptureForCreateAsync`. The one-live-capture index stops a second PSP capture, so the worst outcome is a 409 `operation_live` to one of the two callers. No Stage 1 deployment reaches this path, because the mock supports sale. Either enforce the request budget, or derive the window from the longest path.
+
+### Reviewer test added in the re-check
+
+`ReviewerRecheckTests.R8_connection_loss_in_transaction_B_after_the_psp_is_not_a_500`, with cases for capture and refund. It is a copy in the session notes folder, kept out of the repository as before, and should join `tests/OpenPayments.Acceptance.Tests/Review/` unchanged. It uses the existing `BeforeOutboxInsert` failpoint, throwing `NpgsqlException` on its second call, which is transaction B. Both cases fail at `c20d53f` with 500, and should pass once H1 is fixed.
+
 ## Findings
 
-Every finding is open. "R1" to "R7" are the reviewer's own tests (see [Reviewer tests](#reviewer-tests)).
+The findings below are as first recorded; their current status is in the [re-check](#re-check-of-the-fixes-2026-11-09-evening). "R1" to "R7" are the reviewer's own tests (see [Reviewer tests](#reviewer-tests)).
 
 ### H1. A transaction B failure after a capture, void or refund answers 500
 
