@@ -16,7 +16,8 @@ const baseUrl = __ENV.BASE_URL || (mock ? "http://127.0.0.1:18080" : "http://127
 const apiToken = __ENV.API_TOKEN || "";
 const twoCallShare = Number(__ENV.TWO_CALL_SHARE || 0.2);
 const prefillPerVu = Number(__ENV.PREFILL_PER_VU || 3);
-const preallocatedVus = Math.max(10, Math.ceil(rate * 0.3));
+const preallocatedVus = Math.max(10, Math.ceil(rate * 0.3)); // spreads the capture-queue prefill
+const maxVus = Math.max(100, Math.ceil(rate * 0.8));
 const refundTargetsPath = __ENV.REFUND_TARGETS || "";
 
 // D47: 50% of requests create a payment. Of those, twoCallShare are two-call
@@ -58,8 +59,10 @@ export const options = {
       executor: "ramping-arrival-rate",
       startRate: 1,
       timeUnit: "1s",
-      preAllocatedVUs: preallocatedVus,
-      maxVUs: Math.max(100, Math.ceil(rate * 0.8)),
+      // Start every VU before the load: k6 drops arrivals while it starts VUs mid-run, which
+      // invalidated steps that never came near maxVUs.
+      preAllocatedVUs: maxVus,
+      maxVUs: maxVus,
       stages: [
         { target: rate, duration: `${rampSeconds}s` },
         { target: rate, duration: `${durationSeconds}s` },

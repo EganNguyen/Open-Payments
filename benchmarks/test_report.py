@@ -300,3 +300,10 @@ def test_mix_threshold_exports_the_scenario_latency():
     from pathlib import Path
     source = (Path(__file__).parent / "k6" / "mix.js").read_text(encoding="utf-8")
     assert '"http_req_duration{scenario:mix}"' in source
+
+
+def test_every_vu_is_started_before_the_load():
+    from pathlib import Path
+    source = (Path(__file__).parent / "k6" / "mix.js").read_text(encoding="utf-8")
+    assert "preAllocatedVUs: maxVus," in source
+    assert "maxVUs: maxVus," in source

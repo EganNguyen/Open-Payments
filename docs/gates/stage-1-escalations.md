@@ -52,7 +52,7 @@ The probe found both halves of the stop condition:
 
 ## E2: Task 16 late declined callback has no receiver
 
-**State:** Answered 2026-11-06 ([D46](../decisions.md#d46)) · Raised 2026-11-06
+**State:** Closed for the Stage 1 build gate by the owner on 2026-11-09. The work stays in Stage 2's C31b under [D46](../decisions.md#d46)
 
 **Task:** 16, refunds and the Phase 1 exit gate. C31a lists E9: a late `declined` callback on a captured payment must be ignored, logged and alerted.
 
@@ -79,7 +79,7 @@ C31b's E9 test must send a signed late `declined` callback for a captured paymen
 
 ## E3: Task 16 idempotency-key retention has no implementation
 
-**State:** Answered 2026-11-06 ([D46](../decisions.md#d46)) · Raised 2026-11-06
+**State:** Closed for the Stage 1 build gate by the owner on 2026-11-09. The work stays in Stage 2's C31b under [D46](../decisions.md#d46)
 
 **Task:** 16, refunds and the Phase 1 exit gate. E4 says a key reused after the retention period is treated as new, with at least 24 hours after resolution and never while unresolved ([D19](../decisions.md#d19)).
 
@@ -110,7 +110,7 @@ C31b's E4 test must run the real job and assert:
 
 ## E4: Task 17 has no Linux host for steps 4-5 (escalation E4)
 
-**State:** Open, no host yet; laptop previews continue under the answer below · Raised 2026-11-06
+**State:** Closed for Stage 1 by [D53](../decisions.md#d53) on 2026-11-09; `C`, `N` and the mock 25,000 req/s check move to the first Linux run · Raised 2026-11-06
 
 **Task:** 17, the first ramp. Steps 0-3 are local previews; steps 4-5 and the first `C` require a Linux host. This is escalation E4; edge case E4 is the key-retention case moved to C31b by [D46](../decisions.md#d46).
 
@@ -316,7 +316,7 @@ For latency: profile the step 0 path at 1 req/s, splitting time into API, PgBoun
 
 ## E9: TxRunner overrides the D1 lock_timeout
 
-**State:** Open · Raised 2026-11-09
+**State:** Answered 2026-11-09 by [D54](../decisions.md#d54), option 1 · Raised 2026-11-09
 
 **Task:** 13, the transaction runner. Found by the deadlock lab in `benchmarks/deadlock-lab`.
 
@@ -338,3 +338,25 @@ For latency: profile the step 0 path at 1 req/s, splitting time into API, PgBoun
 3. Set it explicitly to 200 ms in `TxRunner`, so the runner doesn't depend on role configuration. That needs a check that the role and runner agree.
 
 **Recommendation:** option 1 or 3, after checking whether any C43 test needs the longer wait. This isn't changed until a design session answers.
+
+## E10: local Keycloak sign-in carries no MFA claim, so the console refuses it
+
+**State:** Answered 2026-11-09 by [D55](../decisions.md#d55), option 1 · Raised 2026-11-09
+
+**Task:** 18, console task C13: the compose stack with a local Keycloak.
+
+**What happened:** The test user signed in through Keycloak 26.0.7 with a password and a TOTP code it had just set up. Keycloak sent the browser back to the console, and the console showed "No access". Every policy requires `amr` to contain the configured `RequiredAmr` (`otp` in `console.yaml`), and the session had no MFA claim. The console failed closed, as designed.
+
+**Evidence:**
+
+- `kcadm get authentication/flows/browser/executions` shows the realm's `OTP Form` and `Username Password Form` executions as `configurable: false`. The client's `oidc-amr-mapper` builds `amr` from each authenticator's reference configuration, so it has no value to emit.
+- The staff row and the Keycloak user share subject `9b2d6c4e-…4c01` through the realm import, which rules out an unknown subject.
+- The gate record already lists this risk: "OIDC providers report MFA and passkeys differently, so `RequiredAmr` needs checking against each real provider".
+
+**Options seen:**
+
+1. Give the local realm a custom browser flow that uses Keycloak's level-of-authentication conditions. Map the OTP step to an `acr` value, and let the console accept either `RequiredAmr` or a `RequiredAcr`. This changes what the console checks, so it needs a design answer.
+2. Try a Keycloak release whose OTP authenticator accepts an AMR reference, and keep the console's `amr` check unchanged. This needs a newer pinned image and a check of that release.
+3. Lower `RequiredAmr` for local use. Rejected: it removes MFA, the rule the console exists to enforce.
+
+**Not affected:** the console's own tests cover MFA, roles, re-authentication and money actions with a test sign-in, and they pass. The real-API refund passes CK1 and CK3. Only the local provider's claim is missing.

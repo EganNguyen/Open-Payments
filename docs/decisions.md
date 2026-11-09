@@ -444,6 +444,30 @@ All values are starting points until measured. Other docs state the resulting ru
 - **Why:** The proposal's CK11 compared status codes with row counts, which would flag legal `FAILED` rows and miss illegal states. Duplicating CK2's rules would give two checks that can disagree about one fact.
 - **Consequence:** Fault scenarios require CK2 and CK11 together. Before Stage 2, CK11 lists unknown outcomes and resolution is `NOT_APPLICABLE`; it never claims they were reconciled. A lifecycle case with no classified payment is `INCONCLUSIVE` for its scenario.
 
+### D53
+
+**Stage 1's Task 17 closes on laptop evidence.** Status: `Committed`, owner decision 2026-11-09. Answers [E4](gates/stage-1-escalations.md#e4-task-17-has-no-linux-host-for-steps-4-5-escalation-e4) for Stage 1.
+
+- **Decision:** Task 17 is complete when the laptop limit search has valid runs through step 6 and every bottleneck it names cites its numbers. `C`, `N` and the mock PSP's 25,000 req/s check move to the first Linux run, before Stage 4's load tests.
+- **Why:** No Linux host exists, and waiting for one blocks every later stage. A laptop run can't give `C`, so none is claimed.
+- **Consequence:** Stage 1 reports no capacity number. The first Linux run is a required step in Stage 4's plan, and E4 stays open there.
+
+### D54
+
+**`TxRunner` uses the role's `lock_timeout`.** Status: `Committed`, owner decision 2026-11-09. Answers [E9](gates/stage-1-escalations.md#e9-txrunner-overrides-the-d1-lock_timeout).
+
+- **Decision:** remove `set_config('lock_timeout', '2s', true)` from `TxRunner`, so [D1](#d1)'s 200 ms role setting applies. A test reads `lock_timeout` inside a runner transaction.
+- **Why:** The override made lock waits run 10 times longer than D1 allows, and the settings check couldn't see it.
+- **Consequence:** under a hot row, `55P03` returns 503 after 200 ms rather than 2 s.
+
+### D55
+
+**The console accepts MFA shown by `acr` as well as `amr`.** Status: `Committed`, owner decision 2026-11-09. Answers [E10](gates/stage-1-escalations.md#e10-local-keycloak-sign-in-carries-no-mfa-claim-so-the-console-refuses-it).
+
+- **Decision:** a session passes the MFA rule if `amr` contains `RequiredAmr`, or if `RequiredAcr` is configured and `acr` equals it. The local Keycloak realm uses a level-of-authentication browser flow: password is level 1, TOTP is level 2, and the client maps `mfa` to level 2 and requests it by default.
+- **Why:** Providers report MFA differently. Keycloak 26.0 can't put `otp` in `amr`, but it reliably reports a step-up level in `acr`.
+- **Consequence:** each deployment configures the claim its provider sends. An empty `RequiredAcr` keeps the `amr`-only rule.
+
 ## Assumptions and limits
 
 - **Numbers are targets, not measurements.** SLOs, thresholds, pool sizes and the 60% CPU target are replaced by measured values from L1 and O3.
