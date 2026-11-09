@@ -2,20 +2,53 @@
 
 The independent review of Stage 1, as [Delivery workflow](../delivery-workflow.md#review-gate) defines it. The reviewer didn't design or build this stage, and fixed nothing.
 
-Status: **Open: 1 high finding (H1, narrowed)** · First review: `6cc5f8c`..`b4d99a8` · Re-check: `0d8ead1`..`c20d53f` · Reviewer: Opus, fresh session · Date: 2026-11-09
+Status: **Open: 1 high finding (H3)** · First review: `6cc5f8c`..`b4d99a8` · Re-checks: `0d8ead1`..`c20d53f`, then `ee17892`..`b40950e` · Reviewer: Opus, fresh session · Date: 2026-11-09
 
 ## Verdict
 
-**Stage 1 still can't close.** On re-check, 14 of the 15 findings are fixed, and L4's pager routing needs the owner's acceptance. One high finding stays open: **H1 is only partly fixed**. A lock timeout or unknown commit in transaction B now answers 202. But any other failure there, such as a dropped connection, still answers 500 after the PSP has captured or refunded. [D28](../decisions.md#d28) names a dropped connection as unknown in so many words. The new reviewer test R8 shows it, for capture and for refund. The re-check also records two new low findings, N1 and N2. As in the first review, nothing reviewed shows wrong money, a double charge, a lost ledger row or data shared between merchants.
+**Stage 1 still can't close.** On the second re-check, H1, N1 and N2 are fixed. Every finding from the first review and the first re-check is now fixed, apart from L4's pager routing and L6's recorded build deviations, which wait for the owner. One new high finding is open, **H3**, which the first review missed. The authorize and sale path answers a retryable 503 when the transaction that records a PSP timeout fails. That happens after the PSP call, so the card may already have been charged. It is H1's failure on the create and new-attempt routes, and R9 shows it. One new low finding, N3, is recorded too. Nothing reviewed shows wrong money, a double charge, a lost ledger row or data shared between merchants.
 
-| Severity | First review | Fixed | Open | Accepted or pending owner |
+| Severity | Found | Fixed | Open | Pending owner |
 |---|---:|---:|---:|---:|
 | Critical | 0 | 0 | 0 | 0 |
-| High | 2 | 1 (H2) | 1 (H1, narrowed) | 0 |
+| High | 3 (H1, H2, H3) | 2 | 1 (H3) | 0 |
 | Medium | 7 | 7 | 0 | 0 |
-| Low | 6 + 2 new | 5 | 2 new (N1, N2) | 1 (L4 routing) |
+| Low | 6 + N1, N2, N3 | 6 | 1 (N3) | 2 (L4 routing, L6 deviations) |
 
 Findings go back through the gates: the builder fixes each with a failing test first, a design session handles any design question, and the reviewer then re-checks only those findings.
+
+## Second re-check (2026-11-09, night)
+
+**Build and tests, from a clean worktree of `b40950e`:** `dotnet build OpenPayments.slnx -warnaserror` gave 0 warnings. `dotnet test OpenPayments.slnx` passed 389 tests: Domain 70, analyzers 1, mock PSP 20, checks 24, console 124, integration 40, console browser 34, acceptance 76. `ReviewerRecheckTests.cs` (R8) is byte-identical to the reviewer's file. R1-R8 pass.
+
+| Finding | Status | What the reviewer checked |
+|---|---|---|
+| H1 | Fixed | `AfterPspAsync` now catches every exception. The reason goes into the canonical log, and the answer is 202 with the stored state and the key left unresolved. R8 passes for capture and for refund. Capture, void and refund route every post-PSP write through it, the timeout branches included |
+| N1 | Fixed | `BeginOperationAsync`, `CreatePaymentAsync` and `CreateAttemptAsync` map `NpgsqlException` to 503 `database_unavailable` with `Retry-After`. `N1_connection_loss_in_transaction_A_…` passes for capture and refund, and the retry with the same key succeeds. On create and new attempt, though, the same catch also receives post-PSP failures: see H3 |
+| N2 | Fixed | `InFlightWindow` is 30 s, derived from the two-call path of about 17 s, with the derivation in its comment. A request budget is still not enforced, which the comment states |
+
+### H3. A failure recording a PSP timeout on authorize or sale answers a retryable 503
+
+**Severity:** High. [D28](../decisions.md#d28): after transaction B is unknown, the client gets 202 and the attempt stays findable; a 503 is only for transaction A, before any PSP call. The first review missed this. It was a 500 then, and it became a 503 with N1's fix.
+
+**Evidence:** `ExecuteAttemptAsync` (`src/OpenPayments.Api/PaymentFlow.cs:803-815`, at `b40950e`) wraps the post-PSP write for an answered call (`:832-849`, catching everything and answering 202), but not the one in the timeout branch. When the PSP times out or the transport fails (`PspUnavailableException`, which H2 now produces for resets), `store.ApplyAsync(Timeout)` runs unprotected. A `CommitOutcomeUnknownException`, `BusyException` or `NpgsqlException` there reaches the catches in `CreatePaymentAsync` (`:120-147`) or `CreateAttemptAsync`. Those answer 503 with `Retry-After`. The create path even logs the event as `transaction_a_unknown`.
+
+**Reproduction:** R9. The test PSP times out, and the timeout's transaction B fails at the `BeforeOutboxInsert` failpoint, which create's own transaction A doesn't reach. The PSP was called once in both cases:
+
+```
+unknown_commit:  503 {"code":"simulated B", "title":"The outcome is not known yet."}
+connection_loss: 503 {"code":"database_unavailable"}
+```
+
+**Why it matters:** This is the money path. A timed-out authorization or sale may have charged the card, and the client is told 503, which the API contract and D1 define as "nothing happened, retry". A same-key retry is safe: the key is unresolved and the attempt `PENDING`, so the retry gets 409 and then 202 after the window. But a client that retries with a new key creates a second payment ([E5](../failure-scenarios.md#edge-cases)), and the customer can be charged twice. It needs a PSP timeout and a failing transaction B together. A standby stall during a PSP slowdown is enough, because the commit wait limit then fires.
+
+### N3. Low: the 202 fallback reads the database
+
+`AfterPspAsync` and the catch in `ExecuteAttemptAsync` build the 202 body by reading the payment again (`store.GetPaymentAsync`, and `GetRefundAsync` in `PendingAsync`). If the database is still unreachable, for example during a failover, that read throws and the answer becomes a 500. The key stays unresolved, so a later replay recovers. A fallback body with the IDs the flow already holds would keep the answer at 202.
+
+### Reviewer test added in the second re-check
+
+`ReviewerRecheck2Tests.R9_transaction_B_failure_after_a_psp_timeout_on_create_answers_202`, with cases for an unknown commit and a connection loss. Like R1-R8, it is a copy in the session notes folder, kept out of the repository. It should join `tests/OpenPayments.Acceptance.Tests/Review/` unchanged. Both cases fail at `b40950e` with 503, and should pass once H3 is fixed.
 
 ## Re-check of the fixes (2026-11-09, evening)
 
@@ -51,7 +84,7 @@ Findings go back through the gates: the builder fixes each with a failing test f
 
 ## Findings
 
-The findings below are as first recorded; their current status is in the [re-check](#re-check-of-the-fixes-2026-11-09-evening). "R1" to "R7" are the reviewer's own tests (see [Reviewer tests](#reviewer-tests)).
+The findings below are as first recorded; their current status is in the [second re-check](#second-re-check-2026-11-09-night) and the [first re-check](#re-check-of-the-fixes-2026-11-09-evening). "R1" to "R7" are the reviewer's own tests (see [Reviewer tests](#reviewer-tests)).
 
 ### H1. A transaction B failure after a capture, void or refund answers 500
 
