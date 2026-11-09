@@ -1,0 +1,20 @@
+# E1's commit signals. A commit warning means a payment's outcome is unknown, so it pages at
+# once (E1 item 6). An abandoned commit is one still running past the commit wait limit; one that
+# lasts a minute means a standby or the network is stuck. Routing to a pager is Stage 5's job;
+# here the alerts fire in Prometheus.
+groups:
+  - name: open-payments-commits
+    rules:
+      - alert: CommitWarning
+        expr: increase(op_commit_warnings_total[1m]) > 0
+        labels:
+          severity: page
+        annotations:
+          summary: A commit returned a replication warning; its outcome is unknown (E1, D28).
+      - alert: AbandonedCommitsStuck
+        expr: op_abandoned_commits > 0
+        for: 1m
+        labels:
+          severity: page
+        annotations:
+          summary: Commits have run past the commit wait limit for a minute (E1).
