@@ -12,6 +12,8 @@ public sealed record AuditIntent(
     string Reason,
     string IdempotencyKey);
 
+public sealed record RecordedIntent(long? AmountMinor);
+
 public sealed record AuditIntentRow(Guid StaffId, string Action, Guid? PaymentId, string IdempotencyKey, DateTimeOffset CreatedAt);
 
 public interface IAuditWriter
@@ -24,9 +26,9 @@ public interface IAuditWriter
 
     Task<IReadOnlyList<AuditIntentRow>> FindOrphanIntentsAsync(TimeSpan olderThan, CancellationToken ct);
 
-    /// <summary>Whether an action with this key has already started, so a resubmit goes
-    /// straight to the API for its stored answer.</summary>
-    Task<bool> IntentExistsAsync(string idempotencyKey, CancellationToken ct);
+    /// <summary>The intent already recorded for this key, if the action has started. A resubmit
+    /// goes straight to the API with the intent's amount, so the audit says what was sent.</summary>
+    Task<RecordedIntent?> FindIntentAsync(string idempotencyKey, CancellationToken ct);
 }
 
 /// <summary>
@@ -84,12 +86,15 @@ public sealed class AuditWriter(NpgsqlDataSource primary) : IAuditWriter
         await command.ExecuteNonQueryAsync(ct);
     }
 
-    public async Task<bool> IntentExistsAsync(string idempotencyKey, CancellationToken ct)
+    public async Task<RecordedIntent?> FindIntentAsync(string idempotencyKey, CancellationToken ct)
     {
         await using var command = primary.CreateCommand(
-            "select exists (select 1 from console.audit_log where idempotency_key = @key and phase = 'intent')");
+            "select amount_minor from console.audit_log where idempotency_key = @key and phase = 'intent' order by id limit 1");
         command.Parameters.AddWithValue("key", idempotencyKey);
-        return (bool)(await command.ExecuteScalarAsync(ct))!;
+        await using var reader = await command.ExecuteReaderAsync(ct);
+        return await reader.ReadAsync(ct)
+            ? new RecordedIntent(reader.IsDBNull(0) ? null : reader.GetInt64(0))
+            : null;
     }
 
     public async Task<IReadOnlyList<AuditIntentRow>> FindOrphanIntentsAsync(TimeSpan olderThan, CancellationToken ct)

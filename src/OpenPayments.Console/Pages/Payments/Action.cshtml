@@ -27,7 +27,7 @@
         @if (Model.ActionName == "refund")
         {
             <label for="amount">Amount in @p.Currency
-                <input id="amount" name="Amount" value="@Model.Amount" inputmode="decimal" autocomplete="off" required aria-describedby="amount-help @(Model.AmountError is null ? null : "amount-error")">
+                <input id="amount" name="Amount" value="@Model.Amount" inputmode="decimal" autocomplete="off" required readonly="@Model.AmountLocked" aria-describedby="amount-help @(Model.AmountError is null ? null : "amount-error")">
             </label>
             <p id="amount-help" class="muted">Refundable now: @MoneyFormat.DisplayWithCode(p.RefundableMinor, p.Currency).</p>
             @if (Model.AmountError is not null)

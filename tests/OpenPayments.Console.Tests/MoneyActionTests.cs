@@ -160,6 +160,24 @@ public sealed partial class MoneyActionTests(ConsoleDb db)
     }
 
     [Fact]
+    public async Task Resubmit_after_busy_sends_the_recorded_amount_not_an_edited_one()
+    {
+        // Review M5: the audit must say what was sent. After a busy answer, an edited amount on the
+        // resubmitted form is ignored: the key's intent fixed the amount.
+        var (factory, client, id) = await ArrangeAsync("CAPTURED", amountMinor: 10000);
+        await using var _ = factory;
+        var form = await OpenFormAsync(client, id, "refund");
+        factory.Api.Then(HttpStatusCode.ServiceUnavailable, "{}", TimeSpan.FromSeconds(1));
+
+        await PostAsync(client, id, "refund", form, ("Amount", "1.00"), ("Reason", "Small refund"), ("Step", "confirm"));
+        var retry = await PostAsync(client, id, "refund", form, ("Amount", "50.00"), ("Reason", "Small refund"), ("Step", "confirm"));
+
+        Assert.Equal(HttpStatusCode.Redirect, retry.StatusCode);
+        Assert.All(factory.Api.Calls, call => Assert.Contains("\"amount_minor\":100", call.Body, StringComparison.Ordinal));
+        Assert.Equal(0, await CountAsync($"select count(*) from console.audit_log where payment_id = '{id}' and amount_minor <> 100"));
+    }
+
+    [Fact]
     public async Task State_changed_before_submit_explains_with_no_api_call()
     {
         var (factory, client, id) = await ArrangeAsync("AUTHORIZED");
@@ -371,7 +389,7 @@ public sealed partial class MoneyActionTests(ConsoleDb db)
         public Task<IReadOnlyList<AuditIntentRow>> FindOrphanIntentsAsync(TimeSpan olderThan, CancellationToken ct) =>
             Task.FromResult<IReadOnlyList<AuditIntentRow>>([]);
 
-        public Task<bool> IntentExistsAsync(string idempotencyKey, CancellationToken ct) => Task.FromResult(false);
+        public Task<RecordedIntent?> FindIntentAsync(string idempotencyKey, CancellationToken ct) => Task.FromResult<RecordedIntent?>(null);
     }
 
     [GeneratedRegex("name=\"Token\" value=\"([^\"]+)\"")]

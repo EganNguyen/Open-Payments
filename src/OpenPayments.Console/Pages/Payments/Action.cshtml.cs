@@ -61,6 +61,9 @@ public sealed class ActionModel(
 
     public bool ShowForm { get; private set; } = true;
 
+    /// <summary>After the action has started, its amount is fixed by the recorded intent.</summary>
+    public bool AmountLocked { get; private set; }
+
     public async Task<IActionResult> OnGetAsync(CancellationToken ct)
     {
         if (!Known.TryGetValue(ActionName, out var action))
@@ -119,7 +122,8 @@ public sealed class ActionModel(
             return Page();
         }
 
-        var alreadyStarted = await audit.IntentExistsAsync(key, ct);
+        var recorded = await audit.FindIntentAsync(key, ct);
+        var alreadyStarted = recorded is not null;
         if (!alreadyStarted)
         {
             if (!StatePresentation.For(payment.State).Actions.Contains(action))
@@ -152,9 +156,11 @@ public sealed class ActionModel(
                 return Page();
             }
         }
-        else if (action == StaffAction.Refund && MoneyFormat.TryParse(Amount, payment.Currency, out var again))
+        else if (recorded!.AmountMinor is { } sent)
         {
-            AmountMinor = again;
+            // M5: the key's intent fixed the amount; an edited form field can't change it.
+            AmountMinor = sent;
+            Amount = MoneyFormat.Display(sent, payment.Currency);
         }
 
         if (!alreadyStarted)
@@ -202,6 +208,7 @@ public sealed class ActionModel(
                 ShowForm = false;
                 return Page();
             case ApiAnswer.Busy busy:
+                AmountLocked = true;
                 var wait = busy.RetryAfter is { } after ? $" Wait {Math.Max(1, (int)after.TotalSeconds)} s, then" : string.Empty;
                 Notice = $"The payment service is busy.{wait} Send again: it uses the same key, so it can't happen twice.";
                 Confirming = true;
