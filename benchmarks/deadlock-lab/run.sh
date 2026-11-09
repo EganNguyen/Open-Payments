@@ -4,11 +4,11 @@
 set -euo pipefail
 cd "$(dirname "$0")"
 ROUNDS=${1:-5}
-# D1: deadlock_timeout 100 ms, below the role lock_timeout, as the stack runs.
+# D1: deadlock_timeout 100 ms below a 200 ms lock_timeout, the pair the stack runs (D54).
 NAME=op-deadlock-lab
 docker rm -f "$NAME" >/dev/null 2>&1 || true
 docker run -d --name "$NAME" -e POSTGRES_PASSWORD=lab -p 127.0.0.1:35432:5432 postgres:18.6 \
-  -c max_connections=200 -c log_lock_waits=on -c deadlock_timeout=${DEADLOCK_TIMEOUT:-100ms} >/dev/null
+  -c max_connections=200 -c log_lock_waits=on -c deadlock_timeout=${DEADLOCK_TIMEOUT:-100ms} -c lock_timeout=${LOCK_TIMEOUT:-200ms} >/dev/null
 trap 'docker rm -f "$NAME" >/dev/null 2>&1 || true' EXIT
 for _ in $(seq 1 60); do
   docker exec "$NAME" pg_isready -U postgres -q && break

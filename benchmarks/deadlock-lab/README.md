@@ -43,6 +43,19 @@ It starts a throwaway PostgreSQL 18.6 container on port 35432, runs 5 rounds per
 
 **With PostgreSQL's default `deadlock_timeout` of 1 s,** the bad order looks different: 161 deadlocks and about 550 lock timeouts per round, and only 174 of 500 transfers committed. Lock waits time out before the deadlock check runs, so deadlocks hide as `55P03`, which isn't retried. That is the failure D1 sets 100 ms to prevent.
 
+## Rerun under D54 (review finding L2)
+
+After [D54](../../docs/decisions.md#d54) removed the runner's 2 s override, the lab runs D1's full pair: `lock_timeout` 200 ms and `deadlock_timeout` 100 ms. Same 5 rounds per mode:
+
+| Mode | Wall (median) | p99 | Deadlocks (log) | `40P01` retries | `55P03` per round | Committed | Invariants |
+|---|---:|---:|---:|---:|---:|---:|---|
+| unordered | 4,145 ms | 4,132 ms | 185 | 185 | about 540 | 149 of 500 | all hold |
+| ordered | 1,332 ms | 1,320 ms | 0 | 0 | 0 | 500 of 500 | all hold |
+
+- **Deadlocks are still detected and retried:** each of the 185 `deadlock detected` reports in the log has its `40P01` retry. `pg_stat_database.deadlocks` read 148 at the end, because the statistics flush late, so here the log is the complete count.
+- **Under the bad order, a hot pair of rows now fails fast:** 100 writers queueing on two rows wait longer than 200 ms, so most give up with `55P03`. That error isn't retried; the client gets 503 and resubmits. The round ends in about 4 s instead of 55 s, with 149 of 500 committed, and nothing they did half-way remains. That is D1's design: shed load rather than hold connections.
+- **The fix still removes the cause:** with ordered locks, every transfer commits, with no deadlock and no lock timeout.
+
 ## Found while building it
 
 `TxRunner` sets `lock_timeout` to 2 s inside every transaction, `set_config('lock_timeout', '2s', true)`, which overrides D1's role setting of 200 ms. `check-db-settings.sh` reads `lock_timeout` outside a transaction, so it doesn't see this. It was raised as [E9](../../docs/gates/stage-1-escalations.md#e9-txrunner-overrides-the-d1-lock_timeout) and removed under [D54](../../docs/decisions.md#d54) in `0056f0d`. The results above predate that fix: rerun the lab before comparing lock-timeout counts with them.
