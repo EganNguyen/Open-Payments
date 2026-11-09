@@ -2,7 +2,7 @@
 
 The approval record for the staff console: what the owner has approved, and what must finish before the build starts. The console is no longer a separate stage. Its tasks are built in stages 1 and 2 ([D49](../decisions.md#d49)), and this record stays their design gate.
 
-Status: **Open** · No starting commit yet · Last updated: 2026-11-06
+Status: **Signed** 2026-11-09 · Build starts from `e4bff52` · Last updated: 2026-11-09
 
 The rules are in [Delivery workflow](../delivery-workflow.md#design-gate). The work is defined by the [spec](../superpowers/specs/2026-11-05-console-design.md) and the [plan](../superpowers/plans/2026-11-06-console.md).
 
@@ -42,8 +42,8 @@ Claude changed or added these after the spec was approved, because of what the c
 | ☑ | Task C1: decisions recorded and docs corrected | Done with this record |
 | ☑ | Where the console goes in the stage order | Answered by [D49](../decisions.md#d49) |
 | ☑ | Task C2: index measurement | Stopped early by the owner 2026-11-06, with three valid runs and no cost detected. It counts as a preview. See [the result](../../benchmarks/console-indexes.md) |
-| ☐ | Task C2: clickable prototype reviewed | The owner |
-| ☐ | Owner signs this record, naming the starting commit | The owner |
+| ☑ | Task C2: clickable prototype reviewed | The owner reviewed the published prototype, [Open Payments Console](https://claude.ai/artifact/EwVgpP7vZVeV5X812UkyHr), on 2026-11-09. The repository copy in `docs/design/console-prototype/` doesn't render on its own, because its `support.js` runtime isn't in the repository |
+| ☑ | Owner signs this record, naming the starting commit | Signed below |
 
 ## Risks to watch
 
@@ -51,3 +51,11 @@ Claude changed or added these after the spec was approved, because of what the c
 - Late-approved sale reversals can leave settlement lines with no match ([D44](../decisions.md#d44)). This is settled when settlement reconciliation is designed.
 - OIDC providers report MFA and passkeys differently, so `RequiredAmr` needs checking against each real provider.
 - The index measurement is a laptop preview, because [E4](stage-1-escalations.md#e4-task-17-has-no-linux-host-for-steps-4-5-escalation-e4) says no Linux host exists yet. It can show a large cost, but not prove there is none on benchmark hardware. The owner decided on 2026-11-06 not to repeat the comparison on Linux. The first Linux run confirms with `EXPLAIN` that the queries use these indexes and watches `refunds_payment`'s cost in the normal results. If that cost looks significant, bring it to the owner.
+
+## Sign-off
+
+| Approved by | Date | Build starts from commit |
+|---|---|---|
+| EganNguyen, in chat, recorded by Claude | 2026-11-09 | `e4bff52` |
+
+Signing confirms the items under "Decided in planning, for the owner to confirm". Task 18 is built by Opus, under the owner's 2026-11-09 exception to the rule that DeepSeek builds, so the review gate must be a fresh session.
