@@ -3,38 +3,47 @@
 @using OpenPayments.Console.Data
 @using OpenPayments.Console.Presentation
 @{
-    ViewData["Title"] = "Needs attention";
     ViewData["Section"] = "attention";
     var now = Model.Now;
+    var failed = Model.Message is not null;
+    // The empty page says one thing and nothing else: no title line, freshness line or
+    // Refresh button above it (owner decision, 2026-11-09).
+    var empty = !failed && Model.Waiting.Count == 0;
+    ViewData["Title"] = empty ? "Nothing needs attention" : "Needs attention";
 }
-<h1>Needs attention</h1>
-
-<div class="checked">
-    <p class="muted">Checked <time datetime="@Model.CheckedAt.UtcDateTime.ToString("O")">@Model.CheckedAt.UtcDateTime.ToString("HH:mm:ss") UTC</time></p>
-    <a class="button" href="/">Refresh</a>
-</div>
-
-@if (Model.Result is not null)
+@if (!empty)
 {
-    <partial name="_DataAsOf" model="((TimeSpan?)Model.Result.Lag, Model.Now)" />
+    <h1>Needs attention</h1>
 }
-
-@if (Model.Message is not null)
+@if (failed)
 {
     <div class="banner danger" role="status">
         <svg class="icon" aria-hidden="true"><use href="/icons/ledger.svg#alert"></use></svg>
         <div>@Model.Message</div>
     </div>
 }
-else if (Model.Waiting.Count == 0)
+else if (empty)
 {
-    <div class="panel calm">
+    <div class="panel calm empty" role="status">
         <svg class="icon" aria-hidden="true"><use href="/icons/ledger.svg#check"></use></svg>
-        <p>Nothing needs attention.</p>
+        <div>
+            <h1>Nothing needs attention.</h1>
+            <p class="muted">Checked <time datetime="@Model.CheckedAt.UtcDateTime.ToString("O")" title="@Model.CheckedAt.UtcDateTime.ToString("yyyy-MM-dd HH:mm:ss") UTC">@Model.CheckedAt.UtcDateTime.ToString("HH:mm:ss") UTC</time></p>
+        </div>
     </div>
 }
 else
 {
+    <div class="checked">
+        <p class="muted">Checked <time datetime="@Model.CheckedAt.UtcDateTime.ToString("O")" title="@Model.CheckedAt.UtcDateTime.ToString("yyyy-MM-dd HH:mm:ss") UTC">@Model.CheckedAt.UtcDateTime.ToString("HH:mm:ss") UTC</time></p>
+        <a class="button" href="/">Refresh</a>
+    </div>
+
+    @if (Model.Result is not null)
+    {
+        <partial name="_DataAsOf" model="((TimeSpan?)Model.Result.Lag, Model.Now)" />
+    }
+
     <nav class="summary" aria-label="Queues">
         <ul>
             @foreach (var queue in Model.Waiting)

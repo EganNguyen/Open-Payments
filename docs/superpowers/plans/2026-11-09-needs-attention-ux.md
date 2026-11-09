@@ -28,7 +28,7 @@ From top to bottom:
 3. **Queue sections.** Only the queues that have rows, in the fixed order below, each with its title, count, one help sentence and up to 10 rows.
 4. **All clear.** The queues with no rows, named in one muted line: "Also clear: Waiting for approval, Authorizations ending soon."
 
-When every queue is empty, items 2-4 become one calm panel: "Nothing needs attention." with the check time.
+When every queue is empty, none of items 1-4 is shown. The page is one calm panel and nothing else: "Nothing needs attention." with the check time. There is no title line, freshness line or Refresh button above it, so an all-clear page can't be mistaken for work.
 
 ### Why this differs from the prototype
 
@@ -145,6 +145,8 @@ The owner accepted all four recommendations in chat on 2026-11-09.
 | Whole suite | `dotnet test OpenPayments.slnx`: 423 passed, 0 failed. Domain 70, analyzers 1, mock PSP 20, checks 24, integration 40, acceptance 76, console 152, console browser 40 |
 | Index use | Each queue read uses its partial index, checked with `EXPLAIN` against the parent index through `pg_inherits` |
 | Live stack | Rebuilt the local console container. `/` serves Needs attention with the empty state, and the sidebar shows it first |
+| Empty state (owner, 2026-11-09) | The all-clear page now shows only the calm panel and its check time. The title line, freshness line and Refresh button are omitted, matching "the page says so and nothing else". Test: `All_empty_shows_only_one_calm_panel` |
+| Empty-state checks | `dotnet build OpenPayments.slnx -warnaserror`: 0 warnings. `dotnet test OpenPayments.slnx`: 432 passed, 0 failed. The local console image was rebuilt and is healthy |
 
 **Decided without the owner,** to confirm:
 

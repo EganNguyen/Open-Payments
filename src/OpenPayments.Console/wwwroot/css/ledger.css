@@ -135,6 +135,9 @@ select { -webkit-appearance: none; appearance: none; padding-right: 32px; backgr
 .panel.calm { display: flex; align-items: center; gap: 10px; }
 .panel.calm p { margin: 0; }
 .panel.calm .icon { color: var(--success-fg); }
+.panel.calm.empty { align-items: flex-start; padding: 24px 20px; }
+.panel.calm.empty h1 { margin: 0; }
+.panel.calm.empty p { margin: 4px 0 0; }
 .summary ul { list-style: none; margin: 0 0 8px; padding: 0; display: flex; flex-wrap: wrap; gap: 8px; }
 .summary a { display: inline-flex; align-items: center; gap: 8px; min-height: 44px; padding: 0 12px; border: 1px solid var(--border); border-radius: 6px; background: var(--surface); color: var(--text); text-decoration: none; }
 .summary .count { font-weight: 600; }

@@ -18,6 +18,7 @@ public sealed partial class AttentionTests(ConsoleDb db)
     {
         await db.ResetAsync();
         await using var factory = new DbConsoleFactory(db);
+        await db.SeedPaymentAsync("replica", "REVIEW");
         using var client = Client(factory, ConsoleRole.Viewer);
 
         var response = await client.GetAsync("/");
@@ -25,10 +26,11 @@ public sealed partial class AttentionTests(ConsoleDb db)
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);
         var html = await TextAsync(response);
         Assert.Contains("<h1>Needs attention</h1>", html, StringComparison.Ordinal);
+        Assert.Contains("data-queue=\"review\"", html, StringComparison.Ordinal);
     }
 
     [Fact]
-    public async Task All_empty_shows_one_calm_panel()
+    public async Task All_empty_shows_only_one_calm_panel()
     {
         await db.ResetAsync();
         await using var factory = new DbConsoleFactory(db);
@@ -36,9 +38,17 @@ public sealed partial class AttentionTests(ConsoleDb db)
 
         var html = await GetAsync(client, "/");
 
-        Assert.Contains("Nothing needs attention.", html, StringComparison.Ordinal);
+        // The owner's decision: the empty page says one thing and nothing else. The check
+        // time stays, because it says how fresh that answer is.
+        Assert.Contains("<h1>Nothing needs attention.</h1>", html, StringComparison.Ordinal);
+        Assert.Contains("Checked <time", html, StringComparison.Ordinal);
+        Assert.Contains("12:00:00 UTC", html, StringComparison.Ordinal);
+        Assert.DoesNotContain("<h1>Needs attention</h1>", html, StringComparison.Ordinal);
+        Assert.DoesNotContain("Refresh", html, StringComparison.Ordinal);
+        Assert.DoesNotContain("class=\"checked\"", html, StringComparison.Ordinal);
         Assert.DoesNotContain("data-queue=", html, StringComparison.Ordinal);
         Assert.DoesNotContain("Also clear", html, StringComparison.Ordinal);
+        Assert.DoesNotContain("class=\"summary\"", html, StringComparison.Ordinal);
     }
 
     [Fact]
