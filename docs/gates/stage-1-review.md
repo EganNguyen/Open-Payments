@@ -2,20 +2,40 @@
 
 The independent review of Stage 1, as [Delivery workflow](../delivery-workflow.md#review-gate) defines it. The reviewer didn't design or build this stage, and fixed nothing.
 
-Status: **No critical or high finding open; awaiting the owner** · First review: `6cc5f8c`..`b4d99a8` · Re-checks: `0d8ead1`..`c20d53f`, `ee17892`..`b40950e`, then `9be976e`..`1f0d095` · Reviewer: Opus, fresh session · Date: 2026-11-09
+Status: **No critical, high or medium finding open; awaiting the owner's written acceptance** · First review: `6cc5f8c`..`b4d99a8` · Re-checks: `0d8ead1`..`c20d53f`, `ee17892`..`b40950e`, `9be976e`..`1f0d095`, then `49e4a3f`..`55f9fe8` · Reviewer: Opus, fresh session · Date: 2026-11-09
 
 ## Verdict
 
-**No critical or high finding is open.** On the third re-check, H3 and N3 are fixed. The builder asked for a sweep of every path where a failure after a PSP call could answer something other than 202, and it found three more defects: M8, M9 and L7. None is reachable with Stage 1's only adapter, the mock, which declares sale and returns upper-case currencies, or in its configuration. That is why none is graded high. **All three must be fixed before Stage 2 adds a real PSP adapter.** Under the [review gate](../delivery-workflow.md#review-gate), Stage 1 closes once the owner accepts in writing what remains open, or once it is fixed and re-checked. That is M8, M9, L7, L4's pager routing and the L6 deviations.
+**No critical, high or medium finding is open.** On the fourth re-check, M8 is fixed. M9 is fixed except for one narrow path, now recorded as L8. Under the [review gate](../delivery-workflow.md#review-gate), Stage 1 closes when the owner accepts in writing exactly these four items, or has them fixed and re-checked:
 
-| Severity | Found | Fixed | Open | Pending owner |
+1. **L4 routing:** the commit alerts fire in Prometheus, but routing them to a pager waits for Stage 5.
+2. **L6 deviations:** the recorded build deviations. Tasks 14-16 were committed together, so test-first can't be shown. Task 18's tests were written alongside the code, with only C4 seen failing first. The migration is numbered `0003`. All Stage 1 work on 2026-11-09, review fixes included, was built by Opus under the owner's exception. And the reviewer's tests went into the repository through the builder, not under `tests/review/`.
+3. **L7:** when transaction B is refused or loses its conditional update, the PSP's answer is dropped. Nothing in Stage 1 can trigger this. It is left for Stage 2's design gate, which must settle it before callbacks and the reconciler exist.
+4. **L8:** on the two-call auto-capture path, a database failure on the capture's first read answers 503 after the authorization. Stage 1 can't reach it, because the mock declares sale.
+
+| Severity | Found | Fixed | Open | Needs owner acceptance |
 |---|---:|---:|---:|---:|
 | Critical | 0 | 0 | 0 | 0 |
-| High | 3 (H1, H2, H3) | 3 | 0 | 0 |
-| Medium | 9 (M1-M9) | 7 | 2 (M8, M9) | 0 |
-| Low | 10 (L1-L7, N1-N3) | 7 | 1 (L7) | 2 (L4 routing, L6 deviations) |
+| High | 3 (H1-H3) | 3 | 0 | 0 |
+| Medium | 9 (M1-M9) | 9 | 0 | 0 |
+| Low | 11 (L1-L8, N1-N3) | 7 | 2 (L7, L8) | 4 (L4 routing, L6, L7, L8) |
 
 Findings go back through the gates: the builder fixes each with a failing test first, a design session handles any design question, and the reviewer then re-checks only those findings.
+
+## Fourth re-check (2026-11-09, final)
+
+Only M8 and M9 were re-checked, as the workflow says.
+
+**Build and tests, from a clean worktree of `55f9fe8`:** `dotnet build OpenPayments.slnx -warnaserror` gave 0 warnings. `dotnet test OpenPayments.slnx` passed 432 tests: Domain 70, analyzers 1, mock PSP 23, checks 24, console 152, integration 40, console browser 40, acceptance 82. The console counts include another session's console work. `ReviewerAdapterTests.cs` (R10) is byte-identical to the reviewer's file, and all three of its cases pass.
+
+| Finding | Status | What the reviewer checked |
+|---|---|---|
+| M8 | Fixed | All four PSP calls in `PaymentFlow.cs` (capture `:417`, void `:526`, refund `:637`, authorize or sale `:807`) now catch every exception and take the unknown-outcome path inside `AfterPspAsync`, so the answer is 202. An unrecognized `PspResult` is recorded as a timeout, through `AfterPspAsync`. `MockPspAdapter.ReadCurrency` reads codes case-insensitively and turns an unknown code into `PspUnavailableException`. R10 passes, and `M8_an_adapter_failure_after_sending_is_an_unknown_outcome` covers the routes. It uses the fixture's new `TestPsp.ThrowOnce`, which throws after the call is recorded as sent |
+| M9 | Fixed, except L8 | `CaptureForCreateAsync` turns a 503 from the capture into 202 with the current state, falling back to the IDs. `ResolveWithAsync` swallows and logs a failed key write, so it can't change the answer. `M9_two_call_capture_transaction_A_failure_…` passes, and its same-key replay after the window captures the payment |
+
+### L8. Low: a two-call capture's first read can still answer 503
+
+`CaptureCoreAsync` begins with `store.GetPaymentAsync` (`PaymentFlow.cs:373`), outside every catch. On the two-call path this runs after the authorization. If the database fails just there, the `NpgsqlException` escapes `CaptureForCreateAsync` and reaches `CreatePaymentAsync`'s N1 catch, which answers 503 with `Retry-After`. M9's test fails the capture's transaction A, not this read, so the test passes. A same-key replay recovers after the window, but a new-key retry could authorize a second payment. It is read from the code, not executed: the store has no read failpoint. Stage 1 can't reach it, because the mock declares sale, and the window is a single read between two successful transactions.
 
 ## Third re-check and post-PSP sweep (2026-11-09, late)
 
@@ -139,7 +159,7 @@ connection_loss: 503 {"code":"database_unavailable"}
 
 ## Findings
 
-The findings below are as first recorded; their current status is in the [third](#third-re-check-and-post-psp-sweep-2026-11-09-late), [second](#second-re-check-2026-11-09-night) and [first re-check](#re-check-of-the-fixes-2026-11-09-evening). "R1" to "R7" are the reviewer's own tests (see [Reviewer tests](#reviewer-tests)).
+The findings below are as first recorded; their current status is in the [fourth](#fourth-re-check-2026-11-09-final), [third](#third-re-check-and-post-psp-sweep-2026-11-09-late), [second](#second-re-check-2026-11-09-night) and [first re-check](#re-check-of-the-fixes-2026-11-09-evening). "R1" to "R7" are the reviewer's own tests (see [Reviewer tests](#reviewer-tests)).
 
 ### H1. A transaction B failure after a capture, void or refund answers 500
 
