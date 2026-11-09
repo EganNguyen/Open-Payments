@@ -69,6 +69,9 @@ export const options = {
   },
   thresholds: {
     op_unexpected_error: ["rate<0.001"],
+    // Always passes. It makes k6 export the mix scenario's own latency, without the
+    // setup() prefill, which report.py judges (E8).
+    "http_req_duration{scenario:mix}": ["max>=0"],
   },
   summaryTrendStats: ["avg", "p(50)", "p(95)", "p(99)", "max"],
 };

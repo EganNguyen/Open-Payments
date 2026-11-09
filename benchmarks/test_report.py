@@ -283,3 +283,20 @@ def test_share_limit_shown_with_a_miss():
         k6(), gen_cpu=1, mock_added_p99_ms=1.0, completed_metric=1000, db_count=1000,
         shares=dict(STEP0_SHARES, sale=0.30), share_requests=309, two_call_share=0.2)
     assert any("limit 8.4 points" in reason for reason in result.reasons), result.reasons
+
+
+def test_latency_comes_from_the_mix_scenario_not_setup(tmp_path):
+    # E8: setup() prefill requests are slow on a cold API and are counted in
+    # http_req_duration. The step's latency is the mix scenario's own requests.
+    result = _write_run(tmp_path, {
+        "http_req_duration": {"p(50)": 220.0, "p(95)": 230.0, "p(99)": 337.6},
+        "http_req_duration{scenario:mix}": {"p(50)": 219.0, "p(95)": 229.0, "p(99)": 240.0},
+    })
+    assert "p99 40.00 ms" in result
+    assert "Gate reasons: p99" not in result
+
+
+def test_mix_threshold_exports_the_scenario_latency():
+    from pathlib import Path
+    source = (Path(__file__).parent / "k6" / "mix.js").read_text(encoding="utf-8")
+    assert '"http_req_duration{scenario:mix}"' in source

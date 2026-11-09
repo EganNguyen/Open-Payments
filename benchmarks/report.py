@@ -120,6 +120,12 @@ def validity(
     return Validity(not reasons and not not_checked, reasons, not_checked)
 
 
+def latency_metric(summary: Dict[str, Any]) -> str:
+    """The mix scenario's latency, without setup() traffic (E8). Older runs lack it."""
+    name = "http_req_duration{scenario:mix}"
+    return name if name in summary.get("metrics", {}) else "http_req_duration"
+
+
 def share_limit(target: float, requests: Optional[int]) -> float:
     """How far a share may land from its D47 target (E8): 2 points, or 3 binomial
     standard deviations when the run is too small for 2 points to be fair."""
@@ -235,12 +241,12 @@ def write_result(run_dir: Path, stage: str, env: str) -> int:
 
     platform_overhead_p99 = max(
         0.0,
-        float(metric(summary, "http_req_duration", "p(99)", 0.0))
+        float(metric(summary, latency_metric(summary), "p(99)", 0.0))
         - float(config.get("psp_latency_ms", 0.0)),
     )
     platform_overhead_p50 = max(
         0.0,
-        float(metric(summary, "http_req_duration", "p(50)", 0.0))
+        float(metric(summary, latency_metric(summary), "p(50)", 0.0))
         - float(config.get("psp_latency_ms", 0.0)),
     )
     # A k6 Rate metric exports its fraction as "value"; "rate" exists only on counters.
@@ -304,7 +310,7 @@ def write_result(run_dir: Path, stage: str, env: str) -> int:
             platform_overhead_p50,
             max(
                 0.0,
-                float(metric(summary, "http_req_duration", "p(95)", 0.0))
+                float(metric(summary, latency_metric(summary), "p(95)", 0.0))
                 - float(config.get("psp_latency_ms", 0.0)),
             ),
             platform_overhead_p99,
@@ -314,9 +320,9 @@ def write_result(run_dir: Path, stage: str, env: str) -> int:
         "End-to-end latency (PSP fixed at %s ms): p50 %.2f ms  p95 %.2f ms  p99 %.2f ms"
         % (
             config.get("psp_latency_ms", 0),
-            float(metric(summary, "http_req_duration", "p(50)", 0.0)),
-            float(metric(summary, "http_req_duration", "p(95)", 0.0)),
-            float(metric(summary, "http_req_duration", "p(99)", 0.0)),
+            float(metric(summary, latency_metric(summary), "p(50)", 0.0)),
+            float(metric(summary, latency_metric(summary), "p(95)", 0.0)),
+            float(metric(summary, latency_metric(summary), "p(99)", 0.0)),
         )
     )
     lines.append("Unexpected error rate: %.3f%%" % unexpected_rate)
