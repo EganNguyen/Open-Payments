@@ -2,7 +2,7 @@
 
 The build gate's evidence log: one line per task, with the commit, the command that was run, and the result. Tasks 7-16 are complete under [D46](../decisions.md#d46). Task 17 is PARTIAL: the D47 mix and metric work is in place, the laptop limit search waits for the two items under "Before the limit search", and Linux steps 4-5 remain open. Task 18 is not started and waits for the [console design gate](stage-c-design.md).
 
-Status: In progress · Last updated: 2026-11-06
+Status: In progress · Last updated: 2026-11-09
 
 | Task | Commit | Test command | Result |
 |---|---|---|---|
@@ -34,6 +34,50 @@ The console index comparison is finished: see [the result](../../benchmarks/cons
 
 1. Ship `refunds_payment` in its own migration, under [D50](../decisions.md#d50), and confirm with `EXPLAIN` that `Sql.LoadRefund` uses it.
 2. Fix the check query that scans `outbox` once per payment, without adding an `outbox` index or weakening the check. Then measure total check time as data grows.
+
+### Build brief (design session, 2026-11-09)
+
+For the builder. Follow the [build gate](../delivery-workflow.md#build-gate): test first, one commit per item, one progress line per item in the correction table format above, labelled `B1` and `B2`. Nothing here changes `docs/decisions.md`, the API contract or a gate's value.
+
+**B1: `refunds_payment` (D50)**
+
+Today `Sql.LoadRefund` (`src/OpenPayments.Transitions/Sql.cs`) filters `refunds` on `payment_id` with no index. The test fixtures also load only `0001_initial.sql`, so a new migration would never reach the tests. Fix that first.
+
+1. **Fixtures apply every migration.** In `tests/OpenPayments.Integration.Tests/DbFixture.cs`, `C43Fixture.cs` and `tests/OpenPayments.Checks.Tests/Fixture.cs`, mount `db/migrations/` instead of the one file. Apply each `*.sql` in name order, the same order `scripts/migrate.sh` uses. Run `dotnet test` and confirm the count matches before the change: no new migration exists yet, so nothing else should move.
+2. **Failing test.** Add `D50_load_refund_uses_refunds_payment` to `HotQueryPlanTests`. Seed a payment with two refunds and run `explain (format json)` on the real `Sql.LoadRefund` text, not a copy. Add `InternalsVisibleTo` for `OpenPayments.Integration.Tests` to `OpenPayments.Transitions`. Bind `@payment_id`, and set `enable_seqscan = off` on that connection first: on a table this small a sequential scan is the right plan, so the test proves the index matches the query, not the planner's choice at volume. Assert that the index name equals `refunds_payment`, using an exact match. Watch it fail. It should find no index or `refunds_pkey`.
+3. **Migration.** Create `db/migrations/0002_refunds_payment.sql` containing only `create index refunds_payment on refunds (payment_id);`, the definition in D50 and the console spec. Use a plain `create index`, because `migrate.sh` runs each file in one transaction and `concurrently` can't run there. Don't add `created_at` to the key: a payment has few refunds, so sorting them costs nothing.
+4. **Checks.** Run the new test, then `dotnet test`, `dotnet build -warnaserror` and `scripts/check-migration.sh`. All must pass.
+5. **Evidence at volume.** Apply the migration to the local stack with `scripts/migrate.sh`. Pick a `payment_id` that has refunds and run `explain (analyze, buffers)` of `Sql.LoadRefund`, with `enable_seqscan` left on, against a database of at least 40,000 refunds. If the stack has fewer, run a ramp step at the D47 mix first, which issues refunds, and say so. `seed-refundable.sql` only picks targets and creates no refunds. Put the plan's top node and its time in the progress line. Then reset `refunds`' counter with `select pg_stat_reset_single_table_counters('refunds'::regclass)`. In the next valid ramp run, record `seq_scan` for `refunds` from `pg_stat_user_tables`. It should be near zero, against 1,215,455 before.
+
+**B2: CK4 set-based**
+
+The third branch of `tools/OpenPayments.Checks/sql/ck4.sql` runs `select max(o.sequence) from outbox o where o.aggregate_id = p.id` once per payment. `outbox` has no index on `aggregate_id` and must not get one. The first two branches use `not exists`, which PostgreSQL turns into hash anti-joins, so they're fine.
+
+1. **Coverage first.** No test covers branch 3. Add `CK4b_detects_outbox_sequence_beyond_event_seq` to `CorruptionTests`: from the clean fixture, insert an `outbox` row for the payment with `sequence = event_seq + 1`. Assert that CK4 fails at `phase1` and lists the payment. It passes on today's SQL, which is expected: it guards the rewrite.
+2. **Failing test.** Add `CK4_query_has_no_correlated_subplan`: run `explain (format json)` on the `ck4.sql` text against the fixture, walk the plan, and assert that no node has `"Parent Relationship": "SubPlan"`. Watch it fail on today's SQL.
+3. **Rewrite branch 3 only:**
+
+   ```sql
+   select p.id::text, 0::bigint
+   from payments p
+   join (select aggregate_id, max(sequence) as max_seq
+         from outbox group by aggregate_id) o on o.aggregate_id = p.id
+   where p.event_seq < o.max_seq;
+   ```
+
+   This returns exactly the same rows. A payment with no `outbox` rows gave a null `max` before, which never compares true, and the inner join drops it now. Branches 1 and 2 don't change.
+4. **Per-check time.** Add `long DurationMs` to `CheckResult` and set it in `CheckRunner` around each check. Write it to `checks.json`, and show it as a column in `result.md`'s check table (`benchmarks/report.py`, with a test in `test_report.py`). Without it, nobody can see which check slows down as data grows.
+5. **Checks.** Run `dotnet test`, `dotnet build -warnaserror` and `python3 -m pytest benchmarks/test_report.py`.
+6. **Evidence.** On the local stack, time the old and new `ck4.sql` with `explain (analyze)` on the same data. Record both times and the payment and outbox row counts. The comparison measured 0.385 s for the set-based form at 312,613 payments, against more than 67 min for the whole check run.
+7. **Growth.** During the reruns of steps 0, 1 and 3 in the [run order](../benchmarks/open-experiments.md#run-order), record each check's `DurationMs` and the payment count for each run. **Escalate,** naming the check and attaching its plan, if any check's time per 100,000 payments more than doubles between the smallest and largest database. Don't change other checks' SQL without an escalation.
+
+**Decided here without the owner:**
+
+- The test fixtures change to apply every migration.
+- The plan test turns off `enable_seqscan`.
+- `create index` isn't concurrent. That is safe only while no production data exists. A migration on a live table needs its own runner path.
+- `DurationMs` is added to the check results.
+- The growth threshold is 2× per 100,000 payments.
 
 Owner instruction (2026-11-06): E2 and E3 remain open for the build gate. D46's scope correction is recorded and accepted, but the build is not review-ready while E2 or E3 is open.
 
