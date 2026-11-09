@@ -283,7 +283,7 @@ S3 stays PARTIAL until these pass. Revisit the statement count after Linux step 
 
 ## E8: step 0 can't pass at the D47 share rule, and fails its latency gates at 1 req/s
 
-**State:** Shares and reset answered 2026-11-09; latency open until the step 0 rerun · Raised 2026-11-09
+**State:** Closed 2026-11-09: shares and reset answered by the owner, latency fixed in `3faaaf6`; step 0 rerun `20261109T043519Z-3faaaf6-s0-14c1` passed at p50 20.41 ms and p99 30.35 ms · Raised 2026-11-09
 
 **Task:** 17, the laptop limit search. Built by Opus under the owner's 2026-11-09 exception.
 
