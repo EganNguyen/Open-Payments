@@ -243,3 +243,43 @@ def test_rejected_rate_comes_from_the_rejection_counter(tmp_path):
         "http_req_failed": {"passes": 300, "fails": 0, "value": 1},
     })
     assert "rejected req/s 0.10" in result
+
+
+STEP0_SHARES = {
+    "sale": 0.411, "authorize": 0.100, "capture": 0.104,
+    "status": 0.181, "refund": 0.068, "retry": 0.087, "other": 0.049,
+}
+
+
+def test_small_sample_share_within_three_sigma_passes():
+    # E8: step 0 had 309 mix requests. Status 18.1% against 15% is 3.1 points, but
+    # 3 binomial standard deviations at that size is 6.1 points.
+    result = validity(
+        k6(), gen_cpu=1, mock_added_p99_ms=1.0, completed_metric=1000, db_count=1000,
+        shares=STEP0_SHARES, share_requests=309, two_call_share=0.2)
+    assert result.valid is True, result.reasons
+
+
+def test_large_sample_keeps_the_two_point_floor():
+    # At 100,000 requests 3 sigma is under 2 points, so the D47 2-point limit applies.
+    result = validity(
+        k6(), gen_cpu=1, mock_added_p99_ms=1.0, completed_metric=1000, db_count=1000,
+        shares=STEP0_SHARES, share_requests=100000, two_call_share=0.2)
+    assert result.valid is False
+    assert any("status share" in reason for reason in result.reasons)
+
+
+def test_three_sigma_still_catches_a_real_miss():
+    shares = dict(STEP0_SHARES, sale=0.30)
+    result = validity(
+        k6(), gen_cpu=1, mock_added_p99_ms=1.0, completed_metric=1000, db_count=1000,
+        shares=shares, share_requests=309, two_call_share=0.2)
+    assert result.valid is False
+    assert any("sale share" in reason for reason in result.reasons)
+
+
+def test_share_limit_shown_with_a_miss():
+    result = validity(
+        k6(), gen_cpu=1, mock_added_p99_ms=1.0, completed_metric=1000, db_count=1000,
+        shares=dict(STEP0_SHARES, sale=0.30), share_requests=309, two_call_share=0.2)
+    assert any("limit 8.4 points" in reason for reason in result.reasons), result.reasons

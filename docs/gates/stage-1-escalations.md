@@ -283,7 +283,7 @@ S3 stays PARTIAL until these pass. Revisit the statement count after Linux step 
 
 ## E8: step 0 can't pass at the D47 share rule, and fails its latency gates at 1 req/s
 
-**State:** Open · Raised 2026-11-09
+**State:** Shares and reset answered 2026-11-09; latency open until the step 0 rerun · Raised 2026-11-09
 
 **Task:** 17, the laptop limit search. Built by Opus under the owner's 2026-11-09 exception.
 
@@ -304,3 +304,10 @@ S3 stays PARTIAL until these pass. Revisit the statement count after Linux step 
 For latency: profile the step 0 path at 1 req/s, splitting time into API, PgBouncer and database per operation, before deciding whether the gate failure is a laptop artifact or real.
 
 **Recommendation:** after the reset, option 1 with the 3-standard-deviation bound, plus the latency profile. Until this is answered, the limit search stays stopped at step 0.
+
+**Answer (owner, in chat, 2026-11-09):**
+
+- **Reset:** approved. Run the full benchmark reset before the search.
+- **Shares:** option 1, with the 3-standard-deviation bound. A share is valid within `max(2 points, 3 × sqrt(p(1 − p) / n))` of its D47 target, where `n` is the run's mix requests from `shares.json`. D47's targets don't change. Built in `report.py` as `share_limit`.
+- **What the bound means:** at step 0, about 300 requests, the 40% sale share may land 8.4 points out. At step 1, about 3,000, it's 2.7 points. From step 2, about 15,000, it's 1.2 points, so the 2-point floor applies. The bound therefore loosens step 1 slightly for the sale share, as well as step 0.
+- **Latency:** profile at 1 req/s only if the rerun on the reset database still fails the gate.

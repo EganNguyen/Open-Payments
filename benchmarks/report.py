@@ -6,6 +6,7 @@ adds more than 5 ms at p99, or a failed applicable check makes a run invalid or 
 
 import argparse
 import json
+import math
 import sys
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -76,6 +77,7 @@ def validity(
     db_count: Optional[int] = None,
     shares: Optional[Dict[str, float]] = None,
     two_call_share: float = 0.2,
+    share_requests: Optional[int] = None,
 ) -> Validity:
     reasons: List[str] = []
     not_checked: List[str] = []
@@ -101,10 +103,11 @@ def validity(
             actual = shares.get(name)
             if actual is None:
                 not_checked.append("mix share " + name)
-            elif abs(actual - target) > 0.02:
+            elif abs(actual - target) > share_limit(target, share_requests):
                 reasons.append(
-                    "%s share %.1f%% misses %.1f%% by %.1f points"
-                    % (name, actual * 100, target * 100, abs(actual - target) * 100))
+                    "%s share %.1f%% misses %.1f%% by %.1f points, limit %.1f points"
+                    % (name, actual * 100, target * 100, abs(actual - target) * 100,
+                       share_limit(target, share_requests) * 100))
     if completed_metric is None or db_count is None:
         not_checked.append("completed metric vs database count")
     else:
@@ -115,6 +118,14 @@ def validity(
                 % (completed_metric, db_count)
             )
     return Validity(not reasons and not not_checked, reasons, not_checked)
+
+
+def share_limit(target: float, requests: Optional[int]) -> float:
+    """How far a share may land from its D47 target (E8): 2 points, or 3 binomial
+    standard deviations when the run is too small for 2 points to be fair."""
+    if not requests:
+        return 0.02
+    return max(0.02, 3 * math.sqrt(target * (1 - target) / requests))
 
 
 def expected_shares(two_call_share: float) -> Dict[str, float]:
@@ -200,6 +211,8 @@ def write_result(run_dir: Path, stage: str, env: str) -> int:
     counts = read_json(run_dir / "counts.json", {})
     shares_doc = read_json(run_dir / "shares.json", None)
     shares = shares_doc.get("shares") if isinstance(shares_doc, dict) else shares_doc
+    share_counts = shares_doc.get("counts") if isinstance(shares_doc, dict) else None
+    share_requests = sum(share_counts.values()) if share_counts else None
 
     gen_cpu = float(config.get("generator_cpu_pct", 0.0))
     mock_value = config.get("mock_added_p99_ms")
@@ -217,6 +230,7 @@ def write_result(run_dir: Path, stage: str, env: str) -> int:
         db_count=db_count,
         shares=None if stage == "phase0" else shares,
         two_call_share=float(config.get("two_call_share", 0.2)),
+        share_requests=share_requests,
     )
 
     platform_overhead_p99 = max(
