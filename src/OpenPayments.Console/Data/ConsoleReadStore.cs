@@ -146,7 +146,15 @@ public sealed class ConsoleReadStore(NpgsqlDataSource replica, NpgsqlDataSource 
         try
         {
             await using var command = replica.CreateCommand(
-                "select case when pg_is_in_recovery() then coalesce(now() - pg_last_xact_replay_timestamp(), interval '0') else interval '0' end");
+                // A caught-up replica has replayed all it received. Its last replay time only
+                // ages while the primary is idle, which isn't lag.
+                """
+                select case
+                  when not pg_is_in_recovery() then interval '0'
+                  when pg_last_wal_receive_lsn() = pg_last_wal_replay_lsn() then interval '0'
+                  else coalesce(now() - pg_last_xact_replay_timestamp(), interval '0')
+                end
+                """);
             return (TimeSpan)(await command.ExecuteScalarAsync(ct))!;
         }
         catch (Exception exception) when (IsUnreachable(exception))

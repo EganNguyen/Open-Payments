@@ -341,7 +341,7 @@ For latency: profile the step 0 path at 1 req/s, splitting time into API, PgBoun
 
 ## E10: local Keycloak sign-in carries no MFA claim, so the console refuses it
 
-**State:** Answered 2026-11-09 by [D55](../decisions.md#d55), option 1 · Raised 2026-11-09
+**State:** Closed 2026-11-09: built under [D55](../decisions.md#d55) and verified by a real password-and-TOTP sign-in through the local realm, which reached Payments · Raised 2026-11-09
 
 **Task:** 18, console task C13: the compose stack with a local Keycloak.
 
@@ -360,3 +360,5 @@ For latency: profile the step 0 path at 1 req/s, splitting time into API, PgBoun
 3. Lower `RequiredAmr` for local use. Rejected: it removes MFA, the rule the console exists to enforce.
 
 **Not affected:** the console's own tests cover MFA, roles, re-authentication and money actions with a test sign-in, and they pass. The real-API refund passes CK1 and CK3. Only the local provider's claim is missing.
+
+**Outcome (2026-11-09):** a second cause turned up while verifying. ASP.NET's OIDC handler deletes `acr` from the session by default, so even a correct step-up sign-in lost its MFA proof. The console now keeps `acr`, `amr` and `auth_time`, and a test pins that. The console also logs a refusal with its reason and the MFA claims, but no personal data. Replica lag is now zero when the replica has replayed everything it received, so an idle primary no longer shows a false "Data as of" banner.

@@ -20,6 +20,11 @@ builder.Services.Configure<ConsoleSecurityOptions>(options =>
     {
         options.RequiredAmr = amr;
     }
+
+    if (configuration["Console:Oidc:RequiredAcr"] is { Length: > 0 } acr)
+    {
+        options.RequiredAcr = acr;
+    }
 });
 
 // The primary, as op_console: staff, audit and reads after an action.
@@ -110,6 +115,10 @@ builder.Services
         options.UsePkce = true;
         options.SaveTokens = false; // no tokens kept for the browser
         options.MapInboundClaims = false; // keep sub, amr and auth_time as the provider sent them
+        // The handler deletes acr from the session by default. It's the MFA proof under D55.
+        options.ClaimActions.Remove("acr");
+        options.ClaimActions.Remove("amr");
+        options.ClaimActions.Remove("auth_time");
         options.Scope.Clear();
         options.Scope.Add("openid");
         options.Scope.Add("email");

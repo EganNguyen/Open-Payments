@@ -1,3 +1,4 @@
+using Microsoft.Extensions.DependencyInjection;
 using System.Net;
 using System.Text.RegularExpressions;
 using OpenPayments.Console.Security;
@@ -18,6 +19,37 @@ public sealed partial class SecurityTests(ConsoleFactory factory) : IClassFixtur
 
         // The test scheme answers a failed policy with 403; the cookie scheme sends /Account/Denied.
         Assert.Equal(HttpStatusCode.Forbidden, response.StatusCode);
+    }
+
+    [Theory]
+    [InlineData("", "mfa", false)]          // no RequiredAcr: amr alone decides, and pwd isn't MFA
+    [InlineData("mfa", "mfa", true)]        // D55: acr at the required level is MFA
+    [InlineData("mfa", "pwd-level", false)] // a lower level isn't
+    public void D55_acr_counts_as_mfa_only_when_configured(string requiredAcr, string acr, bool allowed)
+    {
+        var user = new System.Security.Claims.ClaimsPrincipal(new System.Security.Claims.ClaimsIdentity(
+            [new("sub", "s"), new("amr", "pwd"), new("acr", acr)], "test"));
+        var options = new ConsoleSecurityOptions { RequiredAmr = "mfa", RequiredAcr = requiredAcr };
+
+        Assert.Equal(allowed, CurrentStaff.HasMfa(user, options));
+    }
+
+    [Fact]
+    public void Oidc_keeps_the_mfa_claims_in_the_session()
+    {
+        // The OIDC handler deletes acr from the session by default, which threw away the only MFA
+        // proof Keycloak sends (found signing in through the local realm).
+        var options = factory.Services
+            .GetRequiredService<Microsoft.Extensions.Options.IOptionsMonitor<Microsoft.AspNetCore.Authentication.OpenIdConnect.OpenIdConnectOptions>>()
+            .Get(Microsoft.AspNetCore.Authentication.OpenIdConnect.OpenIdConnectDefaults.AuthenticationScheme);
+        var deleted = options.ClaimActions
+            .OfType<Microsoft.AspNetCore.Authentication.OAuth.Claims.DeleteClaimAction>()
+            .Select(action => action.ClaimType)
+            .ToList();
+
+        Assert.DoesNotContain("acr", deleted);
+        Assert.DoesNotContain("amr", deleted);
+        Assert.DoesNotContain("auth_time", deleted);
     }
 
     [Fact]
