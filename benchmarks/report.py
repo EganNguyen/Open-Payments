@@ -229,7 +229,8 @@ def write_result(run_dir: Path, stage: str, env: str) -> int:
         float(metric(summary, "http_req_duration", "p(50)", 0.0))
         - float(config.get("psp_latency_ms", 0.0)),
     )
-    unexpected_rate = float(metric(summary, "op_unexpected_error", "rate", 0.0)) * 100.0
+    # A k6 Rate metric exports its fraction as "value"; "rate" exists only on counters.
+    unexpected_rate = float(metric(summary, "op_unexpected_error", "value", 0.0)) * 100.0
     gate_result = gates(
         p99=platform_overhead_p99,
         p50=platform_overhead_p50,
@@ -279,7 +280,7 @@ def write_result(run_dir: Path, stage: str, env: str) -> int:
         "Achieved: admitted req/s %.2f  rejected req/s %.2f  completed payments/s %.2f"
         % (
             float(metric(summary, "http_reqs", "rate", 0.0)),
-            float(metric(summary, "http_req_failed", "rate", 0.0)),
+            float(metric(summary, "k6_requests_rejected_total", "rate", 0.0)),
             float(metric(summary, "k6_payments_completed_total", "rate", 0.0)),
         )
     )

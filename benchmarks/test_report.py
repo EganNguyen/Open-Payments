@@ -205,3 +205,41 @@ def test_checks_recorded_before_durations_render_na(tmp_path):
         "|---|---|---|",
         "| CK1 | pass | n/a |",
     ]
+
+
+def _write_run(tmp_path, metrics):
+    (tmp_path / "config.json").write_text(json.dumps({
+        "run_id": "rates",
+        "commit": "abc",
+        "step": 0,
+        "rate": 1,
+        "duration_seconds": 300,
+        "started_at": "2026-11-09T00:00:00Z",
+        "generator_cpu_pct": 1,
+        "psp_latency_ms": 200,
+    }), encoding="utf-8")
+    summary = k6()
+    summary["metrics"].update(metrics)
+    (tmp_path / "k6-summary.json").write_text(json.dumps(summary), encoding="utf-8")
+    (tmp_path / "checks.json").write_text(json.dumps([ck("CK1", True)]), encoding="utf-8")
+    write_result(tmp_path, "phase1", "local")
+    return (tmp_path / "result.md").read_text(encoding="utf-8")
+
+
+def test_unexpected_errors_come_from_the_rate_metric_value(tmp_path):
+    # k6's summary export gives a Rate metric "value", not "rate". A run where every
+    # request failed must show it and fail its gates.
+    result = _write_run(tmp_path, {
+        "op_unexpected_error": {"passes": 304, "fails": 0, "value": 1},
+    })
+    assert "Unexpected error rate: 100.000%" in result
+    assert "Gates passed: no" in result
+
+
+def test_rejected_rate_comes_from_the_rejection_counter(tmp_path):
+    result = _write_run(tmp_path, {
+        "http_reqs": {"count": 300, "rate": 1.0},
+        "k6_requests_rejected_total": {"count": 30, "rate": 0.1},
+        "http_req_failed": {"passes": 300, "fails": 0, "value": 1},
+    })
+    assert "rejected req/s 0.10" in result
