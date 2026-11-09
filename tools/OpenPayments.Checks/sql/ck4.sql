@@ -11,5 +11,6 @@ where not exists (select 1 from payments p where p.id = o.aggregate_id)
 union all
 select p.id::text, 0::bigint
 from payments p
-where p.event_seq < (
-  select max(o.sequence) from outbox o where o.aggregate_id = p.id);
+join (select aggregate_id, max(sequence) as max_seq
+      from outbox group by aggregate_id) o on o.aggregate_id = p.id
+where p.event_seq < o.max_seq;

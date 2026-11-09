@@ -50,6 +50,22 @@ def render(check: Dict[str, Any]) -> str:
     return "%s FAIL" % name
 
 
+def render_check_table(checks: List[Dict[str, Any]]) -> List[str]:
+    """One row per check: result and duration. Runs before duration_ms existed show n/a."""
+    rows = ["| Check | Result | Duration |", "|---|---|---|"]
+    for check in checks:
+        if not check.get("applicable", False):
+            result = "n/a"
+        elif check.get("passed", False):
+            result = "pass"
+        else:
+            result = "FAIL"
+        duration = check.get("duration_ms")
+        shown = "n/a" if duration is None or result == "n/a" else "{:,} ms".format(int(duration))
+        rows.append("| %s | %s | %s |" % (check.get("check", "?"), result, shown))
+    return rows
+
+
 def validity(
     summary: Dict[str, Any],
     gen_cpu: float,
@@ -324,6 +340,9 @@ def write_result(run_dir: Path, stage: str, env: str) -> int:
     lines.append("")
     lines.append("Correctness: " + " ".join(render(check) for check in checks))
     lines.append("")
+    if checks:
+        lines.extend(render_check_table(checks))
+        lines.append("")
     lines.append("Gates passed: %s" % ("yes" if gate_result.passed else "no"))
     lines.append("Run valid: %s" % ("yes" if run_validity.valid else "no"))
     if run_validity.reasons:

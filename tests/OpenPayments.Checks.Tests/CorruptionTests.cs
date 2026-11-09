@@ -1,6 +1,7 @@
 using System.Net;
 using System.Net.Sockets;
 using System.Text;
+using System.Text.Json;
 using Npgsql;
 using OpenPayments.Checks;
 using Xunit;
@@ -40,6 +41,18 @@ public sealed class CorruptionTests : IClassFixture<DbFixture>
             result => Assert.True(
                 result.Passed,
                 $"{result.Check} failed: {result.Reason}; {string.Join(", ", result.SampleIds)}"));
+    }
+
+    [Fact]
+    public async Task Each_check_records_its_duration()
+    {
+        await _fixture.ResetAsync();
+        await SeedCleanFixtureAsync();
+
+        var results = await RunChecksAsync("phase1", BaselineEffect());
+
+        Assert.All(results, result => Assert.True(result.DurationMs >= 0, result.Check));
+        Assert.True(results.Sum(result => result.DurationMs) > 0, "No check recorded any time.");
     }
 
     [Fact]
@@ -170,6 +183,47 @@ public sealed class CorruptionTests : IClassFixture<DbFixture>
 
         Assert.False(check.Passed);
         Assert.Contains(Payment.ToString(), check.SampleIds);
+    }
+
+    [Fact]
+    public async Task CK4b_detects_outbox_sequence_beyond_event_seq()
+    {
+        await _fixture.ResetAsync();
+        await SeedCleanFixtureAsync();
+        await ExecuteAsync($"""
+            insert into outbox
+              (id, merchant_id, aggregate_id, event_type, sequence, schema_version, payload, created_at)
+            values
+              (gen_random_uuid(), '{Merchant}', '{Payment}', 'payment.refunded', 2, 1, 'null'::jsonb, now());
+            """);
+
+        var check = (await RunChecksAsync("phase1", BaselineEffect()))
+            .Single(result => result.Check == "CK4");
+
+        Assert.False(check.Passed);
+        Assert.Contains(Payment.ToString(), check.SampleIds);
+    }
+
+    [Fact]
+    public async Task CK4_query_has_no_correlated_subplan()
+    {
+        await _fixture.ResetAsync();
+        await SeedCleanFixtureAsync();
+        string sql;
+        await using (var stream = typeof(CheckRunner).Assembly
+            .GetManifestResourceStream("OpenPayments.Checks.sql.ck4.sql")!)
+        using (var reader = new StreamReader(stream))
+        {
+            sql = await reader.ReadToEndAsync();
+        }
+
+        await using var connection = await _fixture.OpenAsync();
+        await using var command = new NpgsqlCommand("explain (format json) " + sql.TrimEnd().TrimEnd(';'), connection);
+        var json = (string)(await command.ExecuteScalarAsync())!;
+        using var document = JsonDocument.Parse(json);
+
+        // A SubPlan runs once per outer row. Over every payment, that is a scan of outbox each.
+        Assert.Empty(SubPlans(document.RootElement[0].GetProperty("Plan")));
     }
 
     [Fact]
@@ -396,6 +450,26 @@ public sealed class CorruptionTests : IClassFixture<DbFixture>
               ('{LedgerTxn}', 1, '{Merchant}', '{Receivable}', '{Payment}', 'D', 100, 'USD'),
               ('{LedgerTxn}', 2, '{Merchant}', '{Payable}', '{Payment}', 'C', 100, 'USD');
             """);
+    }
+
+    private static IEnumerable<string> SubPlans(JsonElement plan)
+    {
+        if (plan.TryGetProperty("Parent Relationship", out var relationship)
+            && relationship.GetString() == "SubPlan")
+        {
+            yield return plan.TryGetProperty("Subplan Name", out var name) ? name.GetString()! : "SubPlan";
+        }
+
+        if (plan.TryGetProperty("Plans", out var children))
+        {
+            foreach (var child in children.EnumerateArray())
+            {
+                foreach (var found in SubPlans(child))
+                {
+                    yield return found;
+                }
+            }
+        }
     }
 
     private async Task ExecuteAsync(string sql)

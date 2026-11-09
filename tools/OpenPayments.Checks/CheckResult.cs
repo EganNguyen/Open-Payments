@@ -23,4 +23,8 @@ public sealed record CheckResult(
     long Violations,
     IReadOnlyList<string> SampleIds,
     long MoneyImpactMinor,
-    string? Reason);
+    string? Reason)
+{
+    // Wall time spent on this check, so a check that slows as data grows can be found.
+    public long DurationMs { get; init; }
+}

@@ -1,3 +1,4 @@
+using System.Diagnostics;
 using System.Globalization;
 using System.Reflection;
 using Npgsql;
@@ -27,18 +28,25 @@ public static class CheckRunner
 
         var results = new List<CheckResult>
         {
-            await RunCk1Async(connection, cancellationToken),
-            await RunCk2Async(connection, cancellationToken),
-            await RunCk3Async(connection, cancellationToken),
-            await RunCk4Async(connection, options.Stage, cancellationToken),
-            await RunCk5Async(connection, options.Stage, cancellationToken),
-            await RunCk6Async(options, cancellationToken),
-            await RunCk7Async(connection, options.Stage, cancellationToken),
-            await RunCk8Async(connection, options.Stage, cancellationToken),
-            await RunCk9Async(connection, options.Stage, cancellationToken),
-            await RunCk10Async(connection, options.Stage, cancellationToken),
+            await TimedAsync(() => RunCk1Async(connection, cancellationToken)),
+            await TimedAsync(() => RunCk2Async(connection, cancellationToken)),
+            await TimedAsync(() => RunCk3Async(connection, cancellationToken)),
+            await TimedAsync(() => RunCk4Async(connection, options.Stage, cancellationToken)),
+            await TimedAsync(() => RunCk5Async(connection, options.Stage, cancellationToken)),
+            await TimedAsync(() => RunCk6Async(options, cancellationToken)),
+            await TimedAsync(() => RunCk7Async(connection, options.Stage, cancellationToken)),
+            await TimedAsync(() => RunCk8Async(connection, options.Stage, cancellationToken)),
+            await TimedAsync(() => RunCk9Async(connection, options.Stage, cancellationToken)),
+            await TimedAsync(() => RunCk10Async(connection, options.Stage, cancellationToken)),
         };
         return results;
+    }
+
+    private static async Task<CheckResult> TimedAsync(Func<Task<CheckResult>> check)
+    {
+        var started = Stopwatch.GetTimestamp();
+        var result = await check();
+        return result with { DurationMs = (long)Stopwatch.GetElapsedTime(started).TotalMilliseconds };
     }
 
     private static async Task PrepareAsync(

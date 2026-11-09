@@ -169,3 +169,39 @@ def test_dynamic_urls_have_fixed_metric_names():
         "GET /inquire/:key",
     ):
         assert name in source
+
+
+def test_result_lists_each_check_with_its_duration(tmp_path):
+    (tmp_path / "config.json").write_text(json.dumps({
+        "run_id": "durations",
+        "commit": "abc",
+        "step": 1,
+        "rate": 10,
+        "duration_seconds": 10,
+        "started_at": "2026-11-06T00:00:00Z",
+        "generator_cpu_pct": 1,
+        "psp_latency_ms": 200,
+    }), encoding="utf-8")
+    (tmp_path / "k6-summary.json").write_text(json.dumps(k6()), encoding="utf-8")
+    checks = [
+        dict(ck("CK1", True), duration_ms=1234),
+        dict(ck("CK4", False), duration_ms=353),
+        ck("CK8", None),
+    ]
+    (tmp_path / "checks.json").write_text(json.dumps(checks), encoding="utf-8")
+
+    write_result(tmp_path, "phase1", "local")
+    result = (tmp_path / "result.md").read_text(encoding="utf-8")
+    assert "| Check | Result | Duration |" in result
+    assert "| CK1 | pass | 1,234 ms |" in result
+    assert "| CK4 | FAIL | 353 ms |" in result
+    assert "| CK8 | n/a | n/a |" in result
+
+
+def test_checks_recorded_before_durations_render_na(tmp_path):
+    from report import render_check_table
+    assert render_check_table([ck("CK1", True)]) == [
+        "| Check | Result | Duration |",
+        "|---|---|---|",
+        "| CK1 | pass | n/a |",
+    ]
