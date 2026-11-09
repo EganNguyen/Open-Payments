@@ -1,6 +1,6 @@
 # Stage 1 Build Progress
 
-The build gate's evidence log: one line per task, with the commit, the command that was run, and the result. Tasks 7-16 are complete under [D46](../decisions.md#d46). Task 17 is PARTIAL: the D47 mix and metric work is in place, the laptop limit search waits for the two items under "Before the limit search", and Linux steps 4-5 remain open. Task 18 is not started and waits for the [console design gate](stage-c-design.md).
+The build gate's evidence log: one line per task, with the commit, the command that was run, and the result. Tasks 7-16 are complete under [D46](../decisions.md#d46). Task 17 is PARTIAL: the D47 mix and metric work is in place, B1 and B2 under "Before the limit search" are built, the laptop limit search is next, and Linux steps 4-5 remain open. Task 18 is not started and waits for the [console design gate](stage-c-design.md).
 
 Status: In progress · Last updated: 2026-11-09
 
@@ -34,6 +34,15 @@ The console index comparison is finished: see [the result](../../benchmarks/cons
 
 1. Ship `refunds_payment` in its own migration, under [D50](../decisions.md#d50), and confirm with `EXPLAIN` that `Sql.LoadRefund` uses it.
 2. Fix the check query that scans `outbox` once per payment, without adding an `outbox` index or weakening the check. Then measure total check time as data grows.
+
+### Build record (2026-11-09)
+
+**Who built these:** Opus, under an owner exception given in chat on 2026-11-09 to the rule that DeepSeek builds. The review gate must therefore be a fresh session that didn't write this code.
+
+| Item | Commit | Command | Result |
+|---|---|---|---|
+| B1 | `f400b50` | `dotnet test --filter D50_load_refund_uses_refunds_payment`, before and after the migration; `dotnet test OpenPayments.slnx`; `dotnet build OpenPayments.slnx -warnaserror`; `scripts/check-migration.sh`; `scripts/migrate.sh` on the stack | PASS. **Fixtures:** all four now apply every migration, and the suite stays at 196 tests, the same as the base commit. **Plan test:** before the migration it failed with `Expected "refunds_payment", Actual null`; after, it passes. 197 tests, 0 warnings, migration check passed. **On the stack:** 312,613 payments and 41,847 refunds. `explain (analyze, buffers)` of `Sql.LoadRefund` for a payment with 14 refunds is a Bitmap Index Scan on `refunds_payment`, taking 0.042 ms. The same lookup with index scans turned off is a Seq Scan taking 1.685 ms. The `refunds` counters were reset afterwards; `seq_scan` in the next valid run goes in the B1 run line. |
+| B2 | `d91cca9` | `dotnet test --filter CK4`; `dotnet test OpenPayments.slnx`; `dotnet build OpenPayments.slnx -warnaserror`; `.venv/bin/python -m pytest benchmarks/test_report.py`; `op-checks --stage phase1` on the stack | PASS. **Tests:** `CK4b` passed on the old SQL, as intended. `CK4_query_has_no_correlated_subplan` failed with `["SubPlan 1"]` and passes after the rewrite. Duration tests failed first, with a compile error in C# and 2 failures in Python. 200 tests, 0 warnings, 20 report tests. **Timing at 312,613 payments and 415,074 outbox rows:** the old `ck4.sql` hit its 300 s `statement_timeout`. The new form takes 0.353 s, with hash joins and anti-joins, no SubPlan and 0 violations. The full `op-checks` run takes 4.9 s, against more than 67 min before. Per check in ms: CK1 2,998, CK2 481, CK3 35, CK4 349, CK5 39, CK9 146, CK10 193; CK6-CK8 not applicable. All applicable checks pass. The growth step needs the reruns and is in the run lines below. |
 
 ### Build brief (design session, 2026-11-09)
 
