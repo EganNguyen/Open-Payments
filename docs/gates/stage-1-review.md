@@ -2,20 +2,75 @@
 
 The independent review of Stage 1, as [Delivery workflow](../delivery-workflow.md#review-gate) defines it. The reviewer didn't design or build this stage, and fixed nothing.
 
-Status: **Open: 1 high finding (H3)** · First review: `6cc5f8c`..`b4d99a8` · Re-checks: `0d8ead1`..`c20d53f`, then `ee17892`..`b40950e` · Reviewer: Opus, fresh session · Date: 2026-11-09
+Status: **No critical or high finding open; awaiting the owner** · First review: `6cc5f8c`..`b4d99a8` · Re-checks: `0d8ead1`..`c20d53f`, `ee17892`..`b40950e`, then `9be976e`..`1f0d095` · Reviewer: Opus, fresh session · Date: 2026-11-09
 
 ## Verdict
 
-**Stage 1 still can't close.** On the second re-check, H1, N1 and N2 are fixed. Every finding from the first review and the first re-check is now fixed, apart from L4's pager routing and L6's recorded build deviations, which wait for the owner. One new high finding is open, **H3**, which the first review missed. The authorize and sale path answers a retryable 503 when the transaction that records a PSP timeout fails. That happens after the PSP call, so the card may already have been charged. It is H1's failure on the create and new-attempt routes, and R9 shows it. One new low finding, N3, is recorded too. Nothing reviewed shows wrong money, a double charge, a lost ledger row or data shared between merchants.
+**No critical or high finding is open.** On the third re-check, H3 and N3 are fixed. The builder asked for a sweep of every path where a failure after a PSP call could answer something other than 202, and it found three more defects: M8, M9 and L7. None is reachable with Stage 1's only adapter, the mock, which declares sale and returns upper-case currencies, or in its configuration. That is why none is graded high. **All three must be fixed before Stage 2 adds a real PSP adapter.** Under the [review gate](../delivery-workflow.md#review-gate), Stage 1 closes once the owner accepts in writing what remains open, or once it is fixed and re-checked. That is M8, M9, L7, L4's pager routing and the L6 deviations.
 
 | Severity | Found | Fixed | Open | Pending owner |
 |---|---:|---:|---:|---:|
 | Critical | 0 | 0 | 0 | 0 |
-| High | 3 (H1, H2, H3) | 2 | 1 (H3) | 0 |
-| Medium | 7 | 7 | 0 | 0 |
-| Low | 6 + N1, N2, N3 | 6 | 1 (N3) | 2 (L4 routing, L6 deviations) |
+| High | 3 (H1, H2, H3) | 3 | 0 | 0 |
+| Medium | 9 (M1-M9) | 7 | 2 (M8, M9) | 0 |
+| Low | 10 (L1-L7, N1-N3) | 7 | 1 (L7) | 2 (L4 routing, L6 deviations) |
 
 Findings go back through the gates: the builder fixes each with a failing test first, a design session handles any design question, and the reviewer then re-checks only those findings.
+
+## Third re-check and post-PSP sweep (2026-11-09, late)
+
+**Build and tests, from a clean worktree of `1f0d095`:** `dotnet build OpenPayments.slnx -warnaserror` gave 0 warnings. `dotnet test OpenPayments.slnx` passed 391 tests: Domain 70, analyzers 1, mock PSP 20, checks 24, console 124, integration 40, console browser 34, acceptance 78. `ReviewerRecheck2Tests.cs` (R9) is byte-identical to the reviewer's file. R1-R9 pass.
+
+| Finding | Status | What the reviewer checked |
+|---|---|---|
+| H3 | Fixed | `ExecuteAttemptAsync` (`PaymentFlow.cs:804-844`) runs both post-PSP writes inside `AfterPspAsync`: the timeout record and the answered call. R9 passes for an unknown commit and for a connection loss. The `RequiresAction` status override was removed, which changes nothing, because only `Declined` maps to 402 |
+| N3 | Fixed, no automated test | `AfterPspAsync` catches a failure of the follow-up read and answers 202 from `UnknownFallback`, using the payment ID and, for a refund, the refund ID. It was read from the code: the store has no read failpoint |
+
+### The post-PSP sweep
+
+The reviewer traced every route that calls the PSP: create (authorize or sale), new attempt, capture, void, refund, and two-call auto-capture, both first run and replay. For each, the trace followed every statement from the moment the PSP request may have been sent to the answer the client receives. Each path below ends in 202, except where a finding is named.
+
+| Route | After the PSP call | Result |
+|---|---|---|
+| Create, new attempt: answered call | `AfterPspAsync` (`:837-844`) | 202 on any failure |
+| Create, new attempt: timeout or `PspUnavailableException` | `AfterPspAsync` (`:808-820`) | 202 on any failure |
+| Capture, void, refund: answered or timed out | `AfterPspAsync` (`:417`, `:525`, `:635` and their answered branches) | 202 on any failure |
+| Any route: the PSP call throws something other than `OperationCanceledException`, `PspTimeoutException` or `PspUnavailableException` | The exception escapes the route's filter | **500: M8** |
+| Create, authorize or sale: an unexpected `PspResult` type | `throw new InvalidOperationException` (`:834`) | **500: M8** |
+| Two-call auto-capture: the step after the authorization | `ResolveWithAsync` (`:119`, `:994`) and the capture's transaction A, in `CaptureForCreateAsync` (`:976`) | **503: M9** |
+| Any route: transaction B refused by `Decide` or losing its conditional update | `FromAppliedAsync` (`:858-860`) and `FromRefundAppliedAsync` | **409 or a stale 200, with the PSP's answer not recorded: L7** |
+| Console | `PaymentApiClient` maps any 5xx and timeouts to "still checking" | No change needed |
+
+### M8. A PSP answer the adapter can't read escapes as 500
+
+**Severity:** Medium; it must be fixed before Stage 2's first real adapter. [D27](../decisions.md#d27): once the request may have reached the PSP, anything other than an explicit answer is inconclusive, so the attempt is `UNKNOWN` and the client gets 202.
+
+**Evidence:** Each route's PSP call is guarded by a filter (`PaymentFlow.cs:417`, `:525`, `:635`, `:804`) that accepts only three exception types. The H2 fix made the mock adapter map transport and JSON errors to one of them, but not other parse errors. `MockPspAdapter.Amount` (`src/OpenPayments.Psp/MockPspAdapter.cs:195-198`) calls `CurrencyCode.Parse`, which throws `ArgumentException` for any code the platform doesn't know, including lower case. `ExecuteAttemptAsync` also throws `InvalidOperationException` on an unknown `PspResult` (`:834`). Either escapes to the route, whose catches cover only database exceptions, so the answer is 500 after the PSP approved. The attempt stays `PENDING`.
+
+**Reproduction:** R10. The adapter receives `{"outcome":"approved", ..., "currency":"usd"}` and throws `ArgumentException: Unknown currency code 'usd'`. It does the same with `EUR`. The route half was read from the code.
+
+**Why it matters:** Real PSPs differ in case and send currencies the platform doesn't list; Stripe answers in lower case. Each such answer would be a 500 after a successful charge, so a new-key retry could charge again. The robust fix is at the route, not in each adapter. Once the request may have been sent, every exception should be treated as `PspUnavailableException` is.
+
+### M9. Two-call auto-capture can answer 503 after the authorization
+
+**Severity:** Medium; Stage 1 doesn't reach this path, because the mock declares sale ([M1](#m1-two-call-auto-capture-replays-a-different-answer-and-a-failed-capture-is-never-retried)). [D28](../decisions.md#d28): a 503 is only for failures before any PSP call.
+
+**Evidence:** On the two-call path, the authorization has already been sent when these run:
+
+- `ResolveWithAsync` (`:119`, after a decline; `:994`, after the capture) opens its own connection.
+- The capture's transaction A (`CaptureForCreateAsync` → `CaptureCoreAsync` → `BeginOperationAsync`) maps `BusyException`, `CommitOutcomeUnknownException` and, since N1, `NpgsqlException` to 503 with `Retry-After`.
+
+An `NpgsqlException` from `ResolveWithAsync` reaches `CreatePaymentAsync`'s N1 catch (`:141`), which answers 503. A busy or unknown capture transaction A comes back as a 503 answer from `CaptureForCreateAsync`, which the create returns as it is. In both cases the merchant is told "nothing happened, retry" while an authorization hold exists, and in the first case after a capture.
+
+**Why it matters:** A new-key retry creates and authorizes a second payment. A same-key retry recovers after the 30 s window, through M1's replay. Read from the code; no test was written, because the two-call path needs a non-sale adapter and a failpoint on the capture's transaction A.
+
+### L7. A refused or lost transaction B drops the PSP's answer
+
+**Severity:** Low in Stage 1; Stage 2's design gate must take it up. When transaction B's `Decide` refuses, or its conditional update loses to another writer, `FromAppliedAsync` answers 409 (`Rejected`) or 200 with the other writer's state (`AlreadyMoved`) (`:858-860`). `FromRefundAppliedAsync` answers 409 or 422. The PSP's answer is not recorded, no retry happens, and the key stays unresolved. In Stage 1, nothing else writes to a payment while its capture, void, refund or attempt is live: the one-live indexes and `refund_live` stop the API's own routes, and there is no callback receiver, reconciler or expiry job. Stage 2 adds all three, and a callback racing transaction B is the normal case there. The answer should be 202 with the outcome left for the resolver, never a refusal after the PSP acted.
+
+### Reviewer test added in the third re-check
+
+`ReviewerAdapterTests.R10_an_approved_answer_the_adapter_cant_read_is_inconclusive`, in the mock PSP test project, with three cases. The upper- and lower-case currency cases fail at `1f0d095` with `ArgumentException`. The `action_required` case passes. As before, it is a copy in the session notes folder, kept out of the repository, and should join the repository unchanged.
 
 ## Second re-check (2026-11-09, night)
 
@@ -84,7 +139,7 @@ connection_loss: 503 {"code":"database_unavailable"}
 
 ## Findings
 
-The findings below are as first recorded; their current status is in the [second re-check](#second-re-check-2026-11-09-night) and the [first re-check](#re-check-of-the-fixes-2026-11-09-evening). "R1" to "R7" are the reviewer's own tests (see [Reviewer tests](#reviewer-tests)).
+The findings below are as first recorded; their current status is in the [third](#third-re-check-and-post-psp-sweep-2026-11-09-late), [second](#second-re-check-2026-11-09-night) and [first re-check](#re-check-of-the-fixes-2026-11-09-evening). "R1" to "R7" are the reviewer's own tests (see [Reviewer tests](#reviewer-tests)).
 
 ### H1. A transaction B failure after a capture, void or refund answers 500
 
