@@ -1,0 +1,94 @@
+@page "/Payments/{id:guid}"
+@model OpenPayments.Console.Pages.Payments.DetailModel
+@using OpenPayments.Console.Presentation
+@{
+    ViewData["Section"] = "payments";
+    if (Model.Missing)
+    {
+        ViewData["Title"] = "Payment not found";
+    }
+}
+@if (Model.Missing)
+{
+    <p><a href="/Payments">Payments</a></p>
+    <h1>Payment not found</h1>
+    <p>No payment has the ID <span class="id">@Model.Id.ToString("D")</span> in this deployment. Check the ID and try again.</p>
+    return;
+}
+@{
+    var p = Model.Payment;
+    ViewData["Title"] = "Payment " + p.Id.ToString("D");
+}
+<p><a href="/Payments">Payments</a></p>
+<h1 class="id">@p.Id.ToString("D")</h1>
+
+<partial name="_DataAsOf" model="(Model.Lag, Model.Now)" />
+
+<div class="panel">
+    <p><span class="status @Model.View.ToneClass" data-state="@p.State"><svg class="icon" aria-hidden="true"><use href="/icons/ledger.svg#@Model.View.Icon"></use></svg>@Model.View.Label</span></p>
+    @if (!string.IsNullOrEmpty(Model.View.Wording))
+    {
+        <p class="wording">@Model.View.Wording</p>
+    }
+    <dl class="facts">
+        <dt>Amount</dt><dd>@MoneyFormat.DisplayWithCode(p.AmountMinor, p.Currency)</dd>
+        <dt>Captured</dt><dd>@MoneyFormat.DisplayWithCode(p.CapturedMinor, p.Currency)</dd>
+        <dt>Refunded</dt><dd>@MoneyFormat.DisplayWithCode(p.RefundedMinor, p.Currency)</dd>
+        @if (p.RefundPendingMinor > 0)
+        {
+            <dt>Refunds in progress</dt><dd>@MoneyFormat.DisplayWithCode(p.RefundPendingMinor, p.Currency), amount reserved</dd>
+        }
+        <dt>Refundable</dt><dd data-refundable="@p.RefundableMinor">@MoneyFormat.DisplayWithCode(p.RefundableMinor, p.Currency)</dd>
+        <dt>PSP reference</dt><dd class="mono">@(Model.Detail.PspReference ?? "None yet")</dd>
+        <dt>Merchant</dt><dd class="mono">@p.MerchantId.ToString("D")</dd>
+        <dt>Created</dt><dd>@p.CreatedAt.UtcDateTime.ToString("yyyy-MM-dd HH:mm:ss") UTC</dd>
+        @if (p.AuthorizedUntil is { } until && p.State == "AUTHORIZED")
+        {
+            <dt>Authorization ends</dt><dd>@until.UtcDateTime.ToString("yyyy-MM-dd HH:mm") UTC</dd>
+        }
+    </dl>
+    @if (Model.Actions.Count > 0)
+    {
+        <div class="actions">
+            @foreach (var action in Model.Actions)
+            {
+                var name = OpenPayments.Console.Pages.Payments.DetailModel.ActionName(action);
+                <a class="button @(action == StaffAction.Refund || action == StaffAction.Capture ? "primary" : null)" data-action="@name" href="/Payments/@p.Id.ToString("D")/Action/@name">@OpenPayments.Console.Pages.Payments.DetailModel.ActionLabel(action, p.State)</a>
+            }
+        </div>
+    }
+</div>
+
+@if (Model.Detail.Refunds.Count > 0)
+{
+    <h2>Refunds</h2>
+    <table class="rows">
+        <thead><tr><th>Started</th><th class="num">Amount</th><th>Status</th></tr></thead>
+        <tbody>
+        @foreach (var refund in Model.Detail.Refunds)
+        {
+            <tr>
+                <td data-label="Started">@refund.CreatedAt.UtcDateTime.ToString("yyyy-MM-dd HH:mm:ss") UTC</td>
+                <td class="num">@MoneyFormat.DisplayWithCode(refund.AmountMinor, p.Currency)</td>
+                <td data-label="Status">@(refund.Unresolved ? "In progress, amount reserved" : refund.State == "SUCCEEDED" ? "Refunded" : refund.State == "FAILED" ? "Failed, nothing returned" : refund.State)</td>
+            </tr>
+        }
+        </tbody>
+    </table>
+}
+
+<h2>Timeline</h2>
+@if (Model.Detail.Timeline.Count == 0)
+{
+    <p class="muted">Nothing has happened to this payment yet.</p>
+}
+else
+{
+    <ol class="timeline">
+        @foreach (var entry in Model.Detail.Timeline)
+        {
+            <li data-kind="@entry.Kind"><time datetime="@entry.At.ToString("O")">@entry.At.UtcDateTime.ToString("yyyy-MM-dd HH:mm:ss") UTC</time> · @entry.Text</li>
+        }
+    </ol>
+}
+<p class="muted">PSP events, webhook deliveries and inquiry results aren't shown yet. Check those at the PSP.</p>

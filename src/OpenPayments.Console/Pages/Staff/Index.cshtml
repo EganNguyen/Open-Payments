@@ -1,0 +1,57 @@
+@page
+@model OpenPayments.Console.Pages.Staff.IndexModel
+@using OpenPayments.Console.Security
+@{
+    ViewData["Title"] = "Staff";
+    ViewData["Section"] = "staff";
+}
+<h1>Staff</h1>
+@if (Model.Notice is not null)
+{
+    <div class="banner danger" role="alert"><svg class="icon" aria-hidden="true"><use href="/icons/ledger.svg#stop"></use></svg><div>@Model.Notice</div></div>
+}
+<table class="rows">
+    <thead><tr><th>Email</th><th>Role</th><th>Status</th><th>Change</th></tr></thead>
+    <tbody>
+    @foreach (var person in Model.People)
+    {
+        <tr data-staff="@person.Id">
+            <td data-label="Email">@person.Email</td>
+            <td data-label="Role">@ConsolePolicies.ToText(person.Role)</td>
+            <td data-label="Status">@(person.DisabledAt is null ? "Active" : "Disabled")</td>
+            <td>
+                <form method="post" asp-page-handler="Role" class="filters">
+                    <input type="hidden" name="StaffId" value="@person.Id">
+                    <label>Role
+                        <select name="Role">
+                            @foreach (var role in Enum.GetValues<ConsoleRole>())
+                            {
+                                <option value="@ConsolePolicies.ToText(role)" selected="@(role == person.Role)">@ConsolePolicies.ToText(role)</option>
+                            }
+                        </select>
+                    </label>
+                    <button type="submit" class="button">Save role</button>
+                </form>
+                <form method="post" asp-page-handler="@(person.DisabledAt is null ? "Disable" : "Enable")">
+                    <input type="hidden" name="StaffId" value="@person.Id">
+                    <button type="submit" class="@(person.DisabledAt is null ? "danger" : "button")">@(person.DisabledAt is null ? "Disable" : "Enable")</button>
+                </form>
+            </td>
+        </tr>
+    }
+    </tbody>
+</table>
+<h2>Add a person</h2>
+<form method="post" asp-page-handler="Add" class="filters">
+    <label>Identity-provider subject <input name="Subject" autocomplete="off" required></label>
+    <label>Email <input name="Email" type="email" autocomplete="off" required></label>
+    <label>Role
+        <select name="Role">
+            @foreach (var role in Enum.GetValues<ConsoleRole>())
+            {
+                <option value="@ConsolePolicies.ToText(role)">@ConsolePolicies.ToText(role)</option>
+            }
+        </select>
+    </label>
+    <button type="submit" class="button primary">Add</button>
+</form>

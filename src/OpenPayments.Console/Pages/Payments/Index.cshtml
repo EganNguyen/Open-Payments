@@ -1,0 +1,85 @@
+@page
+@model OpenPayments.Console.Pages.Payments.IndexModel
+@using OpenPayments.Console.Presentation
+@{
+    ViewData["Title"] = "Payments";
+    ViewData["Section"] = "payments";
+}
+<h1>Payments</h1>
+
+<form method="get" action="/Payments" class="filters" role="search">
+    <label>Payment ID
+        <input name="Q" value="@Model.Q" inputmode="text" autocomplete="off" spellcheck="false" size="38" placeholder="Paste an ID">
+    </label>
+    <button type="submit" class="button">Open</button>
+</form>
+
+<partial name="_DataAsOf" model="(Model.Lag, Model.Now)" />
+
+@if (Model.Message is not null)
+{
+    <div class="banner @(Model.SearchUnavailable ? "danger" : "warning")" role="status">
+        <svg class="icon" aria-hidden="true"><use href="/icons/ledger.svg#alert"></use></svg>
+        <div>@Model.Message</div>
+    </div>
+}
+
+@if (!Model.SearchUnavailable)
+{
+    <form method="get" action="/Payments" class="filters">
+        <label>From <input type="date" name="From" value="@Model.FromDate.ToString("yyyy-MM-dd")"></label>
+        <label>To <input type="date" name="To" value="@Model.ToDate.ToString("yyyy-MM-dd")"></label>
+        <label>State
+            <select name="State">
+                <option value="">Any</option>
+                @foreach (var state in OpenPayments.Console.Data.SearchOptions.FilterStates)
+                {
+                    <option value="@state" selected="@(state == Model.State)">@StatePresentation.For(state).Label</option>
+                }
+            </select>
+        </label>
+        <label>Currency
+            <select name="Currency">
+                @foreach (var code in MoneyFormat.Exponents.Keys.Order())
+                {
+                    <option value="@code" selected="@(code == (Model.Currency ?? "USD"))">@code</option>
+                }
+            </select>
+        </label>
+        <label>Min amount <input name="Min" value="@Model.Min" inputmode="decimal" size="10"></label>
+        <label>Max amount <input name="Max" value="@Model.Max" inputmode="decimal" size="10"></label>
+        <button type="submit" class="button primary">Search</button>
+    </form>
+}
+
+@if (Model.Results is { } results)
+{
+    if (results.Rows.Count == 0)
+    {
+        <p class="muted">No payments match in this range.</p>
+    }
+    else
+    {
+        <table class="rows">
+            <thead>
+            <tr><th>Created</th><th>Status</th><th class="num">Amount</th><th>Payment</th></tr>
+            </thead>
+            <tbody>
+            @foreach (var row in results.Rows)
+            {
+                var view = StatePresentation.For(row.State);
+                <tr>
+                    <td data-label="Created"><time datetime="@row.CreatedAt.ToString("O")">@row.CreatedAt.UtcDateTime.ToString("yyyy-MM-dd HH:mm:ss") UTC</time></td>
+                    <td><span class="status @view.ToneClass"><svg class="icon" aria-hidden="true"><use href="/icons/ledger.svg#@view.Icon"></use></svg>@view.Label</span></td>
+                    <td class="num">@MoneyFormat.DisplayWithCode(row.AmountMinor, row.Currency)</td>
+                    <td data-label="Payment"><a class="id" href="/Payments/@row.Id.ToString("D")">@row.Id.ToString("D")</a></td>
+                </tr>
+            }
+            </tbody>
+        </table>
+        @if (results.NextCursor is { } next)
+        {
+            <p><a class="button" href="@Model.NextLink(next)">Older payments</a></p>
+        }
+    }
+}

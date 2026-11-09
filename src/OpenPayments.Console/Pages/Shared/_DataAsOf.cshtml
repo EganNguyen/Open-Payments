@@ -1,0 +1,10 @@
+@model (TimeSpan? Lag, DateTimeOffset Now)
+@inject Microsoft.Extensions.Options.IOptions<OpenPayments.Console.Data.SearchOptions> Options
+@if (Model.Lag is { } lag && lag > Options.Value.LagBanner)
+{
+    var asOf = Model.Now - lag;
+    <div class="banner warning" role="status">
+        <svg class="icon" aria-hidden="true"><use href="/icons/ledger.svg#clock"></use></svg>
+        <div>Data as of @asOf.UtcDateTime.ToString("HH:mm:ss") UTC. The read copy is behind, so recent changes may not show yet.</div>
+    </div>
+}

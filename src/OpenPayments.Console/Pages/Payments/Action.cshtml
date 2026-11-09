@@ -1,0 +1,71 @@
+@page "/Payments/{id:guid}/Action/{action}"
+@model OpenPayments.Console.Pages.Payments.ActionModel
+@using OpenPayments.Console.Presentation
+@{
+    ViewData["Section"] = "payments";
+    var p = Model.Payment;
+    var view = StatePresentation.For(p.State);
+    var title = Model.ActionName switch { "capture" => "Capture in full", "void" => "Void", "cancel" => "Cancel payment", _ => "Refund" };
+    ViewData["Title"] = title;
+}
+<p><a href="@Model.Back()">Back to the payment</a></p>
+<h1>@title</h1>
+<p><span class="id">@p.Id.ToString("D")</span> · <span class="status @view.ToneClass" data-state="@p.State"><svg class="icon" aria-hidden="true"><use href="/icons/ledger.svg#@view.Icon"></use></svg>@view.Label</span></p>
+
+@if (Model.Notice is not null)
+{
+    <div class="banner @Model.NoticeTone" role="status" data-notice>
+        <svg class="icon" aria-hidden="true"><use href="/icons/ledger.svg#alert"></use></svg>
+        <div>@Model.Notice</div>
+    </div>
+}
+
+@if (Model.ShowForm)
+{
+    <form method="post" class="panel" data-action-form>
+        <input type="hidden" name="Token" value="@Model.Token">
+        @if (Model.ActionName == "refund")
+        {
+            <label for="amount">Amount in @p.Currency
+                <input id="amount" name="Amount" value="@Model.Amount" inputmode="decimal" autocomplete="off" required aria-describedby="amount-help @(Model.AmountError is null ? null : "amount-error")">
+            </label>
+            <p id="amount-help" class="muted">Refundable now: @MoneyFormat.DisplayWithCode(p.RefundableMinor, p.Currency).</p>
+            @if (Model.AmountError is not null)
+            {
+                <p id="amount-error" class="field-error" role="alert">@Model.AmountError</p>
+            }
+        }
+        <label for="reason">Reason
+            <textarea id="reason" name="Reason" required aria-describedby="@(Model.ReasonError is null ? null : "reason-error")">@Model.Reason</textarea>
+        </label>
+        @if (Model.ReasonError is not null)
+        {
+            <p id="reason-error" class="field-error" role="alert">@Model.ReasonError</p>
+        }
+
+        @if (Model.Confirming || Model.ActionName != "refund")
+        {
+            <div class="banner warning" data-effect>
+                <svg class="icon" aria-hidden="true"><use href="/icons/ledger.svg#alert"></use></svg>
+                <div>@Model.Effect()</div>
+            </div>
+            <input type="hidden" name="Step" value="@(Model.Confirming || Model.ActionName != "refund" ? "confirm" : "review")">
+            <div class="actions">
+                <button type="submit" class="@(Model.ActionName is "void" or "cancel" ? "danger" : "primary")" data-confirm>Confirm: @title.ToLowerInvariant()</button>
+                <a class="button" href="@Model.Back()">Don't do it</a>
+            </div>
+        }
+        else
+        {
+            <input type="hidden" name="Step" value="review">
+            <div class="actions">
+                <button type="submit" class="primary">Review refund</button>
+                <a class="button" href="@Model.Back()">Don't do it</a>
+            </div>
+        }
+    </form>
+}
+else
+{
+    <p><a class="button" href="@(Model.Back())?fresh=1">Open the payment</a></p>
+}

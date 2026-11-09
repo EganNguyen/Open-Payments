@@ -17,5 +17,8 @@
     <ProjectReference Include="../../src/OpenPayments.Api/OpenPayments.Api.csproj" />
     <ProjectReference Include="../../src/OpenPayments.Psp/OpenPayments.Psp.csproj" />
     <ProjectReference Include="../../src/OpenPayments.Transitions/OpenPayments.Transitions.csproj" />
+    <!-- Both the API and the console declare a global Program, so the console comes in aliased. -->
+    <ProjectReference Include="../../src/OpenPayments.Console/OpenPayments.Console.csproj" Aliases="ConsoleApp" />
+    <ProjectReference Include="../../tools/OpenPayments.Checks/OpenPayments.Checks.csproj" />
   </ItemGroup>
 </Project>

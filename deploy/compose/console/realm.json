@@ -1,0 +1,37 @@
+{
+  "realm": "open-payments",
+  "enabled": true,
+  "sslRequired": "none",
+  "clients": [
+    {
+      "clientId": "op-console",
+      "protocol": "openid-connect",
+      "publicClient": false,
+      "secret": "op_local_only",
+      "standardFlowEnabled": true,
+      "directAccessGrantsEnabled": false,
+      "redirectUris": ["http://localhost:8090/signin-oidc"],
+      "webOrigins": ["http://localhost:8090"],
+      "attributes": { "pkce.code.challenge.method": "S256", "post.logout.redirect.uris": "http://localhost:8090/" },
+      "protocolMappers": [
+        {
+          "name": "amr",
+          "protocol": "openid-connect",
+          "protocolMapper": "oidc-amr-mapper",
+          "config": { "id.token.claim": "true", "access.token.claim": "true", "introspection.token.claim": "true" }
+        }
+      ]
+    }
+  ],
+  "users": [
+    {
+      "id": "9b2d6c4e-0d6f-4f5e-9a4f-6f1c2a3b4c01",
+      "username": "admin",
+      "email": "admin@console.local",
+      "emailVerified": true,
+      "enabled": true,
+      "credentials": [{ "type": "password", "value": "op_local_only", "temporary": false }],
+      "requiredActions": ["CONFIGURE_TOTP"]
+    }
+  ]
+}

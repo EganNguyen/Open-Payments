@@ -4,6 +4,7 @@
     <Project Path="src/OpenPayments.Transitions/OpenPayments.Transitions.csproj" />
     <Project Path="src/OpenPayments.Psp/OpenPayments.Psp.csproj" />
     <Project Path="src/OpenPayments.Api/OpenPayments.Api.csproj" />
+    <Project Path="src/OpenPayments.Console/OpenPayments.Console.csproj" />
   </Folder>
   <Folder Name="/tools/">
     <Project Path="tools/OpenPayments.Checks/OpenPayments.Checks.csproj" />
@@ -12,6 +13,8 @@
   <Folder Name="/tests/">
     <Project Path="tests/OpenPayments.Analyzers.Tests/OpenPayments.Analyzers.Tests.csproj" />
     <Project Path="tests/OpenPayments.Checks.Tests/OpenPayments.Checks.Tests.csproj" />
+    <Project Path="tests/OpenPayments.Console.Tests/OpenPayments.Console.Tests.csproj" />
+    <Project Path="tests/OpenPayments.Console.Browser.Tests/OpenPayments.Console.Browser.Tests.csproj" />
     <Project Path="tests/OpenPayments.Integration.Tests/OpenPayments.Integration.Tests.csproj" />
     <Project Path="tests/OpenPayments.Acceptance.Tests/OpenPayments.Acceptance.Tests.csproj" />
     <Project Path="tests/OpenPayments.Domain.Tests/OpenPayments.Domain.Tests.csproj" />

@@ -1,0 +1,14 @@
+@page
+@{
+    ViewData["Title"] = "More";
+    ViewData["Section"] = "more";
+}
+<h1>More</h1>
+<div class="panel">
+    <p><a href="/Audit">Audit log</a></p>
+    <p class="muted">Staff management is on desktop.</p>
+    <form method="post" action="/Account/SignOut">
+        @Html.AntiForgeryToken()
+        <button type="submit" class="button">Sign out</button>
+    </form>
+</div>

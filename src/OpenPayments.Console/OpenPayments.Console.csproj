@@ -1,0 +1,17 @@
+<Project Sdk="Microsoft.NET.Sdk.Web">
+  <!-- The staff console (D40-D45). It must not reference OpenPayments.Transitions: money moves
+       only through the payment API, and its database roles can't write money tables. -->
+  <PropertyGroup>
+    <RootNamespace>OpenPayments.Console</RootNamespace>
+    <AssemblyName>OpenPayments.Console</AssemblyName>
+  </PropertyGroup>
+  <ItemGroup>
+    <PackageReference Include="Microsoft.AspNetCore.Authentication.OpenIdConnect" />
+    <PackageReference Include="Npgsql" />
+    <PackageReference Include="Microsoft.CodeAnalysis.BannedApiAnalyzers" PrivateAssets="all" />
+    <AdditionalFiles Include="$(MSBuildThisFileDirectory)../../BannedSymbols.txt" />
+  </ItemGroup>
+  <ItemGroup>
+    <InternalsVisibleTo Include="OpenPayments.Console.Tests" />
+  </ItemGroup>
+</Project>

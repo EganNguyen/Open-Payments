@@ -1,0 +1,55 @@
+@page
+@model OpenPayments.Console.Pages.Audit.IndexModel
+@using OpenPayments.Console.Presentation
+@{
+    ViewData["Title"] = "Audit log";
+    ViewData["Section"] = "audit";
+}
+<h1>Audit log</h1>
+<form method="get" action="/Audit" class="filters">
+    <label>From <input type="date" name="From" value="@Model.FromDate.ToString("yyyy-MM-dd")"></label>
+    <label>To <input type="date" name="To" value="@Model.ToDate.ToString("yyyy-MM-dd")"></label>
+    <label>Person (staff ID) <input name="Staff" value="@Model.Staff" size="38" autocomplete="off"></label>
+    <label>Payment ID <input name="Payment" value="@Model.Payment" size="38" autocomplete="off"></label>
+    <button type="submit" class="button primary">Filter</button>
+</form>
+@if (Model.Message is not null)
+{
+    <div class="banner warning" role="status"><svg class="icon" aria-hidden="true"><use href="/icons/ledger.svg#alert"></use></svg><div>@Model.Message</div></div>
+}
+@if (Model.Results is { } results)
+{
+    if (results.Rows.Count == 0)
+    {
+        <p class="muted">Nothing was recorded in this range.</p>
+    }
+    else
+    {
+        <table class="rows">
+            <thead><tr><th>When</th><th>Who</th><th>What</th><th>Payment</th><th class="num">Amount</th><th>Reason</th><th>Result</th></tr></thead>
+            <tbody>
+            @foreach (var row in results.Rows)
+            {
+                <tr data-audit-id="@row.Id">
+                    <td data-label="When">@row.At.UtcDateTime.ToString("yyyy-MM-dd HH:mm:ss") UTC</td>
+                    <td data-label="Who">@(row.Email ?? row.StaffId.ToString("D"))</td>
+                    <td data-label="What">@row.Action (@row.Phase)
+                        @if (row.Orphan)
+                        {
+                            <span class="status tone-warning" data-orphan><svg class="icon" aria-hidden="true"><use href="/icons/ledger.svg#alert"></use></svg>No outcome recorded: check the payment</span>
+                        }
+                    </td>
+                    <td data-label="Payment">@if (row.PaymentId is { } payment) { <a class="id" href="/Payments/@payment.ToString("D")?fresh=1">@payment.ToString("D")</a> }</td>
+                    <td class="num">@(row.AmountMinor is { } amount && row.Currency is { } currency ? MoneyFormat.DisplayWithCode(amount, currency) : "")</td>
+                    <td data-label="Reason">@row.Reason</td>
+                    <td data-label="Result">@row.Result</td>
+                </tr>
+            }
+            </tbody>
+        </table>
+        @if (results.NextBeforeId is { } before)
+        {
+            <p><a class="button" href="@Model.NextLink(before)">Older entries</a></p>
+        }
+    }
+}

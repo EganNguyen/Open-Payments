@@ -1,0 +1,47 @@
+@{
+    var section = ViewData["Section"] as string ?? "payments";
+}
+<!doctype html>
+<html lang="en">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+    <meta name="color-scheme" content="light dark">
+    <title>@(ViewData["Title"] ?? "Console") · Open Payments</title>
+    <link rel="stylesheet" href="~/css/ledger.css" asp-append-version="true">
+    <script src="~/js/htmx-2.0.4.min.js" defer></script>
+</head>
+<body hx-boost="false">
+<a class="skip" href="#main">Skip to content</a>
+<div class="shell">
+    <nav class="sidebar" aria-label="Main">
+        <div class="brand">Open Payments</div>
+        @* Stage 1: the home page is Payments and there is no Attention item until C12. *@
+        <a class="nav @(section == "payments" ? "current" : null)" href="/Payments" aria-current="@(section == "payments" ? "page" : null)">
+            <svg class="icon" aria-hidden="true"><use href="/icons/ledger.svg#list"></use></svg>Payments
+        </a>
+        <a class="nav @(section == "audit" ? "current" : null)" href="/Audit" aria-current="@(section == "audit" ? "page" : null)">
+            <svg class="icon" aria-hidden="true"><use href="/icons/ledger.svg#log"></use></svg>Audit log
+        </a>
+        <a class="nav desktop-only @(section == "staff" ? "current" : null)" href="/Staff" aria-current="@(section == "staff" ? "page" : null)">
+            <svg class="icon" aria-hidden="true"><use href="/icons/ledger.svg#people"></use></svg>Staff
+        </a>
+        <form method="post" action="/Account/SignOut" class="signout">
+            @Html.AntiForgeryToken()
+            <button type="submit" class="ghost">Sign out</button>
+        </form>
+    </nav>
+    <main id="main" class="content">
+        @RenderBody()
+    </main>
+</div>
+<nav class="tabs" aria-label="Main">
+    <a class="tab @(section == "payments" ? "current" : null)" href="/Payments" aria-current="@(section == "payments" ? "page" : null)">
+        <svg class="icon" aria-hidden="true"><use href="/icons/ledger.svg#list"></use></svg><span>Payments</span>
+    </a>
+    <a class="tab @(section == "more" || section == "audit" ? "current" : null)" href="/More" aria-current="@(section == "more" ? "page" : null)">
+        <svg class="icon" aria-hidden="true"><use href="/icons/ledger.svg#more"></use></svg><span>More</span>
+    </a>
+</nav>
+</body>
+</html>
