@@ -313,3 +313,28 @@ For latency: profile the step 0 path at 1 req/s, splitting time into API, PgBoun
 - **Latency:** profile at 1 req/s only if the rerun on the reset database still fails the gate.
 
 **Latency after the reset:** run `20261109T042813Z-18d0f63-s0-2291` was valid, with p50 at 19.97 ms, within the 25 ms gate. It failed p99 at 137.61 ms. The six slowest requests, each 336 ms end-to-end, were the k6 `setup()` prefill: one burst of authorizations at 04:28:14, against an API restarted by the reset seconds earlier. k6 counts `setup()` traffic in `http_req_duration`, and 6 of 336 requests was enough to set p99. This is a measurement defect, not the step's load. **Fix:** `mix.js` now exports `http_req_duration{scenario:mix}`, and `report.py` judges latency on it, falling back to the old metric for earlier runs. The gate values are unchanged.
+
+## E9: TxRunner overrides the D1 lock_timeout
+
+**State:** Open · Raised 2026-11-09
+
+**Task:** 13, the transaction runner. Found by the deadlock lab in `benchmarks/deadlock-lab`.
+
+**What conflicts:** [D1](../decisions.md#d1), the [engineering standards](../engineering-standards.md#database) and the plan's global constraints set the application role's `lock_timeout` to 200 ms, with `deadlock_timeout` at 100 ms, so a deadlock is detected before a lock wait times out. `TxRunner.SetMerchantAsync` runs `set_config('lock_timeout', '2s', true)` in every transaction, which overrides the role setting for all money writes. It has done this since `80f0e6c`, the Task 13 WIP commit. No decision or escalation records why.
+
+**Evidence:**
+
+- `src/OpenPayments.Transitions/TxRunner.cs:297`.
+- `scripts/check-db-settings.sh` checks `show lock_timeout` outside a transaction and reads 200 ms, so it passes and doesn't see the override.
+- The lab, at the stack's `deadlock_timeout` of 100 ms: under contention, lock waits run up to 2 s before `55P03`, where D1 expects a 200 ms fast failure and a 503.
+- With PostgreSQL's default `deadlock_timeout` of 1 s, the same lab saw about 550 `55P03` per round against 161 deadlocks.
+
+**Why it matters:** a 2 s lock wait holds a connection and a request slot 10 times longer than designed, so under a hot row the pool fills before shedding starts. The capacity search so far shows `pool wait 0.0 s` and 0 deadlocks through step 6, so it hasn't affected a run yet.
+
+**Options seen:**
+
+1. Remove the override, so the role's 200 ms applies, as D1 says. Add a check that reads `current_setting('lock_timeout')` inside a `TxRunner` transaction.
+2. Keep 2 s, if a C43 or commit-wait test depends on it, and amend D1 with the reason.
+3. Set it explicitly to 200 ms in `TxRunner`, so the runner doesn't depend on role configuration. That needs a check that the role and runner agree.
+
+**Recommendation:** option 1 or 3, after checking whether any C43 test needs the longer wait. This isn't changed until a design session answers.

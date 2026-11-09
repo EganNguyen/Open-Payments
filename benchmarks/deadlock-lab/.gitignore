@@ -1,0 +1,5 @@
+bin/
+obj/
+lab-result.json
+deadlocks.log
+lab-d1.txt

@@ -1,0 +1,16 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <!-- Deadlock recovery lab, run by run.sh. Not part of OpenPayments.slnx. It drives the real
+       TxRunner, so the retry under test is the production one. -->
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net10.0</TargetFramework>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <TreatWarningsAsErrors>false</TreatWarningsAsErrors>
+    <EnableNETAnalyzers>false</EnableNETAnalyzers>
+    <OpenPaymentsRoot Condition="'$(OpenPaymentsRoot)' == ''">$(MSBuildThisFileDirectory)../../</OpenPaymentsRoot>
+  </PropertyGroup>
+  <ItemGroup>
+    <ProjectReference Include="$(OpenPaymentsRoot)src/OpenPayments.Transitions/OpenPayments.Transitions.csproj" />
+  </ItemGroup>
+</Project>
