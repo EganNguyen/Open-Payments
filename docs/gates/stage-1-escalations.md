@@ -280,3 +280,27 @@ S3 stays PARTIAL until these pass. Revisit the statement count after Linux step 
 4. Rerun step 2 from that state. It passes when the run is valid, every share is within the 2-point limit, and all applicable checks pass, including CK1.
 
 **Escalate again if** clearing the manifest does not make CK1 pass on a rerun, or if any share leaves the 2-point limit.
+
+## E8: step 0 can't pass at the D47 share rule, and fails its latency gates at 1 req/s
+
+**State:** Open · Raised 2026-11-09
+
+**Task:** 17, the laptop limit search. Built by Opus under the owner's 2026-11-09 exception.
+
+**What happened:** Run `20261109T040758Z-4540c23-s0-2958` (step 0, 1 req/s for 300 s, commit `4540c23`, 312,613 payments already in the database) had 0.000% unexpected errors and passed every applicable check. It was invalid and failed its gates for three separate reasons:
+
+1. **Completed count:** the metric read 188 and the database 312,801. This is a setup error, not a defect. `op_payments_completed_total` counts from API process start. The API was rebuilt at HEAD for B1 and B2, but the database wasn't reset. The comparison runs matched only because their API never restarted. **Fix:** a [full benchmark reset](../../benchmarks/README.md#full-benchmark-reset) before the search. That truncates the 312,613 payments left by the index comparison. The comparison's results are already recorded, but it needs the owner's go-ahead because it can't be undone.
+2. **Shares:** status was 18.1%, 3.1 points over its 15% target; refund was 6.8%, 3.2 points under its 10%. The run had 309 mix requests. At that size, a 10% share has a binomial standard deviation of 1.7 points, so a fair run lands more than 2 points from at least one of seven targets most of the time. The 2-point rule from [D47](../decisions.md#d47) can't be met reliably at step 0. It's fine from step 1, which has about 3,000 requests and a deviation of about 0.55 points for a 10% share.
+3. **Latency:** platform p50 was 26.18 ms against the 25 ms gate, and p99 123.55 ms against 100 ms. Maximum end-to-end latency was 323.7 ms, and p99 at 335 requests is the fourth-highest request. At step 4, valid runs had p50 of 7 ms. Low-rate latency on the laptop may come from idle CPU states, cold connections or JIT, and this run can't tell which. The old-mix step 0 had p50 of 18.38 ms.
+
+**Also found and fixed:** `report.py` read k6 Rate metrics by `rate`, a key only counters have. The error-rate gate could therefore never fail: an earlier attempt, `20261109T040109Z-3d728c1-s0-3b3c`, sent no API token, got 401 on every request, and reported 0.000% with gates passed. The fix is `4540c23`. Earlier recorded runs had `op_unexpected_error` value 0, so their results stand.
+
+**Options seen:**
+
+1. Reset, then apply the share rule only when every share's expected count is large enough, for example at least 100 requests per share, or use a 3-standard-deviation bound. Step 0's shares would then be reported but not judged. This keeps D47's targets, but changes how validity is judged, so it needs a design answer.
+2. Reset and rerun step 0 until it passes. Rejected: that's cherry-picking a sample.
+3. Reset and run step 0 for 30 min, about 1,800 requests, so the 2-point rule is fair. That changes the ramp plan's step duration.
+
+For latency: profile the step 0 path at 1 req/s, splitting time into API, PgBouncer and database per operation, before deciding whether the gate failure is a laptop artifact or real.
+
+**Recommendation:** after the reset, option 1 with the 3-standard-deviation bound, plus the latency profile. Until this is answered, the limit search stays stopped at step 0.
