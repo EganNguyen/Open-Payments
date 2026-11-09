@@ -804,14 +804,19 @@ public sealed class PaymentFlow(
             exception is OperationCanceledException or PspTimeoutException or PspUnavailableException)
         {
             pspWatch.Stop();
-            var timedOut = await store.ApplyAsync(
-                view.Id,
-                new PaymentCommand.Timeout(attempt.Id, operation, DateTimeOffset.UtcNow),
-                null,
-                CancellationToken.None);
-            return await FromAppliedAsync(
-                timedOut, merchant, key, 202, pspWatch.ElapsedMilliseconds, timedOut: true,
-                countCompleted: false, resolveKey);
+            // H3: recording the timeout is after the PSP call, so its failure is an unknown
+            // outcome (202), never the retryable 503 of transaction A.
+            return await AfterPspAsync(view.Id, null, merchant, attempt.Id, "authorize", async () =>
+            {
+                var timedOut = await store.ApplyAsync(
+                    view.Id,
+                    new PaymentCommand.Timeout(attempt.Id, operation, DateTimeOffset.UtcNow),
+                    null,
+                    CancellationToken.None);
+                return await FromAppliedAsync(
+                    timedOut, merchant, key, 202, pspWatch.ElapsedMilliseconds, timedOut: true,
+                    countCompleted: false, resolveKey);
+            });
         }
 
         pspWatch.Stop();
@@ -829,24 +834,13 @@ public sealed class PaymentFlow(
             _ => throw new InvalidOperationException("Unknown PSP result."),
         };
 
-        try
+        var status = result is PspResult.Declined ? 402 : 200;
+        return await AfterPspAsync(view.Id, null, merchant, attempt.Id, "authorize", async () =>
         {
             var applied = await store.ApplyAsync(view.Id, answer, null, CancellationToken.None);
-            var status = result is PspResult.Declined ? 402 : 200;
-            if (result is PspResult.RequiresAction)
-            {
-                status = 200;
-            }
-
             return await FromAppliedAsync(
                 applied, merchant, key, status, pspWatch.ElapsedMilliseconds, false, countCompleted, resolveKey);
-        }
-        catch (Exception)
-        {
-            var current = await store.GetPaymentAsync(merchant, view.Id, CancellationToken.None);
-            var body = current is null ? "{}" : JsonSerializer.Serialize(PaymentBody.From(current), ApiJson.Options);
-            return new ApiAnswer(202, null, RawJson: body);
-        }
+        });
     }
 
     private async Task<ApiAnswer> FromAppliedAsync(
@@ -923,12 +917,29 @@ public sealed class PaymentFlow(
                 _ => exception.GetType().Name,
             };
             log.Record(Entry(merchant, paymentId, attemptId, null, "UNKNOWN", "transaction_b_" + reason, requestClass));
-            var current = await store.GetPaymentAsync(merchant, paymentId, CancellationToken.None);
-            return current is null
-                ? new ApiAnswer(202, null, RawJson: "{}")
-                : await PendingAsync(current, refundId, merchant);
+            try
+            {
+                var current = await store.GetPaymentAsync(merchant, paymentId, CancellationToken.None);
+                if (current is not null)
+                {
+                    return await PendingAsync(current, refundId, merchant);
+                }
+            }
+#pragma warning disable CA1031 // N3: the database may still be down; the answer stays 202.
+            catch (Exception)
+#pragma warning restore CA1031
+            {
+            }
+
+            return UnknownFallback(paymentId, refundId);
         }
     }
+
+    /// <summary>N3: the 202 body when the stored state can't be read, from the IDs in hand.</summary>
+    private static ApiAnswer UnknownFallback(PaymentId paymentId, RefundId? refundId) =>
+        new(202, null, RawJson: refundId is { } refund
+            ? JsonSerializer.Serialize(new { id = refund.Value, payment_id = paymentId.Value, state = "UNKNOWN" }, ApiJson.Options)
+            : JsonSerializer.Serialize(new { id = paymentId.Value, state = "UNKNOWN" }, ApiJson.Options));
 
     /// <summary>
     /// The answer for a key already used on this route: the stored answer, the current state of

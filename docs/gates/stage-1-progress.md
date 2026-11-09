@@ -101,6 +101,15 @@ Fixes for the findings in [the Stage 1 review](stage-1-review.md), built by Opus
 
 Whole suite after the re-check fixes: 389 tests (acceptance 76), 0 warnings.
 
+**After the second re-check (`edddb1e`):**
+
+| Finding | Fix | Tests |
+|---|---|---|
+| H3 | `ExecuteAttemptAsync` records a PSP timeout through `AfterPspAsync` too, so a failure there on create or new attempt answers 202 with the stored state, not the retryable 503 of transaction A. Both post-PSP writes on authorize and sale now share the one handler | **R9** (added unchanged), unknown commit and connection loss, failing first with 503 |
+| N3 | When the stored state can't be read after a transaction B failure, the 202 answer is built from the IDs in hand, with `state` `UNKNOWN`, instead of a 500 | None automated: the store has no read failpoint, and one wasn't added for a low finding. The fallback is the `UnknownFallback` helper |
+
+Whole suite after the second re-check fixes: 391 tests (acceptance 78), 0 warnings.
+
 Whole suite at the first fixes: 385 tests (Domain 70, analyzers 1, mock PSP 20, checks 24, console 124, integration 40, console browser 34, acceptance 72), 0 warnings.
 
 ### Build brief (design session, 2026-11-09)
