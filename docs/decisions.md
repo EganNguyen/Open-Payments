@@ -2,7 +2,7 @@
 
 The decisions that shape Open Payments, the assumptions behind them, and the questions still open.
 
-Status: Draft · Last updated: 2026-11-06
+Status: Draft · Last updated: 2026-11-09
 
 All values are starting points until measured. Other docs state the resulting rule; this doc says why.
 
@@ -427,6 +427,22 @@ All values are starting points until measured. Other docs state the resulting ru
 - **Decision:** `refunds_payment` ships in its own migration, ahead of Task 17's limit search, instead of in Task C4. The three `REVIEW` indexes stay in Task C4.
 - **Why:** `Sql.LoadRefund` filters on `payment_id`, which has no index, so a live refund lookup scans the whole table. On the laptop, `refunds` had about 19.7 billion rows read by sequential scans at 41,847 rows. Left alone, the limit search could report this as a bottleneck and hide the next real limit. See [the comparison](../benchmarks/console-indexes.md).
 - **Consequence:** Every refund insert and update adds an index entry. The laptop comparison found no cost in its valid runs, but it is a preview. This index also serves the foreign key check when payments are retired.
+
+### D51
+
+**The OP-BENCH suite judges a laptop milestone of 500 completed payments/s, as a preview.** Status: `Committed`, owner decision 2026-11-09.
+
+- **Decision:** The [benchmark suite](superpowers/specs/2026-11-09-benchmark-suite-design.md) adds an orchestrator, a fault driver, CK11 and a reliability test project around the existing harness. Its laptop milestone is 500 completed payments/s at ramp step 6 (about 1,000 req/s at the D47 mix), held for a 10-minute window in each of three runs from a reset. The project target stays 5,000. Latency is gated on measured platform overhead, p50 ≤ 25 ms and p99 ≤ 100 ms, using each request's own PSP wait. Recovery is first success within 30 s and SLO within 2 min of the fault's removal, with times from injection reported beside them. The k6 harness and the D47 mix are invoked unchanged. A laptop result is `PREVIEW`; a gate that is `NOT_APPLICABLE` makes the suite `INCONCLUSIVE`.
+- **Why:** The proposal it replaces gated on end-to-end latency the 200 ms mock makes impossible, left out the PSP call between the two transactions, and replaced the D47 mix, which would break comparison with every earlier run. A laptop shares one SSD and 18 cores between the generator and three PostgreSQL instances, so it can't give a recorded capacity number.
+- **Consequence:** New IDs TX1, TX2, C52-C55 and CK11 in [Verification](verification.md). `pg_stat_statements` and `log_lock_waits` join the database settings. Every suite writes a reproducibility manifest, and an incomplete one makes the result `INCONCLUSIVE`. Until Stage 2's resolver exists, the full suite's honest result is `INCONCLUSIVE (PREVIEW)`.
+
+### D52
+
+**CK11 reconciles what the client saw against the payment state machine.** Status: `Committed`, owner decision 2026-11-09.
+
+- **Decision:** CK11 reads the fault driver's ack log, the database and the mock's effect log. Every acknowledged final answer has its payment, with the same ID and a state that answer allows. Every 202 or `UNKNOWN` answer has an unresolved or legally resolved attempt. Every unanswered key is classified into one of the PSP lifecycle cases L0-L5. Every replay returned the original payment ID. Every unresolved attempt is listed with its case. A client-observed failure may have a row, such as a decline or a commit-unknown 503 after transaction A, and CK11 checks the row's state, not its absence. PSP side effects stay in CK2, which already proves one effect per key and records both ways.
+- **Why:** The proposal's CK11 compared status codes with row counts, which would flag legal `FAILED` rows and miss illegal states. Duplicating CK2's rules would give two checks that can disagree about one fact.
+- **Consequence:** Fault scenarios require CK2 and CK11 together. Before Stage 2, CK11 lists unknown outcomes and resolution is `NOT_APPLICABLE`; it never claims they were reconciled. A lifecycle case with no classified payment is `INCONCLUSIVE` for its scenario.
 
 ## Assumptions and limits
 

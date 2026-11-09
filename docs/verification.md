@@ -2,7 +2,7 @@
 
 The only home for test IDs, the production checklists, progress counts and the build phases that tie them together.
 
-Status: Draft · Last updated: 2026-11-06
+Status: Draft · Last updated: 2026-11-09
 
 ## How verification works
 
@@ -32,6 +32,7 @@ Run after every load and chaos test.
 | CK8 | Timeliness: settlement files and other inputs arrived within their window |
 | CK9 | Completeness: every source record has its ledger match, both ways, such as a `CAPTURED` payment with its capture transaction |
 | CK10 | Cross-check: independent records agree, such as `payments.captured_minor` and the ledger sum for that payment |
+| CK11 | Client view: every acknowledged answer has its payment with the same ID and a state that answer allows; every unanswered key is classified into a PSP lifecycle case L0-L5; every replay returned the original ID; every unresolved attempt is listed ([D52](decisions.md#d52)). Runs where the fault driver ran |
 
 CK7-CK10 are separate code from the payment-transition module ([D23](decisions.md#d23)). Every check must fail on injected corruption and on zero rows.
 
@@ -110,6 +111,12 @@ CK7-CK10 are separate code from the payment-transition module ([D23](decisions.m
 | C49 | Status-query flood | Create-payment keeps its SLO; reads shed first ([Stripe research](stripe-research.md#8-separate-rate-limits-from-load-shedding)) |
 | C50 | Capture and void at the same moment; void times out; authorization window passes during a live capture; capture after `VOIDED` or `EXPIRED` | One PSP effect; the loser gets the current status or 409; a timeout stays unresolved with no state change; expiry waits for the live capture; `auth_hold` clears in every final state ([D37](decisions.md#d37)) |
 | C51 | One merchant's PSP credential is revoked during load | That merchant's attempts fail fast with a stable code and no `UNKNOWN`; its account breaker opens and the PSP's doesn't; other merchants keep their SLO; an alert fires ([D35](decisions.md#d35)) |
+| C52 | Transaction B commits, then the HTTP response is lost; the client retries the key | Every retry returns the original payment ID and outcome; one PSP effect; CK2 and CK11 pass ([D51](decisions.md#d51)) |
+| C53 | 200 ms latency, then resets, between the API and PgBouncer at step 4 | Queues stay bounded; excess shed as 429 or 503; no duplicate; first success ≤ 30 s and SLO ≤ 2 min after removal; CK2 and CK11 pass |
+| C54 | PostgreSQL primary restarted under load at step 4 (local form of C7) | Every acknowledged payment present afterwards; outage answers are 503, not 500; recovery inside the C53 limits; CK11 passes |
+| C55 | Client resends a key while the original request is still waiting on the PSP | The retry renders current state ([D31](decisions.md#d31)); one attempt; one PSP effect; CK2 and CK11 pass |
+| TX1 | 100 pairs of opposite-order updates on a two-row test-only schema, through the real `TxRunner` | `pg_stat_database.deadlocks` rises; all 200 transactions commit; no lost update; at most 2 retries each. Proves deadlock recovery, not product concurrency |
+| TX2 | Transaction work raises SQLSTATE 40P01 on every attempt | Exactly 3 attempts, then `retry_exhausted` and 503; nothing committed; the exhaustion is counted |
 
 ## Unit and property tests
 
