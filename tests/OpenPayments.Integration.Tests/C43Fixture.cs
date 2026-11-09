@@ -116,7 +116,7 @@ public sealed class C43Fixture : IAsyncLifetime
     {
         await UnblockAsync(terminateBackends: true);
         await ExecAdminAsync(
-            "drop schema if exists public cascade; create schema public; create table schema_migrations (version text primary key, checksum text not null, applied_at timestamptz not null default now()); grant usage on schema public to public;");
+            "drop schema if exists console cascade; drop schema if exists public cascade; create schema public; create table schema_migrations (version text primary key, checksum text not null, applied_at timestamptz not null default now()); grant usage on schema public to public;");
         foreach (var name in MigrationNames())
         {
             await ExecAdminAsync("-f", "/schema/migrations/" + name);

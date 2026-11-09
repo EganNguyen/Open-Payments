@@ -31,7 +31,7 @@ public sealed class DbFixture : IAsyncLifetime
     {
         await ExecAsync(
             "psql", "-U", "postgres", "-d", "openpayments", "-v", "ON_ERROR_STOP=1", "-c",
-            "drop schema if exists public cascade; create schema public; drop schema if exists ck cascade; create table schema_migrations (version text primary key, checksum text not null, applied_at timestamptz not null default now());");
+            "drop schema if exists console cascade; drop schema if exists public cascade; create schema public; drop schema if exists ck cascade; create table schema_migrations (version text primary key, checksum text not null, applied_at timestamptz not null default now());");
         foreach (var name in MigrationNames())
         {
             await ExecAsync(

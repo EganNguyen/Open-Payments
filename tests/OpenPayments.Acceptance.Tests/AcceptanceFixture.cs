@@ -93,7 +93,7 @@ public sealed class AcceptanceFixture : IAsyncLifetime
 
     public async Task ResetAsync()
     {
-        await ExecAsync("drop schema if exists public cascade; create schema public; grant usage on schema public to public;");
+        await ExecAsync("drop schema if exists console cascade; drop schema if exists public cascade; create schema public; grant usage on schema public to public;");
         await ExecAsync("create table schema_migrations (version text primary key, checksum text not null, applied_at timestamptz not null default now());");
         foreach (var name in MigrationNames())
         {
