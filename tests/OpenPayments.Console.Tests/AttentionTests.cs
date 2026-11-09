@@ -21,7 +21,7 @@ public sealed partial class AttentionTests(ConsoleDb db)
         await db.SeedPaymentAsync("replica", "REVIEW");
         using var client = Client(factory, ConsoleRole.Viewer);
 
-        var response = await client.GetAsync("/");
+        var response = await client.GetAsync("/attention");
 
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);
         var html = await TextAsync(response);
@@ -36,7 +36,7 @@ public sealed partial class AttentionTests(ConsoleDb db)
         await using var factory = new DbConsoleFactory(db);
         using var client = Client(factory, ConsoleRole.Viewer);
 
-        var html = await GetAsync(client, "/");
+        var html = await GetAsync(client, "/attention");
 
         // The owner's decision: the empty page says one thing and nothing else. The check
         // time stays, because it says how fresh that answer is.
@@ -65,7 +65,7 @@ public sealed partial class AttentionTests(ConsoleDb db)
         await db.SeedAttemptAsync("replica", withAttempt, "sale", "REVIEW", now.AddHours(-2));
         using var client = Client(factory, ConsoleRole.Viewer);
 
-        var html = await GetAsync(client, "/");
+        var html = await GetAsync(client, "/attention");
 
         var section = Section(html, "review");
         Assert.Contains("Needs review, 3", section, StringComparison.Ordinal);
@@ -82,7 +82,7 @@ public sealed partial class AttentionTests(ConsoleDb db)
         await db.SeedPaymentAsync("replica", "REVIEW");
         using var client = Client(factory, ConsoleRole.Viewer);
 
-        var html = await GetAsync(client, "/");
+        var html = await GetAsync(client, "/attention");
 
         Assert.Single(QueueKeys(html));
         Assert.Contains(
@@ -106,7 +106,7 @@ public sealed partial class AttentionTests(ConsoleDb db)
         await OrphanAsync(review);
         using var client = Client(factory, ConsoleRole.Viewer);
 
-        var html = await GetAsync(client, "/");
+        var html = await GetAsync(client, "/attention");
 
         Assert.Equal(["review", "approval", "orphan", "unresolved", "expiring"], QueueKeys(html));
     }
@@ -131,7 +131,7 @@ public sealed partial class AttentionTests(ConsoleDb db)
         await db.SeedAttemptAsync("replica", pending, "authorize", "PENDING", now.AddHours(-1));
         using var client = Client(factory, ConsoleRole.Viewer);
 
-        var html = await GetAsync(client, "/");
+        var html = await GetAsync(client, "/attention");
 
         var section = Section(html, "unresolved");
         Assert.Equal([refunded, old, capture], RowIds(section));
@@ -153,7 +153,7 @@ public sealed partial class AttentionTests(ConsoleDb db)
         await SetUpdatedAsync(under, now.AddMinutes(-20));
         using var client = Client(factory, ConsoleRole.Viewer);
 
-        var html = await GetAsync(client, "/");
+        var html = await GetAsync(client, "/attention");
 
         Assert.Single(Regex.Matches(Section(html, "unresolved"), "Over limit"));
     }
@@ -167,7 +167,7 @@ public sealed partial class AttentionTests(ConsoleDb db)
         await db.SeedAttemptAsync("replica", payment, "void", "UNKNOWN", factory.Clock.GetUtcNow().AddHours(-6));
         using var client = Client(factory, ConsoleRole.Operator);
 
-        var html = await GetAsync(client, "/");
+        var html = await GetAsync(client, "/attention");
 
         Assert.Contains("This console can't settle a stuck void. Handle it at the PSP.", Section(html, "unresolved"), StringComparison.Ordinal);
     }
@@ -186,7 +186,7 @@ public sealed partial class AttentionTests(ConsoleDb db)
         await SetAuthorizedUntilAsync(far, now.AddDays(3));
         using var client = Client(factory, ConsoleRole.Viewer);
 
-        var html = await GetAsync(client, "/");
+        var html = await GetAsync(client, "/attention");
 
         var section = Section(html, "expiring");
         Assert.Equal([sooner, later], RowIds(section));
@@ -204,7 +204,7 @@ public sealed partial class AttentionTests(ConsoleDb db)
         await OrphanAsync(payment, person);
         using var client = Client(factory, ConsoleRole.Viewer);
 
-        var html = await GetAsync(client, "/");
+        var html = await GetAsync(client, "/attention");
 
         var section = Section(html, "orphan");
         Assert.Equal([payment], RowIds(section));
@@ -219,7 +219,7 @@ public sealed partial class AttentionTests(ConsoleDb db)
         await db.SeedPaymentAsync("replica", "REVIEW", merchant: ConsoleDb.OtherMerchant);
         using var client = Client(factory, ConsoleRole.Viewer);
 
-        var html = await GetAsync(client, "/");
+        var html = await GetAsync(client, "/attention");
 
         Assert.Contains("Nothing needs attention.", html, StringComparison.Ordinal);
     }
@@ -236,7 +236,7 @@ public sealed partial class AttentionTests(ConsoleDb db)
             """);
         using var client = Client(factory, ConsoleRole.Viewer);
 
-        var html = await GetAsync(client, "/");
+        var html = await GetAsync(client, "/attention");
 
         var section = Section(html, "review");
         Assert.Contains("Needs review, 1,000+", section, StringComparison.Ordinal);
@@ -251,7 +251,7 @@ public sealed partial class AttentionTests(ConsoleDb db)
             settings["Console:Db:Replica"] = "Host=127.0.0.1;Port=1;Database=unused;Timeout=1");
         using var client = Client(factory, ConsoleRole.Viewer);
 
-        var response = await client.GetAsync("/");
+        var response = await client.GetAsync("/attention");
 
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);
         var html = await TextAsync(response);
@@ -269,7 +269,7 @@ public sealed partial class AttentionTests(ConsoleDb db)
         await db.SeedPaymentAsync("replica", "REVIEW");
         using var client = Client(factory, ConsoleRole.Viewer);
 
-        var html = await GetAsync(client, "/");
+        var html = await GetAsync(client, "/attention");
 
         Assert.Contains("Proposing needs the Operator role.", Section(html, "review"), StringComparison.Ordinal);
     }
@@ -283,7 +283,7 @@ public sealed partial class AttentionTests(ConsoleDb db)
         await ProposeAsync(payment, Guid.NewGuid());
         using var client = Client(factory, ConsoleRole.Operator);
 
-        var html = await GetAsync(client, "/");
+        var html = await GetAsync(client, "/attention");
 
         Assert.DoesNotContain("data-role-note", Section(html, "review"), StringComparison.Ordinal);
         Assert.Contains("Deciding needs the Approver role.", Section(html, "approval"), StringComparison.Ordinal);
@@ -301,7 +301,7 @@ public sealed partial class AttentionTests(ConsoleDb db)
         await ProposeAsync(theirs, Guid.NewGuid());
         using var client = factory.ClientFor(approver.Subject);
 
-        var html = await GetAsync(client, "/");
+        var html = await GetAsync(client, "/attention");
 
         var section = Section(html, "approval");
         Assert.Single(Regex.Matches(section, ">Yours<"));
@@ -348,26 +348,26 @@ public sealed partial class AttentionTests(ConsoleDb db)
             """);
         using var client = Client(factory, ConsoleRole.Operator);
 
-        var html = await GetAsync(client, "/");
+        var html = await GetAsync(client, "/attention");
 
         Assert.Equal("99+", Badge(html));
         Assert.Contains("aria-label=\"Needs attention, 120 to act on\"", html, StringComparison.Ordinal);
     }
 
     [Fact]
-    public async Task Navigation_puts_attention_first()
+    public async Task Navigation_puts_dashboard_first_and_attention_second()
     {
         await db.ResetAsync();
         await using var factory = new DbConsoleFactory(db);
         using var client = Client(factory, ConsoleRole.Viewer);
 
-        var html = await GetAsync(client, "/");
+        var html = await GetAsync(client, "/attention");
 
         var sidebar = Between(html, "<nav class=\"sidebar\"", "</nav>");
-        Assert.Equal(["/", "/Payments", "/Audit", "/Staff"], Hrefs(sidebar));
-        Assert.Contains("aria-current=\"page\"", Between(sidebar, "href=\"/\"", "</a>"), StringComparison.Ordinal);
+        Assert.Equal(["/", "/attention", "/Payments", "/Audit", "/Staff"], Hrefs(sidebar));
+        Assert.Contains("aria-current=\"page\"", Between(sidebar, "href=\"/attention\"", "</a>"), StringComparison.Ordinal);
         var tabs = Between(html, "<nav class=\"tabs\"", "</nav>");
-        Assert.Equal(["/", "/Payments", "/More"], Hrefs(tabs));
+        Assert.Equal(["/", "/attention", "/Payments", "/More"], Hrefs(tabs));
         Assert.Contains("<span>Attention</span>", tabs, StringComparison.Ordinal);
     }
 

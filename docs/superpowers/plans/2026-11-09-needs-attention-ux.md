@@ -63,9 +63,9 @@ The server decides what each person can do, and the page only says it.
 
 ## Navigation
 
-- `/` is Needs attention. The sidebar gets "Needs attention" first, and the iPhone tabs become Attention, Payments and More, as the spec says.
+- The owner's 2026-11-09 decision puts the [operations dashboard](2026-11-09-operations-dashboard.md) at `/`. Needs attention is at `/attention`, second in the sidebar after Dashboard. The iPhone tabs are Dashboard, Attention, Payments and More.
 - **Badge:** the actionable count on the sidebar item and the Attention tab, shown as "99+" above 99, with an accessible name such as "Needs attention, 7 to act on". It is read when the page loads, not polled.
-- **Deep links:** each section has an anchor (`/#review`) and its own full list (`/attention/review`) when it has more than 10 rows. Opening a row goes to the payment page with `?from=review`, which shows a case panel at the top, explaining why it is in the queue and what to do, and a link back to the same section.
+- **Deep links:** each section has an anchor (`/attention#q-review`) and its own full list (`/attention/review`) when it has more than 10 rows. Opening a row goes to the payment page with `?from=review`, which shows a case panel at the top, explaining why it is in the queue and what to do, and a link back to the same section.
 
 ## Freshness and refresh
 

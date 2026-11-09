@@ -56,6 +56,22 @@ builder.Services.AddSingleton<ITimelineReader>(services => new TimelineReader(
 builder.Services.AddSingleton<IAuditWriter>(services =>
     new AuditWriter(services.GetRequiredKeyedService<NpgsqlDataSource>("primary")));
 builder.Services.Configure<AttentionOptions>(configuration.GetSection("Console:Attention"));
+builder.Services.Configure<DashboardOptions>(configuration.GetSection("Console:Dashboard"));
+builder.Services.AddSingleton<IDashboardReader>(services => new DashboardReader(
+    services.GetRequiredKeyedService<NpgsqlDataSource>("replica"),
+    services.GetRequiredService<Microsoft.Extensions.Options.IOptions<DashboardOptions>>(),
+    services.GetRequiredService<Microsoft.Extensions.Options.IOptions<SearchOptions>>()));
+builder.Services.Configure<MetricsOptions>(configuration.GetSection("Console:Metrics"));
+builder.Services.AddHttpClient<IOperationsMetrics, PrometheusOperationsMetrics>((services, client) =>
+{
+    var metrics = services.GetRequiredService<Microsoft.Extensions.Options.IOptions<MetricsOptions>>().Value;
+    if (Uri.TryCreate(metrics.PrometheusUrl, UriKind.Absolute, out var prometheus))
+    {
+        client.BaseAddress = new Uri(prometheus.AbsoluteUri.TrimEnd('/') + "/");
+    }
+
+    client.Timeout = metrics.Timeout;
+});
 builder.Services.AddSingleton<IQueueReader>(services => new QueueReader(
     services.GetRequiredKeyedService<NpgsqlDataSource>("replica"),
     services.GetRequiredKeyedService<NpgsqlDataSource>("primary"),

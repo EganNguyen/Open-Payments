@@ -21,7 +21,7 @@ public sealed class AttentionBadge(IQueueReader queues, TimeProvider time, ILogg
             var count = await queues.CountActionableAsync(staff, time.GetUtcNow(), context.RequestAborted);
             return count > 0 ? count : null;
         }
-        catch (Exception exception) when (exception is Npgsql.NpgsqlException or TimeoutException or System.Net.Sockets.SocketException)
+        catch (Exception exception) when (exception is Npgsql.NpgsqlException or TimeoutException or System.Net.Sockets.SocketException or ReadTimeoutException)
         {
             logger.LogWarning(exception, "attention_badge_unavailable");
             return null;

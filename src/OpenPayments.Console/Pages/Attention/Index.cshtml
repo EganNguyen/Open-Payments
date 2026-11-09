@@ -1,0 +1,120 @@
+@page "/attention"
+@model OpenPayments.Console.Pages.Attention.IndexModel
+@using OpenPayments.Console.Data
+@using OpenPayments.Console.Presentation
+@{
+    ViewData["Section"] = "attention";
+    var now = Model.Now;
+    var failed = Model.Message is not null;
+    // The empty page says one thing and nothing else: no title line, freshness line or
+    // Refresh button above it (owner decision, 2026-11-09).
+    var empty = !failed && Model.Waiting.Count == 0;
+    ViewData["Title"] = empty ? "Nothing needs attention" : "Needs attention";
+}
+@if (!empty)
+{
+    <h1>Needs attention</h1>
+}
+@if (failed)
+{
+    <div class="banner danger" role="status">
+        <svg class="icon" aria-hidden="true"><use href="/icons/ledger.svg#alert"></use></svg>
+        <div>@Model.Message</div>
+    </div>
+}
+else if (empty)
+{
+    <div class="panel calm empty" role="status">
+        <svg class="icon" aria-hidden="true"><use href="/icons/ledger.svg#check"></use></svg>
+        <div>
+            <h1>Nothing needs attention.</h1>
+            <p class="muted">Checked <time datetime="@Model.CheckedAt.UtcDateTime.ToString("O")" title="@Model.CheckedAt.UtcDateTime.ToString("yyyy-MM-dd HH:mm:ss") UTC">@Model.CheckedAt.UtcDateTime.ToString("HH:mm:ss") UTC</time></p>
+        </div>
+    </div>
+}
+else
+{
+    <div class="checked">
+        <p class="muted">Checked <time datetime="@Model.CheckedAt.UtcDateTime.ToString("O")" title="@Model.CheckedAt.UtcDateTime.ToString("yyyy-MM-dd HH:mm:ss") UTC">@Model.CheckedAt.UtcDateTime.ToString("HH:mm:ss") UTC</time></p>
+        <a class="button" href="/">Refresh</a>
+    </div>
+
+    @if (Model.Result is not null)
+    {
+        <partial name="_DataAsOf" model="((TimeSpan?)Model.Result.Lag, Model.Now)" />
+    }
+
+    <nav class="summary" aria-label="Queues">
+        <ul>
+            @foreach (var queue in Model.Waiting)
+            {
+                var text = AttentionPresentation.For(queue.Queue);
+                <li><a href="#q-@text.Key"><span>@text.Title</span><span class="count">@AttentionPresentation.Count(queue.Count)</span></a></li>
+            }
+        </ul>
+    </nav>
+
+    @foreach (var queue in Model.Waiting)
+    {
+        var text = AttentionPresentation.For(queue.Queue);
+        var note = AttentionPresentation.RoleNote(queue.Queue, Model.Person.Role);
+        var hasOwn = queue.Queue == Queue.Approval && queue.Rows.Any(r => r.Actor == Model.Person.Id);
+        <section class="queue" data-queue="@text.Key" aria-labelledby="q-@text.Key">
+            <header>
+                <h2 id="q-@text.Key">@text.Title, @AttentionPresentation.Count(queue.Count)</h2>
+                <p class="muted">@text.Help</p>
+                @if (note is not null)
+                {
+                    <p class="muted note" data-role-note>@note</p>
+                }
+                @if (hasOwn)
+                {
+                    <p class="muted note">@AttentionPresentation.OwnProposalNote</p>
+                }
+            </header>
+            <ul class="qrows">
+                @foreach (var row in queue.Rows)
+                {
+                    var over = AttentionPresentation.OverLimit(row, now, Model.Settings);
+                    <li>
+                        <a class="qrow" href="/Payments/@row.PaymentId.ToString("D")?from=@text.Key" data-row="@row.PaymentId.ToString("D")">
+                            @if (row.Queue != Queue.Orphan)
+                            {
+                                <span class="amount">@MoneyFormat.DisplayWithCode(row.AmountMinor, row.Currency)</span>
+                            }
+                            <span class="reason">@AttentionPresentation.Reason(row, now)</span>
+                            <span class="meta">
+                                @if (over)
+                                {
+                                    <span class="status tone-warning"><svg class="icon" aria-hidden="true"><use href="/icons/ledger.svg#alert"></use></svg>Over limit</span>
+                                }
+                                @if (row.Queue == Queue.Approval && row.Actor == Model.Person.Id)
+                                {
+                                    <span class="status tone-neutral">Yours</span>
+                                }
+                                @if (Model.ShowMerchant && row.Queue != Queue.Orphan)
+                                {
+                                    <span class="mono">Merchant @row.MerchantId.ToString("D")[..8]</span>
+                                }
+                                <span class="mono">@row.PaymentId.ToString("D")[..8]…</span>
+                            </span>
+                            @if (AttentionPresentation.IsStuckVoid(row))
+                            {
+                                <span class="muted void-note">@AttentionPresentation.StuckVoidNote</span>
+                            }
+                        </a>
+                    </li>
+                }
+            </ul>
+            @if (queue.Count > queue.Rows.Count)
+            {
+                <p class="muted more">Showing the @queue.Rows.Count oldest. Search <a href="/Payments">Payments</a> by state to see the rest.</p>
+            }
+        </section>
+    }
+
+    @if (Model.Clear.Count > 0)
+    {
+        <p class="muted clear">Also clear: @string.Join(", ", Model.Clear.Select(q => AttentionPresentation.For(q.Queue).Title)).</p>
+    }
+}

@@ -3,118 +3,192 @@
 @using OpenPayments.Console.Data
 @using OpenPayments.Console.Presentation
 @{
-    ViewData["Section"] = "attention";
-    var now = Model.Now;
-    var failed = Model.Message is not null;
-    // The empty page says one thing and nothing else: no title line, freshness line or
-    // Refresh button above it (owner decision, 2026-11-09).
-    var empty = !failed && Model.Waiting.Count == 0;
-    ViewData["Title"] = empty ? "Nothing needs attention" : "Needs attention";
+    ViewData["Title"] = "Dashboard";
+    ViewData["Section"] = "dashboard";
+    var waiting = Model.Waiting;
+    var ops = Model.Operations;
+    var throughput = Model.Throughput;
 }
-@if (!empty)
+<h1>Dashboard</h1>
+
+<div class="checked">
+    <p class="muted">Checked <time datetime="@Model.CheckedAt.UtcDateTime.ToString("O")" title="@Model.CheckedAt.UtcDateTime.ToString("yyyy-MM-dd HH:mm:ss") UTC">@Model.CheckedAt.UtcDateTime.ToString("HH:mm:ss") UTC</time></p>
+    <a class="button" href="/">Refresh</a>
+</div>
+
+<partial name="_DataAsOf" model="(Model.Attention?.Lag, Model.Now)" />
+
+@if (Model.AttentionMessage is not null)
 {
-    <h1>Needs attention</h1>
-}
-@if (failed)
-{
-    <div class="banner danger" role="status">
+    <div class="banner warning" role="status">
         <svg class="icon" aria-hidden="true"><use href="/icons/ledger.svg#alert"></use></svg>
-        <div>@Model.Message</div>
+        <div>@Model.AttentionMessage</div>
     </div>
 }
-else if (empty)
+@if (Model.OperationsMessage is not null)
 {
-    <div class="panel calm empty" role="status">
-        <svg class="icon" aria-hidden="true"><use href="/icons/ledger.svg#check"></use></svg>
-        <div>
-            <h1>Nothing needs attention.</h1>
-            <p class="muted">Checked <time datetime="@Model.CheckedAt.UtcDateTime.ToString("O")" title="@Model.CheckedAt.UtcDateTime.ToString("yyyy-MM-dd HH:mm:ss") UTC">@Model.CheckedAt.UtcDateTime.ToString("HH:mm:ss") UTC</time></p>
-        </div>
+    <div class="banner warning" role="status">
+        <svg class="icon" aria-hidden="true"><use href="/icons/ledger.svg#alert"></use></svg>
+        <div>@Model.OperationsMessage</div>
     </div>
 }
-else
+
+@if (Model.Attention is not null)
 {
-    <div class="checked">
-        <p class="muted">Checked <time datetime="@Model.CheckedAt.UtcDateTime.ToString("O")" title="@Model.CheckedAt.UtcDateTime.ToString("yyyy-MM-dd HH:mm:ss") UTC">@Model.CheckedAt.UtcDateTime.ToString("HH:mm:ss") UTC</time></p>
-        <a class="button" href="/">Refresh</a>
-    </div>
-
-    @if (Model.Result is not null)
-    {
-        <partial name="_DataAsOf" model="((TimeSpan?)Model.Result.Lag, Model.Now)" />
-    }
-
-    <nav class="summary" aria-label="Queues">
-        <ul>
-            @foreach (var queue in Model.Waiting)
+    <section data-panel="attention" class="attention-strip @(waiting.Count == 0 ? "clear" : "has-items")" aria-labelledby="attention-strip-title">
+        <div class="strip-head">
+            <h2 id="attention-strip-title">@(waiting.Count == 0 ? "Nothing needs attention." : "Needs attention")</h2>
+            @if (waiting.Count > 0)
             {
-                var text = AttentionPresentation.For(queue.Queue);
-                <li><a href="#q-@text.Key"><span>@text.Title</span><span class="count">@AttentionPresentation.Count(queue.Count)</span></a></li>
+                <a class="button" href="/attention">Open Needs attention</a>
             }
-        </ul>
-    </nav>
-
-    @foreach (var queue in Model.Waiting)
-    {
-        var text = AttentionPresentation.For(queue.Queue);
-        var note = AttentionPresentation.RoleNote(queue.Queue, Model.Person.Role);
-        var hasOwn = queue.Queue == Queue.Approval && queue.Rows.Any(r => r.Actor == Model.Person.Id);
-        <section class="queue" data-queue="@text.Key" aria-labelledby="q-@text.Key">
-            <header>
-                <h2 id="q-@text.Key">@text.Title, @AttentionPresentation.Count(queue.Count)</h2>
-                <p class="muted">@text.Help</p>
-                @if (note is not null)
+        </div>
+        @if (waiting.Count == 0)
+        {
+            <p class="muted">Checked @Model.CheckedAt.UtcDateTime.ToString("HH:mm:ss") UTC</p>
+        }
+        else
+        {
+            <ul class="strip-counts">
+                @foreach (var queue in waiting)
                 {
-                    <p class="muted note" data-role-note>@note</p>
-                }
-                @if (hasOwn)
-                {
-                    <p class="muted note">@AttentionPresentation.OwnProposalNote</p>
-                }
-            </header>
-            <ul class="qrows">
-                @foreach (var row in queue.Rows)
-                {
-                    var over = AttentionPresentation.OverLimit(row, now, Model.Settings);
+                    var text = AttentionPresentation.For(queue.Queue);
                     <li>
-                        <a class="qrow" href="/Payments/@row.PaymentId.ToString("D")?from=@text.Key" data-row="@row.PaymentId.ToString("D")">
-                            @if (row.Queue != Queue.Orphan)
-                            {
-                                <span class="amount">@MoneyFormat.DisplayWithCode(row.AmountMinor, row.Currency)</span>
-                            }
-                            <span class="reason">@AttentionPresentation.Reason(row, now)</span>
-                            <span class="meta">
-                                @if (over)
-                                {
-                                    <span class="status tone-warning"><svg class="icon" aria-hidden="true"><use href="/icons/ledger.svg#alert"></use></svg>Over limit</span>
-                                }
-                                @if (row.Queue == Queue.Approval && row.Actor == Model.Person.Id)
-                                {
-                                    <span class="status tone-neutral">Yours</span>
-                                }
-                                @if (Model.ShowMerchant && row.Queue != Queue.Orphan)
-                                {
-                                    <span class="mono">Merchant @row.MerchantId.ToString("D")[..8]</span>
-                                }
-                                <span class="mono">@row.PaymentId.ToString("D")[..8]…</span>
-                            </span>
-                            @if (AttentionPresentation.IsStuckVoid(row))
-                            {
-                                <span class="muted void-note">@AttentionPresentation.StuckVoidNote</span>
-                            }
+                        <a href="/attention#q-@text.Key">
+                            <span>@text.Title</span>
+                            <span class="count">@AttentionPresentation.Count(queue.Count)</span>
                         </a>
                     </li>
                 }
             </ul>
-            @if (queue.Count > queue.Rows.Count)
-            {
-                <p class="muted more">Showing the @queue.Rows.Count oldest. Search <a href="/Payments">Payments</a> by state to see the rest.</p>
-            }
-        </section>
-    }
-
-    @if (Model.Clear.Count > 0)
-    {
-        <p class="muted clear">Also clear: @string.Join(", ", Model.Clear.Select(q => AttentionPresentation.For(q.Queue).Title)).</p>
-    }
+        }
+    </section>
 }
+
+<div class="dash-grid">
+    <section data-panel="throughput" class="dash-card" aria-labelledby="throughput-title">
+        <div class="dash-card-head">
+            <h2 id="throughput-title">Throughput</h2>
+            <span class="muted">Last @Model.MetricsWindow</span>
+        </div>
+        @if (throughput is null)
+        {
+            <p class="muted">Throughput metrics are unavailable. Check the Prometheus setting and its scrape targets.</p>
+        }
+        else
+        {
+            <dl class="dash-facts">
+                <dt>Completed payments</dt><dd>@DashboardPresentation.Rate(throughput.CompletedPerSecond)</dd>
+                <dt>Admitted requests</dt><dd>@DashboardPresentation.Rate(throughput.AdmittedPerSecond)</dd>
+                <dt>Rejected requests</dt><dd>@DashboardPresentation.Rate(throughput.RejectedPerSecond)</dd>
+                <dt>Platform overhead p50</dt><dd>@DashboardPresentation.Latency(throughput.OverheadP50)</dd>
+                <dt>Platform overhead p95</dt><dd>@DashboardPresentation.Latency(throughput.OverheadP95)</dd>
+                <dt>Platform overhead p99</dt><dd>@DashboardPresentation.Latency(throughput.OverheadP99)</dd>
+                <dt>PSP wait p99</dt><dd>@DashboardPresentation.Latency(throughput.PspWaitP99)</dd>
+                <dt>In flight</dt><dd>@DashboardPresentation.Count(throughput.InFlight is { } inFlight ? (long)inFlight : null)</dd>
+            </dl>
+            @if (throughput.TopRejectReason is not null)
+            {
+                <p class="dash-note">Most rejections: @throughput.TopRejectReason (@DashboardPresentation.Rate(throughput.TopRejectPerSecond)).</p>
+            }
+        }
+    </section>
+
+    <section data-panel="reliability" class="dash-card" aria-labelledby="reliability-title">
+        <div class="dash-card-head">
+            <h2 id="reliability-title">Reliability</h2>
+            <span class="muted">Current</span>
+        </div>
+        <dl class="dash-facts">
+            <dt>Replica lag</dt>
+            <dd>@(Model.Attention?.Lag is { } lag ? AttentionPresentation.Duration(lag) : "—")</dd>
+            <dt>Waiting over 60 s</dt>
+            <dd>@DashboardPresentation.Count(ops?.StuckOperations)</dd>
+            <dt>Unresolved too long</dt>
+            <dd>@(Model.Attention?.Queues.FirstOrDefault(queue => queue.Queue == Queue.Unresolved) is { } unresolved ? AttentionPresentation.Count(unresolved.Count) : "—")</dd>
+            <dt>Database deadlocks</dt>
+            <dd>@DashboardPresentation.Rate(throughput?.DeadlocksPerSecond)</dd>
+            <dt>PgBouncer max wait</dt>
+            <dd>@DashboardPresentation.Latency(throughput?.PgBouncerMaxWait)</dd>
+            <dt>Oldest outbox row</dt>
+            <dd>@DashboardPresentation.AgeSeconds(throughput?.OutboxOldestAge)</dd>
+        </dl>
+    </section>
+
+    <section data-panel="lifecycle" class="dash-card dash-lifecycle" aria-labelledby="lifecycle-title">
+        <div class="dash-card-head">
+            <h2 id="lifecycle-title">Payment lifecycle</h2>
+            <span class="muted">Created in the last @Model.LifecycleWindow</span>
+        </div>
+        @if (ops is null)
+        {
+            <p class="muted">Lifecycle data is unavailable.</p>
+        }
+        else if (ops.LifecycleUnavailable)
+        {
+            <p class="muted">The lifecycle query took too long. Try again in a moment.</p>
+        }
+        else if (ops.Lifecycle.Count == 0)
+        {
+            <p class="muted">No payments were created in this window.</p>
+        }
+        else
+        {
+            <table class="dash-table">
+                <thead><tr><th>State</th><th class="num">Payments</th><th>Oldest</th></tr></thead>
+                <tbody>
+                @foreach (var row in ops.Lifecycle)
+                {
+                    <tr data-lifecycle-state="@row.State">
+                        <td data-label="State">
+                            <span class="status @DashboardPresentation.LifecycleTone(row.State)">
+                                <svg class="icon" aria-hidden="true"><use href="/icons/ledger.svg#@DashboardPresentation.LifecycleIcon(row.State)"></use></svg>@DashboardPresentation.LifecycleLabel(row.State)
+                            </span>
+                        </td>
+                        <td class="num" data-label="Payments">@row.Count.ToString("N0")</td>
+                        <td data-label="Oldest"><time datetime="@row.Oldest.ToString("O")" title="@row.Oldest.UtcDateTime.ToString("yyyy-MM-dd HH:mm:ss") UTC">@DashboardPresentation.Age(row.Oldest, Model.Now)</time></td>
+                    </tr>
+                }
+                </tbody>
+            </table>
+        }
+        @if (ops is not null)
+        {
+            <dl class="dash-facts dash-summary">
+                <dt>Authorized now</dt><dd>@DashboardPresentation.Count(ops.ActiveAuthorizations)</dd>
+                <dt>Refunds pending</dt><dd>@DashboardPresentation.Count(ops.PendingRefunds)</dd>
+            </dl>
+        }
+    </section>
+
+    <section data-panel="correctness" class="dash-card" aria-labelledby="correctness-title">
+        <div class="dash-card-head">
+            <h2 id="correctness-title">Correctness</h2>
+            <span class="muted">Live checks</span>
+        </div>
+        @if (ops is null)
+        {
+            <p class="muted">Correctness checks are unavailable.</p>
+        }
+        else if (ops.CorrectnessUnavailable)
+        {
+            <p class="muted">The correctness checks took too long. Try again in a moment.</p>
+        }
+        else
+        {
+            <ul class="checks">
+                @foreach (var check in ops.Correctness)
+                {
+                    <li data-check="@check.Key" data-issues="@check.Issues">
+                        <span class="status @DashboardPresentation.CheckTone(check)">
+                            <svg class="icon" aria-hidden="true"><use href="/icons/ledger.svg#@DashboardPresentation.CheckIcon(check)"></use></svg>@DashboardPresentation.CheckText(check)
+                        </span>
+                        <span class="check-label">@check.Label</span>
+                        <p class="muted">@check.Help</p>
+                    </li>
+                }
+            </ul>
+        }
+        <p class="dash-note">Live invariant checks against the read replica. CK1-CK10 also run through op-checks.</p>
+    </section>
+</div>

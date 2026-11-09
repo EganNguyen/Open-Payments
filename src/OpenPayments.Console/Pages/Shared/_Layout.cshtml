@@ -1,6 +1,6 @@
 @inject OpenPayments.Console.Data.AttentionBadge AttentionBadge
 @{
-    var section = ViewData["Section"] as string ?? "payments";
+    var section = ViewData["Section"] as string ?? "dashboard";
     var badge = await AttentionBadge.CountAsync(Context);
     var badgeLabel = badge is { } n ? $"Needs attention, {n} to act on" : null;
 }
@@ -19,7 +19,10 @@
 <div class="shell">
     <nav class="sidebar" aria-label="Main">
         <div class="brand">Open Payments</div>
-        <a class="nav @(section == "attention" ? "current" : null)" href="/" aria-current="@(section == "attention" ? "page" : null)" aria-label="@badgeLabel">
+        <a class="nav @(section == "dashboard" ? "current" : null)" href="/" aria-current="@(section == "dashboard" ? "page" : null)">
+            <svg class="icon" aria-hidden="true"><use href="/icons/ledger.svg#dashboard"></use></svg>Dashboard
+        </a>
+        <a class="nav @(section == "attention" ? "current" : null)" href="/attention" aria-current="@(section == "attention" ? "page" : null)" aria-label="@badgeLabel">
             <svg class="icon" aria-hidden="true"><use href="/icons/ledger.svg#bell"></use></svg>Needs attention
             @if (badge is { } count)
             {
@@ -45,7 +48,10 @@
     </main>
 </div>
 <nav class="tabs" aria-label="Main">
-    <a class="tab @(section == "attention" ? "current" : null)" href="/" aria-current="@(section == "attention" ? "page" : null)" aria-label="@(badgeLabel is null ? null : badgeLabel)">
+    <a class="tab @(section == "dashboard" ? "current" : null)" href="/" aria-current="@(section == "dashboard" ? "page" : null)">
+        <svg class="icon" aria-hidden="true"><use href="/icons/ledger.svg#dashboard"></use></svg><span>Dashboard</span>
+    </a>
+    <a class="tab @(section == "attention" ? "current" : null)" href="/attention" aria-current="@(section == "attention" ? "page" : null)" aria-label="@(badgeLabel is null ? "Needs attention" : badgeLabel)">
         <span class="tab-icon"><svg class="icon" aria-hidden="true"><use href="/icons/ledger.svg#bell"></use></svg>@if (badge is { } tabCount)
         {<span class="tab-badge" aria-hidden="true">@OpenPayments.Console.Presentation.AttentionPresentation.Badge(tabCount)</span>}</span><span>Attention</span>
     </a>

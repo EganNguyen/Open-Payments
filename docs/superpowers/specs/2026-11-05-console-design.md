@@ -22,7 +22,8 @@ One deployment serves one self-hosting business and its staff. The people using 
 
 | Screen | Purpose | iPhone |
 |---|---|---|
-| Needs attention (home) | Queues: `REVIEW`, unresolved payments and refunds past their age limit, resolutions waiting for approval, authorizations about to expire | Full |
+| Dashboard (home) | Throughput, correctness, reliability and payment-lifecycle signals, with a compact Needs attention strip | Full |
+| Needs attention | Queues: `REVIEW`, unresolved payments and refunds past their age limit, resolutions waiting for approval, authorizations about to expire | Full |
 | Payments | Look up by ID; list by date range, filtered by state and amount | Full, rows become cards |
 | Payment detail | State and money position in plain words; [timeline](#timeline-limits) of attempts, refunds, ledger entries and staff actions | Full |
 | Actions | Refund, capture, void, cancel; propose and approve `REVIEW` resolutions | Full |
@@ -37,7 +38,7 @@ One deployment serves one self-hosting business and its staff. The people using 
 
 ## Navigation
 
-A left sidebar on desktop. Three bottom tabs on iPhone: Attention, Payments and More. Every payment has a stable URL so it can be shared between staff.
+A left sidebar on desktop: Dashboard, Needs attention, Payments, Audit log, Staff. Four bottom tabs on iPhone: Dashboard, Attention, Payments, More. Every payment has a stable URL so it can be shared between staff. The owner moved the dashboard to `/` on 2026-11-09; Needs attention is at `/attention`.
 
 ## Roles
 

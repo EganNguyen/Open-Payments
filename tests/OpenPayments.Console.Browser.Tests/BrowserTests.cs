@@ -44,7 +44,7 @@ public sealed class Browsers : IAsyncLifetime
 [Collection("browser")]
 public sealed class BrowserTests(ConsoleDb db, Browsers browsers)
 {
-    private static readonly string[] Screens = ["attention", "payments", "detail", "refund", "audit", "staff", "more"];
+    private static readonly string[] Screens = ["dashboard", "attention", "payments", "detail", "refund", "audit", "staff", "more"];
 
     public static TheoryData<string, string, int> ScreenMatrix()
     {
@@ -207,7 +207,8 @@ public sealed class BrowserTests(ConsoleDb db, Browsers browsers)
         var tab = await context.NewPageAsync();
         var path = page switch
         {
-            "attention" => "/",
+            "dashboard" => "/",
+            "attention" => "/attention",
             "payments" => "/Payments",
             "detail" => $"/Payments/{site.Captured}",
             "refund" => $"/Payments/{site.Captured}/Action/refund",

@@ -74,6 +74,16 @@ The [Results log](scaling-playbook.md#results-log) asks for these fields. The da
 | Consumer lag | Kafka exporter, Phase 3 |
 | Correctness CK1-CK10 | `op-checks` output, not a metric; the harness writes it to `checks.json` |
 
+## Console dashboard
+
+The console's home dashboard ([plan](superpowers/plans/2026-11-09-operations-dashboard.md)) reads Prometheus through `Console:Metrics:PrometheusUrl`; an empty or unreachable URL leaves its throughput panel unavailable, never zero. It uses:
+
+- `sum(rate(op_payments_completed_total[5m]))`, `op_requests_admitted_total` and `op_requests_rejected_total` for throughput and rejections.
+- `histogram_quantile` over `op_platform_overhead_seconds_bucket` and `op_psp_wait_seconds_bucket` for platform and PSP latency.
+- `op_inflight`, `pg_stat_database_deadlocks{datname="openpayments"}`, `pgbouncer_pools_client_maxwait_seconds` and `op_outbox_oldest_age_seconds` for reliability.
+
+The lifecycle and correctness cards read the replica directly, not Prometheus.
+
 ## Local stack
 
 ```bash

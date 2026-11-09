@@ -25,6 +25,8 @@ public class ConsoleFactory : WebApplicationFactory<Program>
 
     public FakePaymentApi Api { get; } = new();
 
+    public FakeOperationsMetrics Metrics { get; } = new();
+
     /// <summary>Read staff from console.staff, as the service does, instead of memory.</summary>
     public bool UseDatabaseStaff { get; init; }
 
@@ -84,6 +86,9 @@ public class ConsoleFactory : WebApplicationFactory<Program>
                 services.RemoveAll<OpenPayments.Console.Data.IAuditWriter>();
                 services.AddSingleton(audit);
             }
+
+            services.RemoveAll<OpenPayments.Console.Data.IOperationsMetrics>();
+            services.AddSingleton<OpenPayments.Console.Data.IOperationsMetrics>(Metrics);
 
             ConfigureMoreServices(services);
         });
@@ -195,4 +200,26 @@ public sealed class FakeHandlerProxy(FakePaymentApi inner) : HttpMessageHandler
 {
     protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken) =>
         inner.SendForTestAsync(request, cancellationToken);
+}
+
+
+public sealed class FakeOperationsMetrics : OpenPayments.Console.Data.IOperationsMetrics
+{
+    public OpenPayments.Console.Data.ThroughputSnapshot? Snapshot { get; set; } = new(
+        CompletedPerSecond: 123.45,
+        AdmittedPerSecond: 150,
+        RejectedPerSecond: 2.5,
+        OverheadP50: 0.004,
+        OverheadP95: 0.018,
+        OverheadP99: 0.042,
+        PspWaitP99: 0.25,
+        InFlight: 12,
+        DeadlocksPerSecond: 0,
+        PgBouncerMaxWait: 0.002,
+        OutboxOldestAge: 3,
+        TopRejectReason: "busy",
+        TopRejectPerSecond: 2);
+
+    public Task<OpenPayments.Console.Data.ThroughputSnapshot?> ReadAsync(CancellationToken ct) =>
+        Task.FromResult(Snapshot);
 }
