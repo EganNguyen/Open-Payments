@@ -35,6 +35,27 @@ public sealed class TxRunnerTests(DbFixture db)
     }
 
     [Fact]
+    public async Task D54_runner_uses_the_role_lock_timeout()
+    {
+        await db.ResetAsync();
+        var merchant = (await db.SeedMerchantAsync()).Merchant;
+        // The fixture gives op_app D1's role setting, as scripts/check-db-settings.sh checks on the stack.
+        {
+            await using var runner = new TxRunner(db.AppConnectionString);
+            var inside = await runner.RunAsync(
+                merchant,
+                async (connection, transaction, cancellationToken) =>
+                {
+                    await using var command = new NpgsqlCommand("select current_setting('lock_timeout')", connection, transaction);
+                    return (string)(await command.ExecuteScalarAsync(cancellationToken))!;
+                },
+                CancellationToken.None);
+
+            Assert.Equal("200ms", inside);
+        }
+    }
+
+    [Fact]
     public async Task Does_not_retry_55P03()
     {
         await db.ResetAsync();

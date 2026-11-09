@@ -294,7 +294,8 @@ public sealed class TxRunner : IAsyncDisposable
         CancellationToken cancellationToken)
     {
         await using var command = new NpgsqlCommand(
-            "select set_config('app.merchant_id', @merchant, true), set_config('lock_timeout', '2s', true)",
+            // lock_timeout comes from the role (D1, D54); the runner doesn't override it.
+            "select set_config('app.merchant_id', @merchant, true)",
             connection,
             transaction);
         command.Parameters.AddWithValue("merchant", merchant.ToString());

@@ -68,7 +68,7 @@ public sealed class AcceptanceFixture : IAsyncLifetime
             .Build();
         await _container.StartAsync();
         await ExecAsync(
-            "do $$ begin if not exists (select from pg_roles where rolname = 'op_app') then create role op_app login password 'op_local_only'; end if; end $$;");
+            "do $$ begin if not exists (select from pg_roles where rolname = 'op_app') then create role op_app login password 'op_local_only'; end if; end $$; alter role op_app set lock_timeout = '200ms';");
         await ResetAsync();
 
 #pragma warning disable CA2000 // Factory is owned by the fixture and disposed in DisposeAsync.

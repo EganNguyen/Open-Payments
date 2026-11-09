@@ -107,7 +107,7 @@ public sealed class C43Fixture : IAsyncLifetime
         await _standby.StartAsync();
 
         await ExecAdminAsync(
-            "do $$ begin if not exists (select from pg_roles where rolname = 'op_app') then create role op_app login password 'op_local_only'; end if; end $$;");
+            "do $$ begin if not exists (select from pg_roles where rolname = 'op_app') then create role op_app login password 'op_local_only'; end if; end $$; alter role op_app set lock_timeout = '200ms';");
         await ResetAsync();
         await EnableSynchronousAsync();
     }
