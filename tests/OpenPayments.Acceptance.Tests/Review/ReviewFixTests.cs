@@ -159,6 +159,99 @@ public sealed class ReviewFixTests(AcceptanceFixture db)
         }
     }
 
+    [Theory]
+    [InlineData("authorize")]
+    [InlineData("capture")]
+    [InlineData("refund")]
+    public async Task M8_an_adapter_failure_after_sending_is_an_unknown_outcome(string route)
+    {
+        // Review M8, D27: once the request may have reached the PSP, any exception is
+        // inconclusive: 202 and UNKNOWN, never a 500.
+        await db.ResetAsync();
+        using var client = Authorized();
+        string? paymentId = null;
+        if (route != "authorize")
+        {
+            paymentId = route == "capture"
+                ? await AuthorizedPaymentAsync(client, "m8", 1000)
+                : await CapturedPaymentAsync(client, "m8", 1000);
+        }
+
+        db.Psp.ThrowOnce(new ArgumentException("Unknown currency code 'usd'."));
+        using var response = route switch
+        {
+            "authorize" => await PostAsync(client, "/v1/payments", "m8-op", new
+            {
+                amount_minor = 1000,
+                currency = "USD",
+                method = new { type = "card", @ref = "tok_test" },
+            }),
+            "capture" => await PostAsync(client, $"/v1/payments/{paymentId}/capture", "m8-op", new { amount_minor = 1000 }),
+            _ => await PostAsync(client, $"/v1/payments/{paymentId}/refunds", "m8-op", new { amount_minor = 400 }),
+        };
+
+        Assert.Equal(HttpStatusCode.Accepted, response.StatusCode);
+        if (route == "capture")
+        {
+            // As a capture timeout does: the payment stays AUTHORIZED and the capture attempt is UNKNOWN.
+            Assert.Equal("AUTHORIZED", (await ReadAsync(response)).GetProperty("state").GetString());
+            Assert.Equal(1, await db.CountAsync(
+                $"select count(*) from payment_attempts where payment_id = '{paymentId}' and operation = 'capture' and state = 'UNKNOWN'"));
+        }
+        else
+        {
+            Assert.Equal("UNKNOWN", (await ReadAsync(response)).GetProperty("state").GetString());
+        }
+    }
+
+    [Fact]
+    public async Task M9_two_call_capture_transaction_A_failure_after_the_authorization_answers_202()
+    {
+        // Review M9, D28: the authorization was sent, so a failure starting the capture isn't the
+        // retryable 503 of a request that did nothing.
+        await db.ResetAsync();
+        db.Psp.SupportsSale = false;
+        using var client = Authorized();
+        var store = db.Factory.Services.GetRequiredService<PaymentStore>();
+        var calls = 0;
+        // Call 1 is the authorization's transaction B; call 2 is the capture's transaction A.
+        store.BeforeOutboxInsert = () =>
+        {
+            if (Interlocked.Increment(ref calls) == 2)
+            {
+                throw new NpgsqlException("simulated connection loss starting the capture");
+            }
+        };
+        try
+        {
+            using var response = await PostAsync(client, "/v1/payments", "m9", new
+            {
+                amount_minor = 1000,
+                currency = "USD",
+                capture_mode = "auto",
+                method = new { type = "card", @ref = "tok_test" },
+            });
+            Assert.Equal(HttpStatusCode.Accepted, response.StatusCode);
+            Assert.Equal("AUTHORIZED", (await ReadAsync(response)).GetProperty("state").GetString());
+        }
+        finally
+        {
+            store.BeforeOutboxInsert = null;
+        }
+
+        // M1: a same-key replay after the window finishes the capture.
+        await AgeKeyAsync("m9");
+        using var replay = await PostAsync(client, "/v1/payments", "m9", new
+        {
+            amount_minor = 1000,
+            currency = "USD",
+            capture_mode = "auto",
+            method = new { type = "card", @ref = "tok_test" },
+        });
+        Assert.Equal(HttpStatusCode.OK, replay.StatusCode);
+        Assert.Equal("CAPTURED", (await ReadAsync(replay)).GetProperty("state").GetString());
+    }
+
     /// <summary>Holds the payment row from another connection when the store makes its second
     /// update, transaction B, so that B hits the role's 200 ms lock_timeout after the PSP answered.</summary>
     private Locker LockPaymentOnSecondUpdate(string paymentId)

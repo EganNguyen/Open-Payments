@@ -192,14 +192,21 @@ public sealed class MockPspAdapter : IPspAdapter
         request.Headers.Add("X-Mock-Account", _account.Id.ToString("D"));
     }
 
+    /// <summary>PSPs differ in case (Stripe answers "usd"). A code the platform doesn't know is
+    /// an answer the adapter can't read, so the outcome is unknown, never a 500 (review M8).</summary>
+    private static CurrencyCode ReadCurrency(string currency) =>
+        CurrencyCode.TryParse(currency.ToUpperInvariant(), out var code)
+            ? code
+            : throw new PspUnavailableException($"The PSP answered in an unknown currency '{currency}'.");
+
     private static Money? Amount(OperationPayload payload) =>
         payload.AmountMinor is { } minor && payload.Currency is { Length: 3 } currency
-            ? new Money(minor, CurrencyCode.Parse(currency))
+            ? new Money(minor, ReadCurrency(currency))
             : null;
 
     private static Money? Amount(InquiryPayload payload) =>
         payload.AmountMinor is { } minor && payload.Currency is { Length: 3 } currency
-            ? new Money(minor, CurrencyCode.Parse(currency))
+            ? new Money(minor, ReadCurrency(currency))
             : null;
 
     private sealed record OperationPayload(

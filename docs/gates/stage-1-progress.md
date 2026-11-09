@@ -110,6 +110,16 @@ Whole suite after the re-check fixes: 389 tests (acceptance 76), 0 warnings.
 
 Whole suite after the second re-check fixes: 391 tests (acceptance 78), 0 warnings.
 
+**After the third re-check and sweep (`2c5875d`):**
+
+| Finding | Fix | Tests |
+|---|---|---|
+| M8 | Every route treats any exception from the PSP call as inconclusive (D27), not only the three PSP exceptions, and an unrecognized PSP result follows the timeout path. The mock adapter reads currency codes case-insensitively; an unknown code is an unreadable answer, so the outcome is unknown | **R10** (added unchanged), failing first for both currency cases; `M8_an_adapter_failure_after_sending_is_an_unknown_outcome`, for authorize, capture and refund, failing first with 500 |
+| M9 | On the two-call path, a capture that can't start after the authorization answers 202 with the state, not 503, and a failed key write can't change the answer. A same-key replay after the window finishes the capture (M1) | `M9_two_call_capture_transaction_A_failure_after_the_authorization_answers_202`, failing first with 503 |
+| L7 | Not changed. A transaction B refused or beaten by another writer happens only once Stage 2 adds callbacks, the reconciler and expiry. It goes to Stage 2's design gate with the owner's acceptance | none |
+
+Whole suite after the third re-check fixes: 432 tests (Domain 70, analyzers 1, mock PSP 23, checks 24, console 152, integration 40, console browser 40, acceptance 82), 0 warnings. The console counts include the other session's console UX work.
+
 Whole suite at the first fixes: 385 tests (Domain 70, analyzers 1, mock PSP 20, checks 24, console 124, integration 40, console browser 34, acceptance 72), 0 warnings.
 
 ### Build brief (design session, 2026-11-09)

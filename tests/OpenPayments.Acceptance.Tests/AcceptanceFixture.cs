@@ -439,6 +439,7 @@ public sealed class TestPsp : IPspAdapterFactory, IPspAdapter
     private TimeSpan _delay;
     private bool _timeout;
     private bool _supportsSale = true;
+    private Exception? _throwOnce;
 
     public IReadOnlyList<PspCall> Calls
     {
@@ -469,6 +470,19 @@ public sealed class TestPsp : IPspAdapterFactory, IPspAdapter
             _delay = TimeSpan.Zero;
             _timeout = false;
             _supportsSale = true;
+            _throwOnce = null;
+        }
+    }
+
+    /// <summary>The next call, after it is recorded as sent, throws this: an answer the adapter
+    /// couldn't handle (review M8).</summary>
+    public void ThrowOnce(Exception exception) => _throwOnce = exception;
+
+    private void ThrowIfScripted()
+    {
+        if (Interlocked.Exchange(ref _throwOnce, null) is { } exception)
+        {
+            throw exception;
         }
     }
 
@@ -547,6 +561,8 @@ public sealed class TestPsp : IPspAdapterFactory, IPspAdapter
             await Task.Delay(_delay, ct);
         }
 
+        ThrowIfScripted();
+
         if (_timeout)
         {
             throw new PspTimeoutException("scripted timeout");
@@ -572,5 +588,7 @@ public sealed class TestPsp : IPspAdapterFactory, IPspAdapter
         {
             await Task.Delay(_delay, ct);
         }
+
+        ThrowIfScripted();
     }
 }

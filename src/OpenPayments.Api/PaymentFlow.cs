@@ -413,8 +413,9 @@ public sealed class PaymentFlow(
             using var deadline = new CancellationTokenSource(PspDeadline);
             result = await adapter.CaptureAsync(attempt.Id, view.Amount, deadline.Token);
         }
-        catch (Exception exception) when (
-            exception is OperationCanceledException or PspTimeoutException or PspUnavailableException)
+#pragma warning disable CA1031 // M8, D27: once the request may have reached the PSP, every failure is inconclusive.
+        catch (Exception)
+#pragma warning restore CA1031
         {
             return await AfterPspAsync(paymentId, null, merchant, attempt.Id, "capture", async () =>
             {
@@ -521,8 +522,9 @@ public sealed class PaymentFlow(
             using var deadline = new CancellationTokenSource(PspDeadline);
             result = await adapter.VoidAsync(attempt.Id, authorized.Value, deadline.Token);
         }
-        catch (Exception exception) when (
-            exception is OperationCanceledException or PspTimeoutException or PspUnavailableException)
+#pragma warning disable CA1031 // M8, D27: once the request may have reached the PSP, every failure is inconclusive.
+        catch (Exception)
+#pragma warning restore CA1031
         {
             return await AfterPspAsync(paymentId, null, merchant, attempt.Id, "void", async () =>
             {
@@ -631,8 +633,9 @@ public sealed class PaymentFlow(
             using var deadline = new CancellationTokenSource(PspDeadline);
             result = await adapter.RefundAsync(refundId, amount, deadline.Token);
         }
-        catch (Exception exception) when (
-            exception is OperationCanceledException or PspTimeoutException or PspUnavailableException)
+#pragma warning disable CA1031 // M8, D27: once the request may have reached the PSP, every failure is inconclusive.
+        catch (Exception)
+#pragma warning restore CA1031
         {
             return await AfterPspAsync(paymentId, refundId, merchant, null, "refund", async () =>
             {
@@ -800,8 +803,9 @@ public sealed class PaymentFlow(
                 ? await adapter.SaleAsync(attempt.Id, view.Amount, method, deadline.Token)
                 : await adapter.AuthorizeAsync(attempt.Id, view.Amount, method, deadline.Token);
         }
-        catch (Exception exception) when (
-            exception is OperationCanceledException or PspTimeoutException or PspUnavailableException)
+#pragma warning disable CA1031 // M8, D27: once the request may have reached the PSP, every failure is inconclusive.
+        catch (Exception)
+#pragma warning restore CA1031
         {
             pspWatch.Stop();
             // H3: recording the timeout is after the PSP call, so its failure is an unknown
@@ -831,8 +835,19 @@ public sealed class PaymentFlow(
             PspResult.RequiresAction action => new PaymentCommand.PspAnswer(
                 attempt.Id, operation, PspAnswerOutcome.RequiresAction, view.Amount,
                 null, action.ActionType, DateTimeOffset.UtcNow),
-            _ => throw new InvalidOperationException("Unknown PSP result."),
+            // M8: a result this code doesn't know is no answer at all: record it as a timeout.
+            _ => new PaymentCommand.Timeout(attempt.Id, operation, DateTimeOffset.UtcNow),
         };
+        if (answer is PaymentCommand.Timeout unknownResult)
+        {
+            return await AfterPspAsync(view.Id, null, merchant, attempt.Id, "authorize", async () =>
+            {
+                var timedOut = await store.ApplyAsync(view.Id, unknownResult, null, CancellationToken.None);
+                return await FromAppliedAsync(
+                    timedOut, merchant, key, 202, pspWatch.ElapsedMilliseconds, timedOut: true,
+                    countCompleted: false, resolveKey);
+            });
+        }
 
         var status = result is PspResult.Declined ? 402 : 200;
         return await AfterPspAsync(view.Id, null, merchant, attempt.Id, "authorize", async () =>
@@ -989,6 +1004,26 @@ public sealed class PaymentFlow(
             cancellationToken,
             countCompleted: true,
             enterLimiter: false);
+        if (captured.StatusCode == 503)
+        {
+            // M9, D28: the authorization was already sent, so a capture that couldn't start isn't
+            // "nothing happened". Answer 202 with the state; a same-key replay retries the capture.
+            try
+            {
+                if (await store.GetPaymentAsync(merchant, paymentId, CancellationToken.None) is { } current)
+                {
+                    return await PendingAsync(current, null, merchant);
+                }
+            }
+#pragma warning disable CA1031 // N3: the database may still be down; the answer stays 202.
+            catch (Exception)
+#pragma warning restore CA1031
+            {
+            }
+
+            return UnknownFallback(paymentId, null);
+        }
+
         if (captured.StatusCode is 200 or 402)
         {
             await ResolveWithAsync(merchant, key, captured);
@@ -997,10 +1032,22 @@ public sealed class PaymentFlow(
         return captured;
     }
 
+    /// <summary>Stores the create key's answer on the two-call path. It runs after a PSP call, so a
+    /// failure here mustn't change the answer the client gets (M9): the key stays unresolved, and
+    /// a replay renders the state.</summary>
     private async Task ResolveWithAsync(MerchantId merchant, string key, ApiAnswer answer)
     {
         var body = answer.RawJson ?? JsonSerializer.Serialize(answer.Body, ApiJson.Options);
-        await store.ResolveKeyAsync(merchant, key, new StoredResponse(answer.StatusCode, body), CancellationToken.None);
+        try
+        {
+            await store.ResolveKeyAsync(merchant, key, new StoredResponse(answer.StatusCode, body), CancellationToken.None);
+        }
+#pragma warning disable CA1031 // M9: see above.
+        catch (Exception)
+#pragma warning restore CA1031
+        {
+            log.Record(Entry(merchant, null, null, null, "UNKNOWN", "key_write_failed", "authorize"));
+        }
     }
 
     private static string? CompletedOutcome(PaymentView payment) => payment.State switch
