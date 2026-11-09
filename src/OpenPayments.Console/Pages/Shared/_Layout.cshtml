@@ -1,5 +1,8 @@
+@inject OpenPayments.Console.Data.AttentionBadge AttentionBadge
 @{
     var section = ViewData["Section"] as string ?? "payments";
+    var badge = await AttentionBadge.CountAsync(Context);
+    var badgeLabel = badge is { } n ? $"Needs attention, {n} to act on" : null;
 }
 <!doctype html>
 <html lang="en">
@@ -16,7 +19,13 @@
 <div class="shell">
     <nav class="sidebar" aria-label="Main">
         <div class="brand">Open Payments</div>
-        @* Stage 1: the home page is Payments and there is no Attention item until C12. *@
+        <a class="nav @(section == "attention" ? "current" : null)" href="/" aria-current="@(section == "attention" ? "page" : null)" aria-label="@badgeLabel">
+            <svg class="icon" aria-hidden="true"><use href="/icons/ledger.svg#bell"></use></svg>Needs attention
+            @if (badge is { } count)
+            {
+                <span class="badge" aria-hidden="true">@OpenPayments.Console.Presentation.AttentionPresentation.Badge(count)</span>
+            }
+        </a>
         <a class="nav @(section == "payments" ? "current" : null)" href="/Payments" aria-current="@(section == "payments" ? "page" : null)">
             <svg class="icon" aria-hidden="true"><use href="/icons/ledger.svg#list"></use></svg>Payments
         </a>
@@ -36,6 +45,10 @@
     </main>
 </div>
 <nav class="tabs" aria-label="Main">
+    <a class="tab @(section == "attention" ? "current" : null)" href="/" aria-current="@(section == "attention" ? "page" : null)" aria-label="@(badgeLabel is null ? null : badgeLabel)">
+        <span class="tab-icon"><svg class="icon" aria-hidden="true"><use href="/icons/ledger.svg#bell"></use></svg>@if (badge is { } tabCount)
+        {<span class="tab-badge" aria-hidden="true">@OpenPayments.Console.Presentation.AttentionPresentation.Badge(tabCount)</span>}</span><span>Attention</span>
+    </a>
     <a class="tab @(section == "payments" ? "current" : null)" href="/Payments" aria-current="@(section == "payments" ? "page" : null)">
         <svg class="icon" aria-hidden="true"><use href="/icons/ledger.svg#list"></use></svg><span>Payments</span>
     </a>

@@ -2,7 +2,7 @@
 
 The UI and UX of the console's home page, Needs attention: what it shows, in what order, for whom, and how it behaves at desktop and iPhone sizes.
 
-Status: **Draft, for the owner to approve** · Last updated: 2026-11-09
+Status: **Approved by the owner; N1 and N2 built** · Last updated: 2026-11-09
 
 > **For whoever executes this:** This page is built in Stage 2 by [Task C12](2026-11-06-console.md#task-c12-needs-attention-and-review-resolution), as part of [F2](2026-11-05-open-payments-implementation-and-benchmark.md#frontend-tasks-by-stage). This plan adds the page's layout and behaviour to C12. It doesn't change C12's queue sources, the review flow, the roles or any wording in the [spec](../specs/2026-11-05-console-design.md). Items marked **Owner** wait for a decision. The console plan's [Global Constraints](2026-11-06-console.md#global-constraints) apply.
 
@@ -99,15 +99,15 @@ These extend C12 and run in its build. Each is server-rendered and tested like T
 
 ### N1: Queue reads and the page
 
-- [ ] `QueueReader.ReadAsync` returns, per queue, up to 10 rows and a count capped at 1,000, read from the replica with the lag. Every query uses the literal state, so its partial index is used. `EXPLAIN` test for each.
-- [ ] `Index.cshtml` with title, freshness, summary, sections with rows, the all-clear line and the empty state.
-- [ ] Tests: each queue's order; empty queues collapse into the all-clear line; all empty gives one panel; 1,001 rows show "1,000+".
+- [x] `QueueReader.ReadAsync` returns, per queue, up to 10 rows and a count capped at 1,000, read from the replica with the lag. Every query uses the literal state, so its partial index is used. `EXPLAIN` test for each.
+- [x] `Index.cshtml` with title, freshness, summary, sections with rows, the all-clear line and the empty state.
+- [x] Tests: each queue's order; empty queues collapse into the all-clear line; all empty gives one panel; 1,001 rows show "1,000+".
 
 ### N2: Roles, badge and navigation
 
-- [ ] The actionable count per role, the badge, the "why you can't act" notes and "Yours".
-- [ ] Sidebar and tabs updated; `/` serves the page; Payments moves second.
-- [ ] Tests: Viewer, Operator, Approver and Admin each see the right badge count and notes; an Approver's own proposal isn't counted for them.
+- [x] The actionable count per role, the badge, the "why you can't act" notes and "Yours".
+- [x] Sidebar and tabs updated; `/` serves the page; Payments moves second.
+- [x] Tests: Viewer, Operator, Approver and Admin each see the right badge count and notes; an Approver's own proposal isn't counted for them.
 
 ### N3: Queue lists and the case panel
 
@@ -123,12 +123,37 @@ These extend C12 and run in its build. Each is server-rendered and tested like T
 
 ## Owner decisions
 
-| Question | Recommendation |
+The owner accepted all four recommendations in chat on 2026-11-09.
+
+| Question | Decision |
 |---|---|
-| Collapse empty queues into one line, instead of the prototype's five panels? | Yes, as above |
-| Automatic refresh? | No in version 1; a Refresh button. Revisit if staff keep the page open all day |
-| Link to the PSP's status page when many payments are unresolved? | Yes, if the PSP has one; configured per PSP |
-| Should the badge count only what the person can act on? | Yes, so a Viewer isn't shown a number they can do nothing about |
+| Collapse empty queues into one line, instead of the prototype's five panels? | Yes |
+| Automatic refresh? | No in version 1; a Refresh button |
+| Link to the PSP's status page when many payments are unresolved? | Yes, if the PSP has one; configured per PSP (N4) |
+| Should the badge count only what the person can act on? | Yes |
+
+## Build record
+
+**Who built it:** Opus, on 2026-11-09, under an owner exception given in chat to the rule that DeepSeek builds, for N1 and N2 only. It is Stage 2 work built before Stage 2's design gate, because both tasks only read. The review must be a fresh session that didn't write this code.
+
+| Item | Result |
+|---|---|
+| Tests first | `AttentionTests`: 29 tests. Against an empty `QueueReader` stub, 27 failed and 2 passed: "no badge for Viewer or Admin", which held because no badge existed yet |
+| Console tests | `dotnet test tests/OpenPayments.Console.Tests`: 152 passed. Stage 1's `Home_opens_payments_until_attention_exists` was removed, because the home page is now Needs attention |
+| Browser tests | `dotnet test tests/OpenPayments.Console.Browser.Tests`: 40 passed. Needs attention joined the screen matrix: axe in light and dark at 1280 and 390 px, no sideways scroll and 44 px targets at 390 px |
+| Build | `dotnet build OpenPayments.slnx -warnaserror`: 0 warnings |
+| Whole suite | `dotnet test OpenPayments.slnx`: 423 passed, 0 failed. Domain 70, analyzers 1, mock PSP 20, checks 24, integration 40, acceptance 76, console 152, console browser 40 |
+| Index use | Each queue read uses its partial index, checked with `EXPLAIN` against the parent index through `pg_inherits` |
+| Live stack | Rebuilt the local console container. `/` serves Needs attention with the empty state, and the sidebar shows it first |
+
+**Decided without the owner,** to confirm:
+
+1. **Unresolved age limit of 15 minutes,** `Console:Attention:UnresolvedAfter`. No document sets one. CK5's 60 seconds is the reconciler's check, which is too short for a person to look. "Over limit" shows past twice that.
+2. **A review case that already has an open proposal isn't counted in the badge,** because the one-open-proposal index refuses a second proposal, so nobody can act on it from Needs review. The row says "A resolution is waiting for approval."
+3. **Orphan intents use the Audit log's 10-minute limit,** `Console:Audit:IntentLimit`, rather than a second setting.
+4. **The badge reads on every page load**, one bounded count query on the replica for Operators and Approvers, none for other roles. A failed read shows no badge.
+
+**Left for N3 and N4:** the full queue lists (a queue over 10 rows points to Payments search for now), the case panel for `?from=` (the link already carries it; the payment page ignores it), htmx refresh with the live region, the many-unresolved line and its PSP status link, and the 812 px first-row check at 390 px.
 
 ## Depends on
 

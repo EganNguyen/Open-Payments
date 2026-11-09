@@ -111,6 +111,11 @@ public static class CurrentStaff
         return result;
     }
 
+    /// <summary>The staff member already resolved for this request, or null on pages that
+    /// allow anonymous access.</summary>
+    public static Staff? Find(HttpContext context) =>
+        context.Items.TryGetValue(ItemKey, out var value) ? value as Staff : null;
+
     public static Staff Get(HttpContext context) =>
         context.Items.TryGetValue(ItemKey, out var value) && value is Staff staff
             ? staff

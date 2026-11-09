@@ -44,7 +44,7 @@ public sealed class Browsers : IAsyncLifetime
 [Collection("browser")]
 public sealed class BrowserTests(ConsoleDb db, Browsers browsers)
 {
-    private static readonly string[] Screens = ["payments", "detail", "refund", "audit", "staff", "more"];
+    private static readonly string[] Screens = ["attention", "payments", "detail", "refund", "audit", "staff", "more"];
 
     public static TheoryData<string, string, int> ScreenMatrix()
     {
@@ -165,6 +165,16 @@ public sealed class BrowserTests(ConsoleDb db, Browsers browsers)
         await db.SeedPaymentAsync("primary", "CAPTURED", amountMinor: 125000, id: captured);
         var authorized = await db.SeedPaymentAsync("primary", "AUTHORIZED", amountMinor: 4200);
         await db.SeedPaymentAsync("replica", "UNKNOWN", amountMinor: 990);
+        // Needs attention gets rows in three queues, a role note and a badge.
+        var review = await db.SeedPaymentAsync("replica", "REVIEW", amountMinor: 31050);
+        var clock = factory.Clock.GetUtcNow();
+        await db.ExecAsync("replica", $"""
+            update payments set updated_at = '{clock.AddHours(-3):O}' where state = 'UNKNOWN';
+            insert into payments (id, merchant_id, state, amount_minor, currency, captured_minor, expires_at, created_at, updated_at, authorized_until)
+            values (gen_random_uuid(), '{ConsoleDb.Merchant}', 'AUTHORIZED', 125000, 'USD', 0, now() + interval '1 day', now(), now(), '{clock.AddHours(9):O}');
+            insert into console.review_resolutions (id, payment_id, kind, outcome, psp_answer, evidence, state, proposed_by)
+            values (gen_random_uuid(), '{review}', 'payment', 'capture', 'Approved', 'PSP record', 'proposed', '{staff.Id}');
+            """);
         await db.ExecAsync("primary", $"""
             insert into console.staff (id, oidc_subject, email, role) values
               ('{staff.Id}', '{staff.Subject}', 'approver@example.test', 'approver'),
@@ -197,6 +207,7 @@ public sealed class BrowserTests(ConsoleDb db, Browsers browsers)
         var tab = await context.NewPageAsync();
         var path = page switch
         {
+            "attention" => "/",
             "payments" => "/Payments",
             "detail" => $"/Payments/{site.Captured}",
             "refund" => $"/Payments/{site.Captured}/Action/refund",

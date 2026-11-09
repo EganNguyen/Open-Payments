@@ -55,6 +55,16 @@ builder.Services.AddSingleton<ITimelineReader>(services => new TimelineReader(
     services.GetRequiredKeyedService<NpgsqlDataSource>("primary-read")));
 builder.Services.AddSingleton<IAuditWriter>(services =>
     new AuditWriter(services.GetRequiredKeyedService<NpgsqlDataSource>("primary")));
+builder.Services.Configure<AttentionOptions>(configuration.GetSection("Console:Attention"));
+builder.Services.AddSingleton<IQueueReader>(services => new QueueReader(
+    services.GetRequiredKeyedService<NpgsqlDataSource>("replica"),
+    services.GetRequiredKeyedService<NpgsqlDataSource>("primary"),
+    services.GetRequiredService<IConsoleReadStore>(),
+    services.GetRequiredService<IAuditWriter>(),
+    services.GetRequiredService<Microsoft.Extensions.Options.IOptions<AttentionOptions>>(),
+    services.GetRequiredService<Microsoft.Extensions.Options.IOptions<SearchOptions>>(),
+    services.GetRequiredService<Microsoft.Extensions.Options.IOptions<OpenPayments.Console.Pages.Audit.AuditOptions>>()));
+builder.Services.AddScoped<AttentionBadge>();
 builder.Services.Configure<OpenPayments.Console.Actions.PaymentApiOptions>(configuration.GetSection("Console:Api"));
 builder.Services.AddHttpClient<OpenPayments.Console.Actions.PaymentApiClient>();
 var dataProtection = builder.Services.AddDataProtection().SetApplicationName("OpenPayments.Console");

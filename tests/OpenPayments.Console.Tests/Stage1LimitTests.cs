@@ -5,25 +5,11 @@ using Xunit;
 
 namespace OpenPayments.Console.Tests;
 
-// Task 18 step 3: what Stage 1 leaves out until Stage 2 adds C12.
+// Task 18 step 3: what Stage 1 leaves out until Stage 2 adds C12. The home page itself
+// arrived early, as N1 and N2: see AttentionTests.
 [Collection("console-db")]
 public sealed class Stage1LimitTests(ConsoleDb db)
 {
-    [Fact]
-    public async Task Home_opens_payments_until_attention_exists()
-    {
-        await db.ResetAsync();
-        await using var factory = new DbConsoleFactory(db);
-        using var client = factory.ClientFor(factory.AddStaff(ConsoleRole.Viewer).Subject);
-
-        var home = await client.GetAsync("/");
-        Assert.Equal(HttpStatusCode.Redirect, home.StatusCode);
-        Assert.Equal("/Payments", home.Headers.Location!.OriginalString);
-
-        var html = await client.GetStringAsync("/Payments");
-        Assert.DoesNotContain("Attention", html, StringComparison.Ordinal);
-    }
-
     [Fact]
     public async Task Review_payment_shows_wording_with_no_resolution_controls()
     {
