@@ -539,6 +539,14 @@ All values are starting points until measured. Other docs state the resulting ru
 - **Why:** C40 requires duplicate, unmatched, wrong and missing lines to end in a defined state, ledger entries to post once, and a killed ingest to resume.
 - **Consequence:** Two new tables. CK8 timeliness applies from Stage 2.
 
+### D64
+
+**Design gates decide by analysis; measurements run to optimize a seen slowness.** Status: `Committed`, owner decision 2026-11-10. Amends [D46](#d46)'s requirement to measure V7 at Stage 2's design gate.
+
+- **Decision:** A design gate reasons from the queries, plans, PostgreSQL internals and failure scenarios, and designs from that. It doesn't run benchmarks or spike variants. A measurement is run when a stage benchmark, a test or production shows a slowness, to find its cause and optimize it. A design that leans on an unmeasured cost names the metric and alert that would show it's too slow.
+- **Why:** The laptop can't measure the costs that matter at target, on real disks at 10,000 keys/s, so a design-gate measurement here mostly measured the laptop, and waited on the hardware the stage benchmarks also need. Stage 2's V7 was the case in point.
+- **Consequence:** [Delivery workflow](delivery-workflow.md#design-gate) step 4 and its exit change. `MEASURE-FIRST` items are settled by analysis at the gate and carry their watch metric into the build. Stage benchmarks, G1-G6 and the load and chaos tests are unchanged: they prove the system, they don't design it. Stage 2's key expiry is [designed by analysis](gates/stage-2-design.md#key-expiry-decided-by-analysis).
+
 ## Assumptions and limits
 
 - **Numbers are targets, not measurements.** SLOs, thresholds, pool sizes and the 60% CPU target are replaced by measured values from L1 and O3.

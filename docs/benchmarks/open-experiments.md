@@ -97,7 +97,7 @@ The [matrix](../../db/spike/matrix.json) has 20 entries. Only `baseline` and a s
 | V4 | Does the pool or a PgBouncer process limit first? | Partial, from limit searches | Connection budget |
 | V5 | Do time partitions hold up? | Not run. D25 chose schema C without it | D25 |
 | V6 | Does pipelining help? | Docker, sale only, one run each: +24%. Not with real flushes | Transaction design |
-| V7 | Can keys expire by batched delete under load? | Not run. **Required at Stage 2's design gate** | D19 |
+| V7 | Can keys expire by batched delete under load? | Not run. Stage 2's method is [decided by analysis](../gates/stage-2-design.md#key-expiry-decided-by-analysis) ([D64](../decisions.md#d64)); run V7 only if expiry shows a slowness. `V7-control` is in the matrix | D19 |
 | V8 | How many refunds/s from 1, 100 or 10,000 merchants? | Not run | D38 |
 | V9 | Outbox by marking rows, a marker or log capture? | Not run. **Required before Stage 3's publisher** | Publisher design |
 | V10 | Callback cost, one per transaction or batched? | Not run | Capacity model |

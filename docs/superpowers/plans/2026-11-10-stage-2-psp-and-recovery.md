@@ -12,7 +12,7 @@
 
 | Gate | Tasks | Done by | Exit record |
 |---|---|---|---|
-| Design | This plan, V7 | Opus | [`docs/gates/stage-2-design.md`](../../gates/stage-2-design.md), signed by the owner |
+| Design | This plan | Opus | [`docs/gates/stage-2-design.md`](../../gates/stage-2-design.md), signed by the owner |
 | Build | 19-37, console C3, C5, C12 | DeepSeek | `docs/gates/stage-2-progress.md`, with no open `docs/gates/stage-2-escalations.md` entry |
 | Review | The complete change since the starting commit named in the gate record | Opus, in a fresh session | `docs/gates/stage-2-review.md`, with no open critical or high finding |
 
@@ -66,6 +66,7 @@ L7 must be settled before callbacks and the reconciler exist, so this milestone 
 - Produces, in `0004_stage2.sql`:
   - `psp_events` recreated, hash-partitioned 16 ways by `psp_event_id` (it has never held rows): `psp_account_id uuid not null`, `psp_event_id text not null`, `source text not null check (source in ('callback','api_answer'))`, `payload jsonb not null`, `payment_id uuid`, `attempt_id uuid`, `refund_id uuid`, `received_at timestamptz not null default now()`, `processed_at timestamptz`, `outcome text check (outcome in ('applied','ignored','contradiction','parked','expired'))`, `attempts int not null default 0`, `next_attempt_at timestamptz`, `last_error text`, primary key `(psp_account_id, psp_event_id)`. Indexes `psp_events_parked on (next_attempt_at) where processed_at is null`, `psp_events_payment on (payment_id) where payment_id is not null`, `psp_events_expirable on (processed_at) where processed_at is not null`.
   - `payment_attempts` and `refunds` gain `idempotency_key text`, `resolves_key boolean not null default true`, `next_recovery_at timestamptz`, `recovery_attempts int not null default 0`, `last_inquiry_at timestamptz`, `last_inquiry_result text`.
+  - Each `idempotency_keys` partition gets `autovacuum_vacuum_scale_factor = 0.01` and `autovacuum_vacuum_insert_scale_factor = 0.01`, and so does each `psp_events` partition ([key expiry](../../gates/stage-2-design.md#key-expiry-decided-by-analysis)).
   - `psp_accounts` gains `callback_secret_ref text`, `recovery_share numeric(3,2) not null default 0.10 check (recovery_share > 0 and recovery_share < 1)`.
   - Grants: `op_app` gets `select, insert, update, delete` on `psp_events`; `op_console_read` gets `select` on `psp_events`.
 - All columns added nullable or with constants, so no table rewrite on `payments` or `payment_attempts`. Run `scripts/check-migration.sh`.
@@ -78,6 +79,7 @@ L7 must be settled before callbacks and the reconciler exist, so this milestone 
 [Fact] public Task Psp_events_parked_and_payment_indexes_exist();             // EXPLAIN on a seeded table
 [Fact] public Task Attempts_and_refunds_carry_key_and_recovery_columns();
 [Fact] public Task Recovery_share_out_of_range_is_rejected();
+[Fact] public Task Key_and_event_partitions_have_expiry_autovacuum_settings();
 [Fact] public Task Console_read_role_can_read_psp_events_but_not_write();
 [Fact] public Task Op_app_money_grants_outside_psp_events_are_unchanged();
 ```
@@ -415,14 +417,14 @@ Build [console Task C3](2026-11-06-console.md#task-c3-escalation-and-manual-reso
 
 ### Task 30: Key and event expiry
 
-**Starts only when** the gate record names the method V7 chose. If it doesn't, stop and escalate.
+The method is [decided by analysis](../../gates/stage-2-design.md#key-expiry-decided-by-analysis) in the gate record ([D64](../../decisions.md#d64)). Build it as written; don't benchmark it in this task.
 
 **Files:**
 - Create: `src/OpenPayments.Reconciler/ExpiryWorker.cs`
 - Test: `tests/OpenPayments.Reconciler.Tests/ExpiryTests.cs`, `tests/OpenPayments.Acceptance.Tests/C31bKeyExpiryTests.cs`
 
 **Interfaces:**
-- `ExpiryWorker.RunOnceAsync(DateTimeOffset now, CancellationToken ct) -> Task<ExpirySummary>`: deletes `idempotency_keys` with `resolved_at < now - KeyRetention` by the V7 method and batch size, each batch its own transaction; never a row with `resolved_at is null`, enforced in the statement, not by a prior read. Deletes processed `psp_events` older than `EventRetention`, never a parked one. Metrics `op_keys_expired_total`, `op_keys_expirable_backlog`, `op_expiry_batch_seconds`.
+- `ExpiryWorker.RunOnceAsync(DateTimeOffset now, CancellationToken ct) -> Task<ExpirySummary>`: loops over the 16 `idempotency_keys` partitions and deletes batches of `Expiry:Batch` (500) keys with `resolved_at < now - KeyRetention`, oldest first, `for update skip locked`, each batch its own transaction, paced to `Expiry:MaxDeletesPerSecond`. A row with `resolved_at is null` can't match the statement, so no prior read decides it. Processed `psp_events` older than `EventRetention` go the same way; a parked one never does. Metrics `op_keys_expired_total`, `op_keys_expirable_backlog`, `op_expiry_batch_seconds`; alert `KeyExpiryFallingBehind`.
 
 - [ ] **Step 1: Write failing tests**
 
@@ -434,7 +436,9 @@ Build [console Task C3](2026-11-06-console.md#task-c3-escalation-and-manual-reso
 [Fact] public Task E24_key_older_than_24h_with_unknown_payment_is_kept();
 [Fact] public Task Key_resolved_during_the_batch_is_not_deleted_early();             // concurrent resolve, Review Focus 6
 [Fact] public Task Parked_events_are_never_deleted();
-[Fact] public Task Expiry_batch_runs_under_load_without_raising_live_p99_beyond_v7_condition(); // local preview
+[Fact] public Task Delete_runs_per_partition_oldest_first_using_partition_index();      // EXPLAIN per partition
+[Fact] public Task Expiry_respects_max_deletes_per_second();
+[Fact] public Task Backlog_metric_and_falling_behind_alert_fire_when_expiry_is_stopped();  // promtool test rules
 ```
 
 - [ ] **Step 2: Run to verify they fail:** `dotnet test --filter "ExpiryTests|C31bKeyExpiryTests"`.
@@ -584,7 +588,7 @@ Build these as written, in this order: [console Task C5](2026-11-06-console.md#t
 
 **Interfaces:**
 - `run.sh <step> --stage phase2` sets the mock's `error_rate`, `approve_then_hang_rate`, `late_landing_rate`, `callback_rate` (1.0), `callback_duplicate_rate` and `callback_reorder_window_ms` from a `phase2` profile, starts the reconciler, waits for the backlog to drain before running checks, and runs `op-checks --stage phase2` (CK5 with timeouts, CK7-CK10, CK8 included).
-- `result.md` adds callback req/s, parked events, recovery calls/s, keys expired/s, unresolved count at end, and commits per payment against [D47](../../decisions.md#d47)'s 4.2 with callbacks.
+- `result.md` adds callback req/s, parked events, recovery calls/s, keys expired/s and the expirable backlog, unresolved count at end, and commits per payment against [D47](../../decisions.md#d47)'s 4.2 with callbacks.
 
 - [ ] **Step 1: Write failing report tests**
 
@@ -596,7 +600,7 @@ def test_phase2_is_labelled_preview(): ...
 ```
 
 - [ ] **Step 2: Run to verify they fail:** `python3 -m pytest benchmarks/test_report.py -v`.
-- [ ] **Step 3: Run steps 0-5 locally,** stopping at the first failed gate or invalid run, and record each in `BASELINE.md` as a preview with the bottleneck evidence ([E4](../../gates/stage-1-escalations.md#e4-task-17-has-no-linux-host-for-steps-4-5-escalation-e4) rules). Then run C23 and C47 at laptop scale, and say plainly that C23's "5k TPS" isn't reached.
+- [ ] **Step 3: Run steps 0-5 locally,** stopping at the first failed gate or invalid run, and record each in `BASELINE.md` as a preview with the bottleneck evidence ([E4](../../gates/stage-1-escalations.md#e4-task-17-has-no-linux-host-for-steps-4-5-escalation-e4) rules). Then run C23 and C47 at laptop scale, and say plainly that C23's "5k TPS" isn't reached. Keep the expiry job on throughout, with a prefilled expirable backlog; if live p99 rises with it or the backlog grows, record it as a bottleneck and escalate. That is when V7 runs ([D64](../../decisions.md#d64)).
 - [ ] **Step 4: G2 per account.** For each sandbox account, record the documented sandbox and live limits, the limit `psp_accounts.rate_limit_per_s` uses, a 60-second sandbox run at 80% of the sandbox limit with no 429 beyond the test's own spike, and the arithmetic of how many merchant accounts the target needs. Write it in `docs/benchmarks/g2-per-account.md`. **G2 is answered "in writing" only by the PSP's written confirmation of live limits;** until then the file says so, and it is a [stop condition](../specs/2026-11-05-implementation-and-benchmark-design.md#stop-conditions) if the arithmetic can't reach the target.
 - [ ] **Step 5: Commit** results with `test: record Stage 2 previews and G2 per account`.
 
@@ -647,7 +651,7 @@ Every Phase 2 ID from [Build phases](../../verification.md#build-phases), and wh
 | U5 | 23, 32 | Capabilities and recorded fixtures; event schema compatibility stays in Phase 3 |
 | L7 | 21 | Stage 1 finding |
 | L8 | 22 | Stage 1 finding |
-| E3 checks | 20, 30 | `resolved_at` everywhere; V7 before the job |
+| E3 checks | 20, 30 | `resolved_at` everywhere; expiry method by analysis ([D64](../../decisions.md#d64)) |
 | G2 | 36 | In writing only from the PSP |
 
 **Reverse, by task:**
@@ -694,6 +698,5 @@ Per the [build gate](../../delivery-workflow.md#build-gate), stop that task, add
 - An interface doesn't match its task, or a test can't pass without changing what it asserts.
 - A query-count ceiling ([D48](../../decisions.md#d48)) or a timer value would need to change.
 - The PSP needs a new contract state, field or route (Task 33), or its facts differ from the gate record.
-- V7's method isn't recorded when Task 30 starts.
 - A [stop condition](../specs/2026-11-05-implementation-and-benchmark-design.md#stop-conditions) occurs: G2 can't reach the target, or any run shows a duplicate charge, lost record or imbalance that can't be explained. Correctness work then comes before all load work.
-- D56's verification, still running at this gate, finds a defect in the payment path.
+- D56's laptop verification finds a defect in the payment path.

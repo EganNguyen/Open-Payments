@@ -8,7 +8,7 @@ Status: Draft · Last updated: 2026-11-05
 
 | Gate | Done by | Purpose | Exit |
 |---|---|---|---|
-| [Design](#design-gate) | Opus | Reason it through, and measure what design depends on | Owner-approved record |
+| [Design](#design-gate) | Opus | Reason it through from the design, queries and internals | Owner-approved record |
 | [Build](#build-gate) | DeepSeek | Build the approved tasks, test first | All tasks done with evidence |
 | [Review](#review-gate) | Opus, in a fresh session | Verify everything independently | No open critical or high findings; owner accepts the rest |
 
@@ -35,11 +35,11 @@ Records live in `docs/gates/`, one per gate per stage. They are in the repositor
 1. Read the design docs and the latest measurements. Challenge earlier decisions.
 2. Analyze requirements, trade-offs, financial invariants and failure scenarios.
 3. Design service boundaries, APIs, schemas, transactions and concurrency controls.
-4. **Run any measurement the design depends on.** Spike scripts and environment checks belong here, because their results are design decisions.
+4. **Decide by analysis, not by benchmark** ([D64](decisions.md#d64)). Where a design leans on a cost nobody has measured, name the metric and alert that would show it's too slow. Measurements run later, when a stage benchmark or test shows a slowness to optimize.
 5. Record decisions in [Decisions](decisions.md), and write tasks with exact files, signatures and tests, plus acceptance criteria.
 6. List unresolved decisions and risks in `docs/gates/stage-N-design.md`, including every decision made without the owner.
 
-**Exit:** the owner has approved the record, and it names the commit the build starts from. `MEASURE-FIRST` items that this stage's tasks depend on are measured, and nothing they depend on is `NEEDS-OWNER`.
+**Exit:** the owner has approved the record, and it names the commit the build starts from. `MEASURE-FIRST` items that this stage's tasks depend on are settled by analysis, each with its watch metric, and nothing they depend on is `NEEDS-OWNER`.
 
 ## Build gate
 

@@ -1,6 +1,6 @@
 # Stage 2 Design Gate
 
-The approval record for Stage 2, PSP and recovery: what was decided, what the owner must still decide, what was measured, and what must be true before the build starts.
+The approval record for Stage 2, PSP and recovery: what was decided, what the owner must still decide, and what must be true before the build starts.
 
 Status: **Open: awaiting the owner. Not signed** · The build starts from: *not yet named* · Last updated: 2026-11-10
 
@@ -13,7 +13,7 @@ Checked on 2026-11-10 against the repository, not assumed.
 | Fact | Evidence |
 |---|---|
 | Stage 1's review gate closed 2026-11-10, with L7 and L8 carried here | [Stage 1 review](stage-1-review.md), owner sign-off row |
-| D56's laptop verification is **still running**. A 60-minute soak (step 102, 250 req/s, run `20261110T074536Z-2f1ca8a-s102-6ab6`) started 07:45 UTC on the shared Docker stack. [Phase 1](../phase-gates/phase-1.md#d56-laptop-verification) shows every D56 row "Not run" in the committed copy | `pgrep k6`; `docs/phase-gates/phase-1.md` |
+| D56's laptop verification ran two 60-minute soaks on 2026-11-10 (step 102 at 250 req/s, from 07:45 and 08:47 UTC). Its results are in [BASELINE](../../benchmarks/BASELINE.md) and [Phase 1](../phase-gates/phase-1.md#d56-laptop-verification), not repeated here | `benchmarks/BASELINE.md` |
 | No capacity number is proven. The latest valid laptop preview is step 5, 248 completed payments/s, p99 17.74 ms; step 6 failed p99 with one API instance | [BASELINE](../../benchmarks/BASELINE.md) |
 | No callback route, reconciler, timer job, breaker, PSP rate limiter or settlement ingestion exists in `src/` | `grep` of `src/` |
 | `psp_events` has no link to a payment, and nothing writes it | `db/migrations/0001_initial.sql` |
@@ -35,7 +35,7 @@ Checked on 2026-11-10 against the repository, not assumed.
 | O5 | **Who provides the Stripe sandbox keys and webhook secrets** | The owner creates two sandboxes and puts their keys in the local secret store (`deploy/compose/secrets/`, git-ignored). No agent creates accounts or types secrets ([Global Constraints](../superpowers/plans/2026-11-10-stage-2-psp-and-recovery.md#global-constraints)) | Tasks 32-36 |
 | O6 | **Timer values decided here** (table below) | Approve | Tasks 27-30 |
 | O7 | **G2 in writing:** who asks Stripe for the live per-account limit, and whether a written answer is required before Stage 4 or before live money | Ask before Stage 4; Stage 2 records the sandbox limit and the published live default only | Task 36 |
-| O8 | **The key-expiry method,** once V7 has run | Decided from [V7](#v7-batched-key-expiry-under-load), with its pass conditions fixed below before it runs | Task 30 |
+| O8 | ~~The key-expiry method, once V7 has run~~ **Answered 2026-11-10:** no measurement at the design gate ([D64](../decisions.md#d64)); the method is [decided by analysis](#key-expiry-decided-by-analysis) | Approve the method when signing | Task 30 |
 | O9 | **The build-start commit,** and signing this record | The commit that adds this record and the plan, after O1-O8 | Everything |
 
 **If O1 goes another way,** only Milestone I's adapter, its fixtures and C39 change. The mock covers all three recovery modes, so Milestones E-H don't depend on the choice.
@@ -114,33 +114,31 @@ Each needs the owner's confirmation when signing.
 | Settlement source for Stripe | The itemized payout reconciliation report, or balance transactions by payout. **Unverified in sandbox:** Stripe's Reports API guide says report runs need a live key, while its reconciliation examples use test keys. Task 31 builds against the mock; Task 32 checks the sandbox, and if reports aren't available there, settlement is proven against the mock only and that is named in the Phase 2 record |
 | Console (F2) | Console Task C3 lands before Task 29's escalation job; then C5 and C12 with N3 and N4; the timeline adds PSP events and the last inquiry |
 
-## V7: batched key expiry under load
+## Key expiry, decided by analysis
 
-[E3](stage-1-escalations.md#e3-task-16-idempotency-key-retention-has-no-implementation) and [D46](../decisions.md#d46) require this before the expiry task. It runs on the native stack with `db/spike/tx-key-expiry.pgbench`, which deletes up to `:batch` keys resolved over 24 hours ago through `idempotency_keys_expirable`, and never a key with no `resolved_at`.
+The owner decided on 2026-11-10 that design gates analyze and design, and run a measurement only when a slowness has been seen and is to be optimized ([D64](../decisions.md#d64)). So V7 isn't run here. A `V7-control` run was started on the native stack and stopped before it measured anything; it left no result. This answers [E3](stage-1-escalations.md#e3-task-16-idempotency-key-retention-has-no-implementation)'s first check, and amends [D46](../decisions.md#d46)'s requirement to measure V7 at this gate.
 
-**What it decides:** whether batched delete through the parent table can keep up with key creation without hurting live work, or whether the job must delete partition by partition.
+**The method,** from the queries, the plans and how PostgreSQL deletes:
 
-**Pass conditions, fixed before the run:**
+| Choice | Reason |
+|---|---|
+| **Delete partition by partition,** looping over the 16 `idempotency_keys` partitions, not through the parent | A `limit` over the parent appends partitions in turn and may scan one partition's index while another holds the oldest keys. A statement per partition uses that partition's own `resolved_at` index and touches one partition's pages |
+| **One batch:** `delete from idempotency_keys_<n> where (merchant_id, key) in (select merchant_id, key from idempotency_keys_<n> where resolved_at < $cutoff order by resolved_at limit $batch for update skip locked)` | `resolved_at < $cutoff` can't match a null, so an unresolved key is never deleted, by the statement itself. `order by resolved_at` walks the partial index from its oldest end. `skip locked` never waits on a live writer |
+| **Batch 500, each its own transaction,** well inside the role's 1 s `statement_timeout` | Short transactions keep lock time and WAL bursts small, and a failed batch loses nothing |
+| **Rate cap** `Expiry:MaxDeletesPerSecond`, starting at twice the expected key creation rate, with a pause between batches | Expiry competes with payments for WAL and disk. Twice creation drains any backlog while staying bounded |
+| **Dead index entries at the oldest end** are skipped through PostgreSQL marking them dead on first visit, and cleared by autovacuum. Migration `0004` sets `autovacuum_vacuum_scale_factor = 0.01` and `autovacuum_vacuum_insert_scale_factor = 0.01` on each `idempotency_keys` partition | Deleting in `resolved_at` order is the case where dead entries collect at the head of the index. The default 20% scale factor would wait for tens of millions of dead rows per partition at target |
+| **Watch, then optimize:** metrics `op_keys_expirable_backlog`, `op_keys_expired_total`, `op_expiry_batch_seconds`, and an alert `KeyExpiryFallingBehind` when the oldest expirable key is more than retention plus 1 hour old | This is the signal that would justify measuring. If it fires, or if the stage benchmark shows live p99 rising while expiry runs, V7 is run then, to find the cause |
 
-1. Keys deleted per second at least equal keys created per second, over the whole measurement.
-2. Live-script p99 (sale and refund) no more than 10% above the control run at the same rate, or 2 ms, whichever is larger.
-3. The expiry script's own p99 in the last third of the run no more than 1.5 times its p99 in the first third. A rise means dead index entries are piling up at the head of the `resolved_at` index.
-4. No aborted clients, no deadlocks, `verify.sql` passes, and the run is valid by the [trust rules](../superpowers/specs/2026-11-05-implementation-and-benchmark-design.md#when-a-result-can-be-trusted).
+`psp_events` uses the same method on its processed rows, partition by partition on `psp_events_expirable`.
 
-The control, `V7-control`, is the same mix with no expiry script.
-
-**Configuration, fixed before the run:** native stack, schema C, 5M prefilled payments whose keys are aged over 30 days (about 4.8M expirable), pool 200, 800 clients. Mix sale 90, refund 15, key expiry 1, so 105 keys created per 106 scripts. Batch 200, so a keeping-up job deletes 200 per 106 scripts, about 1.9 times creation: condition 1 asks whether the job achieves that against a live backlog, not whether it barely balances. One rate, 1,500 scripts/s, for 900 s after a 60 s warm-up, so the thirds in condition 3 are 300 s each. Deletes are counted from the expirable row count before and after.
-
-**Conflict with D56:** the soak above shares this laptop's disk and CPU. Running V7 during it would make both runs invalid, so V7 runs after it ends, with the Docker stack idle.
-
-**Result:** *pending, not run.* The first soak ended at 08:46 UTC, and the D56 session started a second 60-minute soak (`20261110T084705Z-3f56a33-s102-3abd`, at `3f56a33`) at 08:47, so the laptop stayed busy. The owner decides whether V7 waits for D56 to finish or D56 pauses for it (about 40 minutes: data load, then 16 minutes per variant). Recorded in [Open experiments](../benchmarks/open-experiments.md#spike-variants) with run IDs when run. Whatever it shows is a laptop preview: it can choose a method, not prove one at 10,000 keys/s, so Task 30 repeats the check through the API at the stage benchmark.
+**Not established:** the cost of expiry on real disks at 10,000 keys/s. The stage benchmark (Task 36) runs with expiry on and reports the backlog; a Linux run comes before Stage 4.
 
 ## Must finish before the build
 
 | ☐ | Item | Needs |
 |---|---|---|
-| ☐ | O1-O8 answered | Owner |
-| ☐ | V7 measured and its method recorded | This gate, after the D56 soak |
+| ☐ | O1-O7 and O9 answered | Owner |
+| ☑ | Key-expiry method recorded | [By analysis](#key-expiry-decided-by-analysis), under D64 |
 | ☐ | D59-D63 `Committed` in [Decisions](../decisions.md) | Owner's approval |
 | ☑ | [Stage 2 plan](../superpowers/plans/2026-11-10-stage-2-psp-and-recovery.md) written | This gate |
 | ☐ | Signed below, naming the build's starting commit | Owner |
@@ -152,7 +150,7 @@ The control, `V7-control`, is the same mix with no expiry script.
 - **G2 is a stop condition.** At 100 requests/s per account, 5,000 payments/s needs at least 50 busy merchant accounts at once, or a raised limit. That fits D35, but it is arithmetic, not a written answer.
 - **Settlement against the sandbox may be impossible** (above).
 - **C13 failover never triggers with one real PSP,** because tokens don't move between PSPs ([D39](../decisions.md#d39)).
-- **V7 runs on a laptop disk** that already caused the soak's commit stalls ([D58](../decisions.md#d58)).
+- **Key expiry's cost is unmeasured.** The method is chosen by analysis, and `KeyExpiryFallingBehind` and the stage benchmark are what would show it's too slow.
 - **D56 is unfinished.** If it finds a defect in the payment path, its fix comes before Stage 2's build.
 - **The API contract may change at C39,** so the console's API client and the harness may need updates after the freeze.
 
