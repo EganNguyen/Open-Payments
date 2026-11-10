@@ -27,6 +27,7 @@ The stack is in [`deploy/compose/observability.yaml`](../deploy/compose/observab
 | `op_allocation_rate_bytes_per_second` | gauge | none | Managed allocation rate since process start | API `/metrics` |
 | `op_abandoned_commits` | gauge | none | Commits still running after the commit wait limit ([E1](gates/stage-1-escalations.md#e1-task-13-npgsql-commit-cancellation-breaks-d28)) | Transaction runner, via API `/metrics` |
 | `op_commit_warnings_total` | counter | none | Commit-time replication warnings that make the outcome unknown ([E1](gates/stage-1-escalations.md#e1-task-13-npgsql-commit-cancellation-breaks-d28)) | Transaction runner, via API `/metrics` |
+| `op_unresolved_count`, `op_unresolved_oldest_age_seconds`, `op_unresolved_amount_minor` | gauge | `kind`, `state`, `currency`, `psp` | Payments in `PSP_PENDING` or `UNKNOWN`, and attempts and refunds in `PENDING` or `UNKNOWN`: how many, the oldest's age, and the money they hold. Their outcome isn't established, and Stage 1 can't resolve them ([runbook](runbooks/unknown-outcomes.md)) | postgres-exporter query `op_unresolved` |
 | `op_psp_wait_seconds` | histogram | none | Time spent inside the PSP adapter call | PSP adapter |
 | `op_inflight` | gauge | none | Requests currently in flight on this instance | API edge |
 | `op_tx_retries_total` | counter | `sqlstate` | Transaction retries. Only `40001` and `40P01` are retried, at most twice | Transaction runner |

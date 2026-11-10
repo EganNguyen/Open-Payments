@@ -6,3 +6,58 @@ pg_wal:
     - bytes:
         usage: GAUGE
         description: WAL bytes written since the start of the cluster.
+
+# Payments, attempts and refunds whose outcome isn't established: PSP_PENDING or UNKNOWN
+# payments, and PENDING or UNKNOWN attempts and refunds. Stage 1 has no reconciler, so these stay
+# until a person resolves them (docs/runbooks/unknown-outcomes.md). One row per kind, state,
+# currency and PSP: how many, how old the oldest is, and how much money they hold. The partial
+# *_unresolved indexes serve each branch. No rows means nothing is unresolved.
+op_unresolved:
+  query: |
+    select 'payment' as kind, p.state, p.currency::text as currency, '' as psp,
+           count(*)::float8 as count,
+           extract(epoch from now() - min(p.updated_at))::float8 as oldest_age_seconds,
+           sum(p.amount_minor)::float8 as amount_minor
+    from payments p
+    where p.state in ('PSP_PENDING', 'UNKNOWN')
+    group by p.state, p.currency
+    union all
+    select 'attempt', a.state, p.currency::text, a.psp,
+           count(*)::float8,
+           extract(epoch from now() - min(a.created_at))::float8,
+           sum(case when a.operation in ('authorize', 'sale', 'capture') then p.amount_minor else 0 end)::float8
+    from payment_attempts a
+    join payments p on p.id = a.payment_id
+    where a.state in ('PENDING', 'UNKNOWN')
+    group by a.state, p.currency, a.psp
+    union all
+    select 'refund', r.state, p.currency::text, r.psp,
+           count(*)::float8,
+           extract(epoch from now() - min(r.created_at))::float8,
+           sum(r.amount_minor)::float8
+    from refunds r
+    join payments p on p.id = r.payment_id
+    where r.state in ('PENDING', 'UNKNOWN')
+    group by r.state, p.currency, r.psp
+  metrics:
+    - kind:
+        usage: LABEL
+        description: payment, attempt or refund.
+    - state:
+        usage: LABEL
+        description: The unresolved state.
+    - currency:
+        usage: LABEL
+        description: The payment's currency.
+    - psp:
+        usage: LABEL
+        description: The PSP for attempts and refunds; empty for payments.
+    - count:
+        usage: GAUGE
+        description: Operations in this state.
+    - oldest_age_seconds:
+        usage: GAUGE
+        description: Age of the oldest one, from its last update (payments) or creation.
+    - amount_minor:
+        usage: GAUGE
+        description: Money they hold, in minor units of the currency.

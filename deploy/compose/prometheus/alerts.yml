@@ -18,3 +18,14 @@ groups:
           severity: page
         annotations:
           summary: Commits have run past the commit wait limit for a minute (E1).
+  - name: open-payments-unresolved
+    rules:
+      # CK5's threshold. Stage 1 has no reconciler, so an operation this old stays unresolved until a
+      # person handles it: docs/runbooks/unknown-outcomes.md.
+      - alert: UnresolvedOperationAging
+        expr: max by (kind, state) (op_unresolved_oldest_age_seconds) > 60
+        for: 1m
+        labels:
+          severity: ticket
+        annotations:
+          summary: "{{ $labels.kind }} operations have been {{ $labels.state }} for over 60 s; their outcome isn't established."
