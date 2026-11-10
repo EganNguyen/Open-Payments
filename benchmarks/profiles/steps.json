@@ -88,5 +88,23 @@
     "rate": 250,
     "duration_seconds": 3600,
     "purpose": "D56 laptop soak at step 4's rate, after the step 5 soak failed p99 on WAL commit stalls"
+  },
+  {
+    "step": 103,
+    "rate": 600,
+    "duration_seconds": 600,
+    "purpose": "Laptop limit search between steps 5 and 6: 600 req/s, about 300 completed payments/s"
+  },
+  {
+    "step": 104,
+    "rate": 700,
+    "duration_seconds": 600,
+    "purpose": "Laptop limit search between steps 5 and 6: 700 req/s, about 350 completed payments/s"
+  },
+  {
+    "step": 105,
+    "rate": 800,
+    "duration_seconds": 600,
+    "purpose": "Laptop limit search between steps 5 and 6: 800 req/s, about 400 completed payments/s"
   }
 ]
