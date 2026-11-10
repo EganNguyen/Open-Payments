@@ -91,6 +91,7 @@ Read them in this order if you are new.
 | [Development challenges](docs/development-challenges.md) | Problems found so far, their root causes, fixes and evidence | You want to know what went wrong and why |
 | Gate records in [`docs/gates/`](docs/gates/) | Design approvals, build progress, escalations | You check what's approved, built or blocked |
 | [Stripe research](docs/stripe-research.md) | What Stripe has published, proposed design changes, what not to copy | Before accepting the design or starting Phase 0 |
+| [FAQ](docs/FAQ.md) | Technical questions answered, concept by concept, against this project | You need one answer, not the whole doc |
 | [Glossary](docs/glossary.md) | Terms and standard names | Any time |
 
 The clickable UX prototype and case study for the merchant dashboard and checkout are kept outside this repo, on a design canvas.
