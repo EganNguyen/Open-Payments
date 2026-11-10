@@ -66,7 +66,7 @@ public sealed class QueryCountTests(AcceptanceFixture db, ITestOutputHelper outp
         Assert.Equal(HttpStatusCode.OK, sale.StatusCode);
         output.WriteLine($"S3 sale commands={db.Queries.Count}");
         PrintTransactions("sale", output);
-        AssertTransactions(new[] { 8, 15 });
+        AssertTransactions(new[] { 8, 16 });
         Assert.Equal(29, db.Queries.Count);
 
         var cancelId = await CreateAwaitingAsync(client, "measure-cancel");
@@ -84,7 +84,7 @@ public sealed class QueryCountTests(AcceptanceFixture db, ITestOutputHelper outp
         Assert.Equal(HttpStatusCode.OK, voided.StatusCode);
         output.WriteLine($"S3 void commands={db.Queries.Count}");
         PrintTransactions("void", output);
-        AssertTransactions(new[] { 10, 15 });
+        AssertTransactions(new[] { 10, 16 });
         Assert.Equal(33, db.Queries.Count);
 
         var awaitingId = await CreateAwaitingAsync(client, "measure-attempt");
@@ -96,7 +96,7 @@ public sealed class QueryCountTests(AcceptanceFixture db, ITestOutputHelper outp
         Assert.Equal(HttpStatusCode.OK, attempt.StatusCode);
         output.WriteLine($"S3 attempt commands={db.Queries.Count}");
         PrintTransactions("attempt", output);
-        AssertTransactions(new[] { 11, 15 });
+        AssertTransactions(new[] { 11, 16 });
         Assert.Equal(34, db.Queries.Count);
 
         var replayBody = new
@@ -138,7 +138,7 @@ public sealed class QueryCountTests(AcceptanceFixture db, ITestOutputHelper outp
         Assert.Equal(HttpStatusCode.OK, secondRefund.StatusCode);
         output.WriteLine($"S3 refund-after-1-prior commands={db.Queries.Count}");
         PrintTransactions("refund", output);
-        AssertTransactions(new[] { 15, 15 });
+        AssertTransactions(new[] { 15, 16 });
         Assert.Equal(37, db.Queries.Count);
 
         for (var index = 3; index <= 10; index++)
@@ -185,6 +185,8 @@ public sealed class QueryCountTests(AcceptanceFixture db, ITestOutputHelper outp
         Assert.Equal(34, db.Queries.Count);
     }
 
+    // D58: transaction B also writes the key's answer, so it has one more statement and the
+    // answer no longer needs a commit of its own.
     private void AssertTransactions(int[] expected)
     {
         var actual = db.Queries.Transactions.Select(transaction => transaction.Statements).ToArray();

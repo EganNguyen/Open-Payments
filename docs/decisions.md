@@ -2,7 +2,7 @@
 
 The decisions that shape Open Payments, the assumptions behind them, and the questions still open.
 
-Status: Draft · Last updated: 2026-11-09
+Status: Draft · Last updated: 2026-11-10
 
 All values are starting points until measured. Other docs state the resulting rule; this doc says why.
 
@@ -482,6 +482,22 @@ All values are starting points until measured. Other docs state the resulting ru
   - **Alerts:** each of the three rules is seen firing in a running Prometheus.
 - **Why:** The owner asked for the highest defensible Stage 1 score from laptop evidence, without claiming production readiness or distributed validation. The verification table's criteria are written for 5,000 payments/s and real infrastructure.
 - **Consequence:** every result is a preview. None of these replaces L3, L5, C1, C2 or C7 on Linux, and C10 and C11 aren't run.
+
+### D57
+
+**Database settings come only from reviewed config files, and the WAL settings suit production.** Status: `Committed`, 2026-11-10.
+
+- **Decision:** `primary.conf` sets `wal_buffers = 64MB`, `wal_compression = lz4`, `autovacuum = on` and I/O timing (`track_io_timing`, `track_wal_io_timing`). Per-machine files such as `primary.macbook.conf` hold sizing only. `scripts/check-db-settings.sh` fails if any setting comes from `postgresql.auto.conf`, so an `ALTER SYSTEM` can't change behaviour unseen.
+- **Why:** the 60-minute soak (D56) found the local primary running with `autovacuum = off` and `checkpoint_timeout = 1h` from a forgotten `ALTER SYSTEM`, in no file in the repo. The 16 MB `wal_buffers` default had filled 108,801 times under the D47 mix. These are general PostgreSQL practice, not laptop tuning. Asynchronous replication, `synchronous_commit` below `on`, `fsync = off` and RAM disks were rejected: each passes a test by giving up D7.
+- **Consequence:** watch `pg_stat_wal.wal_buffers_full` and checkpoint timing on every server. Raising `wal_buffers` didn't remove the soak's commit stalls; those came from the shared virtual disk (D58).
+
+### D58
+
+**A key's idempotent answer commits in transaction B, with the result it describes.** Status: `Committed`, 2026-11-10.
+
+- **Decision:** after the PSP answers, `PaymentStore.ApplyAsync` takes a `KeyAnswer` and writes the key's response in the same transaction as the payment, attempt, ledger and outbox changes. Used by sale, authorize, capture, void and refund. An unknown outcome (202) still leaves the key unresolved (D19). Cancel and payment creation without a method still resolve the key separately.
+- **Why:** each auto-capture payment made three synchronous commits, and each waits for a standby (D7). On the laptop, the primary and both standbys share one virtual disk taking about 2,500 flushes per second, and the soak's p99 failures were `COMMIT`s queued behind short disk stalls. One fewer commit per payment removes a standby round trip on any hardware. It also closes a gap: a payment could be final with its key unresolved, if the API died between the two commits.
+- **Consequence:** after a crash during transaction B's commit, a same-key retry replays the stored final answer (200) instead of rendering the state (202). The K2 crash test and `D58KeyAnswerTests` assert this.
 
 ## Assumptions and limits
 

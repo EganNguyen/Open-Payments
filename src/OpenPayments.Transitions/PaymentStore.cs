@@ -130,6 +130,13 @@ public sealed record MerchantPspAccount(
     string CredentialRef,
     int RateLimitPerSecond);
 
+/// <summary>
+/// The idempotent answer for <paramref name="Key"/>, rendered from the payment as transaction B
+/// leaves it and written in that same transaction (D58). <paramref name="Render"/> returns null
+/// when the caller would not resolve the key, so the key stays unresolved as before.
+/// </summary>
+public sealed record KeyAnswer(string Key, Func<PaymentView, StoredResponse?> Render);
+
 public abstract record ApplyResult
 {
     public sealed record Applied(PaymentView Payment) : ApplyResult;
@@ -232,7 +239,8 @@ public sealed class PaymentStore
         PaymentId paymentId,
         PaymentCommand command,
         StoredResponse? response,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken,
+        KeyAnswer? keyAnswer = null)
     {
         var merchant = await MerchantForAsync(paymentId, cancellationToken);
         if (merchant is null)
@@ -242,9 +250,46 @@ public sealed class PaymentStore
 
         return await _runner.RunAsync(
             merchant.Value,
-            (connection, transaction, ct) => ApplyInTransactionAsync(
-                connection, transaction, paymentId, merchant.Value, command, response, ct),
+            async (connection, transaction, ct) =>
+            {
+                var result = await ApplyInTransactionAsync(
+                    connection, transaction, paymentId, merchant.Value, command, response, ct);
+                // D58: the result and the key's answer commit together, so a payment never sits
+                // final while its key is unresolved, and the answer costs no commit of its own.
+                if (keyAnswer is not null
+                    && result is ApplyResult.Applied applied
+                    && keyAnswer.Render(applied.Payment) is { } answer)
+                {
+                    await ResolveKeyInTransactionAsync(
+                        connection, transaction, merchant.Value, keyAnswer.Key, answer, ct);
+                }
+
+                return result;
+            },
             cancellationToken);
+    }
+
+    private static async Task ResolveKeyInTransactionAsync(
+        NpgsqlConnection connection,
+        NpgsqlTransaction transaction,
+        MerchantId merchant,
+        string key,
+        StoredResponse response,
+        CancellationToken cancellationToken)
+    {
+        await using var command = new NpgsqlCommand(
+            """
+            update idempotency_keys
+               set response_code = @code, response_body = @body::jsonb, resolved_at = now()
+             where merchant_id = @merchant and key = @key
+            """,
+            connection,
+            transaction);
+        command.Parameters.AddWithValue("code", response.StatusCode);
+        command.Parameters.AddWithValue("body", NpgsqlTypes.NpgsqlDbType.Jsonb, response.Body);
+        command.Parameters.AddWithValue("merchant", merchant.Value);
+        command.Parameters.AddWithValue("key", key);
+        await command.ExecuteNonQueryAsync(cancellationToken);
     }
 
     private async Task<BeginResult> BeginInTransactionAsync(

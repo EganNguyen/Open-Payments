@@ -78,14 +78,15 @@ public sealed class CrashTests(C43Fixture db)
         Assert.Equal("SUCCEEDED", attemptState);
         Assert.Equal("approved", await harness.InquireAsync(attemptId));
         Assert.Equal(0L, await UnbalancedAsync());
-        // The answer was never stored, so the key stays unresolved and can't expire (D19).
-        Assert.Equal(0L, await ScalarAsync("select count(*) from idempotency_keys where key = 'k2' and resolved_at is not null"));
+        // D58: the key's answer committed with the outcome, so the key is resolved even though the
+        // client never heard back.
+        Assert.Equal(1L, await ScalarAsync("select count(*) from idempotency_keys where key = 'k2' and resolved_at is not null"));
 
         await harness.StartApiAsync();
         var requests = await harness.MockStatAsync("requests");
-        await AgeKeyAsync("k2");
+        // A same-key retry replays the stored final answer (D31), with no PSP call.
         using var retry = await harness.PostAsync("/v1/payments", "k2", Sale);
-        Assert.Equal(HttpStatusCode.Accepted, retry.StatusCode);
+        Assert.Equal(HttpStatusCode.OK, retry.StatusCode);
         var body = JsonDocument.Parse(await retry.Content.ReadAsStringAsync()).RootElement;
         Assert.Equal(paymentId, body.GetProperty("id").GetGuid());
         Assert.Equal("CAPTURED", body.GetProperty("state").GetString());

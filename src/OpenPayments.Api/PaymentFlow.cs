@@ -441,8 +441,10 @@ public sealed class PaymentFlow(
         var status = result is PspResult.Declined ? 402 : 200;
         return await AfterPspAsync(paymentId, null, merchant, attempt.Id, "capture", async () =>
         {
-            var applied = await store.ApplyAsync(paymentId, answer, null, CancellationToken.None);
-            return await FromAppliedAsync(applied, merchant, key, status, 0, timedOut: false, countCompleted: countCompleted);
+            var applied = await store.ApplyAsync(
+                paymentId, answer, null, CancellationToken.None, PaymentKeyAnswer(key, status));
+            return await FromAppliedAsync(
+                applied, merchant, key, status, 0, timedOut: false, countCompleted: countCompleted, keyResolved: true);
         });
     }
 
@@ -546,8 +548,10 @@ public sealed class PaymentFlow(
         var status = result is PspResult.Approved ? 200 : 402;
         return await AfterPspAsync(paymentId, null, merchant, attempt.Id, "void", async () =>
         {
-            var applied = await store.ApplyAsync(paymentId, answer, null, CancellationToken.None);
-            return await FromAppliedAsync(applied, merchant, key, status, 0, timedOut: false, countCompleted: false);
+            var applied = await store.ApplyAsync(
+                paymentId, answer, null, CancellationToken.None, PaymentKeyAnswer(key, status));
+            return await FromAppliedAsync(
+                applied, merchant, key, status, 0, timedOut: false, countCompleted: false, keyResolved: true);
         });
     }
 
@@ -658,8 +662,15 @@ public sealed class PaymentFlow(
         var status = result is PspResult.Approved ? 200 : 402;
         return await AfterPspAsync(paymentId, refundId, merchant, null, "refund", async () =>
         {
-            var applied = await store.ApplyAsync(paymentId, answer, null, CancellationToken.None);
-            return await FromRefundAppliedAsync(applied, merchant, key, status, refundId);
+            var applied = await store.ApplyAsync(
+                paymentId,
+                answer,
+                null,
+                CancellationToken.None,
+                new KeyAnswer(key, view => view.Refund is { } refund
+                    ? new StoredResponse(status, JsonSerializer.Serialize(RefundBody.From(refund, view.Id), ApiJson.Options))
+                    : null));
+            return await FromRefundAppliedAsync(applied, merchant, key, status, refundId, keyResolved: true);
         });
     }
 
@@ -679,7 +690,8 @@ public sealed class PaymentFlow(
         MerchantId merchant,
         string key,
         int status,
-        RefundId refundId)
+        RefundId refundId,
+        bool keyResolved = false)
     {
         if (result is not ApplyResult.Applied applied)
         {
@@ -696,7 +708,7 @@ public sealed class PaymentFlow(
             RefundBody.From(refund, applied.Payment.Id), ApiJson.Options);
         // M3: an unknown outcome leaves the key unresolved, so it can't expire (D19) and a replay
         // shows the refund as it is then (M4). M4: written without the request's token.
-        if (status != 202)
+        if (status != 202 && !keyResolved)
         {
             await store.ResolveKeyAsync(
                 merchant, key, new StoredResponse(status, body), CancellationToken.None);
@@ -852,11 +864,17 @@ public sealed class PaymentFlow(
         var status = result is PspResult.Declined ? 402 : 200;
         return await AfterPspAsync(view.Id, null, merchant, attempt.Id, "authorize", async () =>
         {
-            var applied = await store.ApplyAsync(view.Id, answer, null, CancellationToken.None);
+            var applied = await store.ApplyAsync(
+                view.Id, answer, null, CancellationToken.None, resolveKey ? PaymentKeyAnswer(key, status) : null);
             return await FromAppliedAsync(
-                applied, merchant, key, status, pspWatch.ElapsedMilliseconds, false, countCompleted, resolveKey);
+                applied, merchant, key, status, pspWatch.ElapsedMilliseconds, false, countCompleted, resolveKey,
+                keyResolved: resolveKey);
         });
     }
+
+    // D58: the key's answer as FromAppliedAsync would store it, written inside transaction B.
+    private static KeyAnswer PaymentKeyAnswer(string key, int status) =>
+        new(key, view => new StoredResponse(status, JsonSerializer.Serialize(PaymentBody.From(view), ApiJson.Options)));
 
     private async Task<ApiAnswer> FromAppliedAsync(
         ApplyResult result,
@@ -866,7 +884,8 @@ public sealed class PaymentFlow(
         long pspWaitMs,
         bool timedOut,
         bool countCompleted,
-        bool resolveKey = true)
+        bool resolveKey = true,
+        bool keyResolved = false)
     {
         switch (result)
         {
@@ -879,7 +898,7 @@ public sealed class PaymentFlow(
                 var body = JsonSerializer.Serialize(PaymentBody.From(applied.Payment), ApiJson.Options);
                 // M3: an unknown outcome (202) leaves the key unresolved, so it can't expire under
                 // D19 and a replay renders the state as it is then (M4).
-                if (resolveKey && finalStatus != 202)
+                if (resolveKey && !keyResolved && finalStatus != 202)
                 {
                     await store.ResolveKeyAsync(
                         merchant, key, new StoredResponse(finalStatus, body), CancellationToken.None);
