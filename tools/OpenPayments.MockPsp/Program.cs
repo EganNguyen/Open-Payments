@@ -517,7 +517,9 @@ public static class MockPspHandlers
         var payload = new Dictionary<string, object?>
         {
             ["event_id"] = eventId,
-            ["type"] = attempt.Op + "." + status,
+            ["type"] = status == "cancelled"
+                ? attempt.Op + ".canceled"
+                : attempt.Op + "." + attempt.Outcome,
             ["reference"] = attempt.Key,
             ["psp_reference"] = attempt.PspReference,
             ["amount_minor"] = attempt.AmountMinor,
