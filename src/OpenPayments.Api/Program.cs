@@ -60,6 +60,7 @@ if (app.Environment.IsDevelopment())
 
 var requestMetrics = app.Services.GetRequiredService<PaymentMetrics>();
 requestMetrics.PspGate = app.Services.GetRequiredService<AccountGate>();
+requestMetrics.PspEvents = app.Services.GetRequiredService<PaymentStore>().Events;
 var requestTelemetry = app.Services.GetRequiredService<RequestTelemetry>();
 app.Use(async (context, next) =>
 {

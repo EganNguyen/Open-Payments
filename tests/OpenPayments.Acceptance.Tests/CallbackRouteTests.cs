@@ -58,6 +58,45 @@ public sealed class CallbackRouteTests(AcceptanceFixture db)
         Assert.Equal(1, await CountAsync("select count(*) from psp_events"));
     }
 
+    [Fact]
+    public async Task Body_over_64kb_is_413()
+    {
+        await db.ResetAsync();
+        using var client = db.Client();
+        var body = System.Text.Json.JsonSerializer.Serialize(new
+        {
+            event_id = "evt_big",
+            type = "authorize.approved",
+            reference = "00000000-0000-0000-0000-000000000003",
+            padding = new string('x', 70 * 1024),
+        });
+
+        using var response = await PostAsync(client, db.PspAccountA, body, Sign(body, DateTimeOffset.UtcNow));
+
+        Assert.Equal(HttpStatusCode.RequestEntityTooLarge, response.StatusCode);
+        Assert.Equal(0, await CountAsync("select count(*) from psp_events"));
+    }
+
+    [Fact]
+    public async Task Metrics_expose_event_outcomes_and_parked_state()
+    {
+        await db.ResetAsync();
+        using var client = db.Client();
+        var body = System.Text.Json.JsonSerializer.Serialize(new
+        {
+            event_id = "evt_metric",
+            type = "authorize.approved",
+            reference = "00000000-0000-0000-0000-000000000004",
+        });
+        using var posted = await PostAsync(client, db.PspAccountA, body, Sign(body, DateTimeOffset.UtcNow));
+        Assert.Equal(HttpStatusCode.OK, posted.StatusCode);
+
+        var metrics = await client.GetStringAsync("/metrics");
+        Assert.Contains("op_psp_events_total{source=", metrics, StringComparison.Ordinal);
+        Assert.Contains("outcome=", metrics, StringComparison.Ordinal);
+        Assert.Contains("op_psp_events_parked", metrics, StringComparison.Ordinal);
+    }
+
     private async Task<long> CountAsync(string sql)
     {
         await using var connection = new NpgsqlConnection(db.AdminConnectionString);

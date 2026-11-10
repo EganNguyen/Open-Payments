@@ -57,3 +57,18 @@ groups:
           severity: ticket
         annotations:
           summary: "PSP name resolution is failing (C16)."
+  - name: open-payments-events
+    rules:
+      - alert: PspEventContradiction
+        expr: increase(op_psp_events_total{outcome="contradiction"}[5m]) > 0
+        labels:
+          severity: page
+        annotations:
+          summary: "A PSP callback contradicted a final payment state (E9, FS-05)."
+      - alert: PspEventsParkedTooLong
+        expr: op_psp_events_parked_oldest_age_seconds > 900
+        for: 1m
+        labels:
+          severity: ticket
+        annotations:
+          summary: "A parked PSP event is older than 15 minutes; the operation can't take it (D59)."

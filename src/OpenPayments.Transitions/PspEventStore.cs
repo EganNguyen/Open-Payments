@@ -105,6 +105,37 @@ public enum EventOutcome
 public sealed class PspEventStore(TxRunner runner)
 {
     private PaymentStore? _store;
+    private readonly System.Collections.Concurrent.ConcurrentDictionary<string, long> _outcomes = new(StringComparer.Ordinal);
+    private long _parked;
+    private long _oldestParkedTicks;
+
+    public IReadOnlyDictionary<string, long> OutcomeCounts => _outcomes;
+
+    public long ParkedCount => Interlocked.Read(ref _parked);
+
+    public DateTimeOffset? OldestParkedAt
+    {
+        get
+        {
+            var ticks = Interlocked.Read(ref _oldestParkedTicks);
+            return ticks == 0 ? null : new DateTimeOffset(ticks, TimeSpan.Zero);
+        }
+    }
+
+    private void Count(string outcome) =>
+        _outcomes.AddOrUpdate("callback:" + outcome, 1, static (_, count) => count + 1);
+
+    private void CountParked()
+    {
+        Interlocked.Increment(ref _parked);
+        var now = DateTimeOffset.UtcNow.UtcTicks;
+        var current = Interlocked.Read(ref _oldestParkedTicks);
+        while ((current == 0 || now < current)
+            && Interlocked.CompareExchange(ref _oldestParkedTicks, now, current) != current)
+        {
+            current = Interlocked.Read(ref _oldestParkedTicks);
+        }
+    }
 
     internal void Attach(PaymentStore store) => _store = store;
 
@@ -127,17 +158,22 @@ public sealed class PspEventStore(TxRunner runner)
             {
                 if (!await InsertAsync(connection, transaction, pspAccountId, pspEvent, payload, paymentId, ct))
                 {
+                    Count("duplicate");
                     return EventOutcome.Duplicate;
                 }
 
                 if (paymentId is null || _store is null)
                 {
+                    Count("parked");
+                    CountParked();
                     return EventOutcome.Parked;
                 }
 
                 var view = await PaymentStore.LoadPaymentAsync(paymentId.Value, merchantId, ct, connection, transaction);
                 if (view is null)
                 {
+                    Count("parked");
+                    CountParked();
                     return EventOutcome.Parked;
                 }
 
@@ -145,12 +181,14 @@ public sealed class PspEventStore(TxRunner runner)
                 if (contradiction)
                 {
                     await MarkAsync(connection, transaction, pspAccountId, pspEvent.EventId, "contradiction", ct);
+                    Count("contradiction");
                     return EventOutcome.Contradiction;
                 }
 
                 if (command is null)
                 {
                     await MarkAsync(connection, transaction, pspAccountId, pspEvent.EventId, "ignored", ct);
+                    Count("ignored");
                     return EventOutcome.Ignored;
                 }
 
@@ -162,6 +200,8 @@ public sealed class PspEventStore(TxRunner runner)
                 if (result is not ApplyResult.Applied applied)
                 {
                     await ParkAsync(connection, transaction, pspAccountId, pspEvent.EventId, ct);
+                    Count("parked");
+                    CountParked();
                     return EventOutcome.Parked;
                 }
 
@@ -171,6 +211,7 @@ public sealed class PspEventStore(TxRunner runner)
                 await MarkAsync(
                     connection, transaction, pspAccountId, pspEvent.EventId,
                     changed ? "applied" : "ignored", ct);
+                Count(changed ? "applied" : "ignored");
                 return changed ? EventOutcome.Applied : EventOutcome.Ignored;
             },
             cancellationToken);

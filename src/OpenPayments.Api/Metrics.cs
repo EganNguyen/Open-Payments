@@ -39,6 +39,9 @@ public sealed class PaymentMetrics(TxRunner runner)
     /// <summary>Set by the API at startup so the PSP gate's series are on /metrics.</summary>
     public AccountGate? PspGate { get; set; }
 
+    /// <summary>Set at startup so the callback event series are on /metrics.</summary>
+    public PspEventStore? PspEvents { get; set; }
+
     public long CompletedPayments => Interlocked.Read(ref _completed);
 
     public long InFlight => Interlocked.Read(ref _inflight);
@@ -152,7 +155,26 @@ public sealed class PaymentMetrics(TxRunner runner)
             "Managed allocation rate since start.",
             (long)Math.Round((GC.GetTotalAllocatedBytes() - _startAllocated) / elapsed));
 
-                if (PspGate is not null)
+                if (PspEvents is not null)
+        {
+            foreach (var (outcomeKey, count) in PspEvents.OutcomeCounts)
+            {
+                var parts = outcomeKey.Split(':', 2);
+                text.Append("op_psp_events_total{source=\"").Append(Escape(parts[0]))
+                    .Append("\",outcome=\"").Append(Escape(parts[1])).Append("\"} ")
+                    .Append(count.ToString(CultureInfo.InvariantCulture)).Append('\n');
+            }
+
+            text.Append("op_psp_events_parked ").Append(PspEvents.ParkedCount.ToString(CultureInfo.InvariantCulture)).Append('\n');
+            if (PspEvents.OldestParkedAt is { } oldest)
+            {
+                var age = Math.Max(0, (DateTimeOffset.UtcNow - oldest).TotalSeconds);
+                text.Append("op_psp_events_parked_oldest_age_seconds ")
+                    .Append(age.ToString("F0", CultureInfo.InvariantCulture)).Append('\n');
+            }
+        }
+
+        if (PspGate is not null)
         {
             foreach (var (reason, count) in PspGate.RejectedCounts)
             {

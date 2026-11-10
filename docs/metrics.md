@@ -120,3 +120,13 @@ Check `http://127.0.0.1:9090/api/v1/targets` shows the `api` targets up: `:8081`
 | `op_psp_tls_cert_expiry_seconds` | gauge | `psp` | Seconds until the PSP's TLS certificate expires; the probe is wired with the real adapter in Task 32 |
 
 Alerts `PspBreakerOpen`, `PspAccountCredentialRejected`, `PspTlsCertExpiring` and `PspDnsFailures` are in `deploy/compose/prometheus/alerts.yml`.
+
+## PSP event series (Stage 2, Task 25)
+
+| Metric | Type | Labels | Meaning |
+|---|---|---|---|
+| `op_psp_events_total` | counter | `source`, `outcome` | Callback outcomes: `applied`, `ignored`, `contradiction`, `parked`, `duplicate` (`source = callback`) |
+| `op_psp_events_parked` | gauge | | Parked events recorded by this process |
+| `op_psp_events_parked_oldest_age_seconds` | gauge | | Age of the oldest parked event, when one exists |
+
+Alerts `PspEventContradiction` and `PspEventsParkedTooLong` are in `deploy/compose/prometheus/alerts.yml` (9 rules total).
