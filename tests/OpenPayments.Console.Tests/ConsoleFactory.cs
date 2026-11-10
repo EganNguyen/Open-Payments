@@ -40,7 +40,15 @@ public class ConsoleFactory : WebApplicationFactory<Program>
 
     // Starts at the real time: tests seed rows with the database's now(), and a fixed date put
     // them outside the pages' date ranges once the calendar passed it. Tests still move it.
-    public FakeTime Clock { get; } = new(DateTimeOffset.UtcNow);
+    // Whole microseconds, as Postgres stores them: a time written as now + 9 h and read back
+    // must not round to a few hundred nanoseconds short, which shows as "8 h 59 min".
+    public FakeTime Clock { get; } = new(UtcNowInMicroseconds());
+
+    private static DateTimeOffset UtcNowInMicroseconds()
+    {
+        var now = DateTimeOffset.UtcNow;
+        return now.AddTicks(-(now.Ticks % 10));
+    }
 
     protected override void ConfigureWebHost(IWebHostBuilder builder)
     {
