@@ -17,7 +17,10 @@ const apiToken = __ENV.API_TOKEN || "";
 const twoCallShare = Number(__ENV.TWO_CALL_SHARE || 0.2);
 const prefillPerVu = Number(__ENV.PREFILL_PER_VU || 3);
 const preallocatedVus = Math.max(10, Math.ceil(rate * 0.3)); // spreads the capture-queue prefill
-const maxVus = Math.max(100, Math.ceil(rate * 0.8));
+// Enough VUs to keep arriving through a 4 s stall (the 3 s commit wait limit, D28, plus PSP time).
+// With fewer, k6 drops arrivals exactly when the system is slow, which understates latency; a
+// 250 req/s soak dropped 22 at the checkpoint with 0.8 s of headroom.
+const maxVus = Math.max(100, Math.ceil(rate * 4));
 const refundTargetsPath = __ENV.REFUND_TARGETS || "";
 
 // D47: 50% of requests create a payment. Of those, twoCallShare are two-call
