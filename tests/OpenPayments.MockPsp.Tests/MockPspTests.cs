@@ -438,6 +438,53 @@ public sealed class MockPspTests
         Assert.Equal(csv, await FetchAsync());
     }
 
+    [Fact]
+    public async Task Reorder_window_can_deliver_a_later_event_first()
+    {
+        await using var callbacks = new CallbackListener(failFirst: false);
+        await using var app = await MockPspApp.StartAsync(new
+        {
+            callback_rate = 1.0,
+            callback_reorder_window_ms = 400,
+            callback_delay_ms = 0,
+        });
+        await app.ConfigureAccountAsync("account-a", new { callback_url = callbacks.Url });
+
+        string? slow = null;
+        string? fast = null;
+        for (var i = 0; i < 50 && slow is null; i++)
+        {
+            var a = "reorder-a-" + i;
+            var b = "reorder-b-" + i;
+            var da = Outcomes.CallbackReorderDelay(a, 42, 400).TotalMilliseconds;
+            var db = Outcomes.CallbackReorderDelay(b, 42, 400).TotalMilliseconds;
+            if (da > db + 100)
+            {
+                slow = a;
+                fast = b;
+            }
+        }
+
+        Assert.NotNull(slow);
+        await app.PostAsync("/authorize", Amount(100), idempotencyKey: slow);
+        await app.PostAsync("/authorize", Amount(100), idempotencyKey: fast);
+        await TestWait.UntilAsync(() => callbacks.Bodies.Count == 2);
+
+        Assert.Contains(fast!, callbacks.Bodies.First(), StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task Authorization_lapses_after_window_and_capture_is_declined()
+    {
+        await using var app = await MockPspApp.StartAsync(new { authorization_window_s = 0.2 });
+        await app.PostAsync("/authorize", Amount(100), idempotencyKey: "auth-window");
+        await Task.Delay(350);
+
+        var captured = await app.PostAsync("/capture", Amount(100), idempotencyKey: "capture-late");
+        Assert.Equal("declined", captured.String("outcome"));
+        Assert.Equal("authorization_expired", captured.String("failure_code"));
+    }
+
     private static object Amount(long amountMinor) =>
         new { amount_minor = amountMinor, currency = "USD" };
 

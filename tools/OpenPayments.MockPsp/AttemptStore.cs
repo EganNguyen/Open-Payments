@@ -267,6 +267,14 @@ public sealed class MockAttemptStore
         return null;
     }
 
+    public MockAttempt? LastApprovedAuthorize(string account) =>
+        _attempts.Values
+            .Where(a => string.Equals(a.Account, account, StringComparison.Ordinal)
+                && a.Op is "authorize" or "sale"
+                && Outcomes.IsApproved(a.Outcome))
+            .OrderByDescending(a => a.CreatedAt)
+            .FirstOrDefault();
+
     public IReadOnlyList<MockAttempt> ForAccount(string account) =>
         [.. _attempts.Values.Where(a => string.Equals(a.Account, account, StringComparison.Ordinal))];
 

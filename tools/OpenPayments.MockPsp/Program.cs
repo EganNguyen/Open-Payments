@@ -184,6 +184,20 @@ public static class MockPspHandlers
         }
 
         var config = store.Config;
+        var authorized = op == "capture" ? store.LastApprovedAuthorize(account) : null;
+        if (authorized is not null
+            && config.AuthorizationWindowS > 0
+            && DateTimeOffset.UtcNow > authorized.CreatedAt.AddSeconds(config.AuthorizationWindowS))
+        {
+            return Results.Json(
+                new Dictionary<string, object?>
+                {
+                    ["outcome"] = "declined",
+                    ["failure_code"] = "authorization_expired",
+                },
+                MockJson.Options);
+        }
+
         var latency = config.LatencyMs + (config.JitterMs > 0 ? Random.Shared.Next(config.JitterMs + 1) : 0);
         if (latency > 0)
         {
@@ -214,13 +228,13 @@ public static class MockPspHandlers
         if (config.CallbackRate > 0
             && Outcomes.Hit(key, config.Seed, "callback", config.CallbackRate))
         {
-            await MaybeSendCallbackAsync(
+            _ = MaybeSendCallbackAsync(
                 callbacks,
                 store,
                 config,
                 attempt,
                 "resolved",
-                context.RequestAborted);
+                CancellationToken.None);
         }
 
         if (attempt.Hang)
@@ -365,13 +379,13 @@ public static class MockPspHandlers
                 var attempt = store.FindByKey(key);
                 if (attempt is not null)
                 {
-                    await MaybeSendCallbackAsync(
+                    _ = MaybeSendCallbackAsync(
                         callbacks,
                         store,
                         store.Config,
                         attempt,
                         "cancelled",
-                        context.RequestAborted,
+                        CancellationToken.None,
                         force: true);
                 }
 
@@ -489,6 +503,12 @@ public static class MockPspHandlers
         if (config.CallbackDelayMs > 0)
         {
             await Task.Delay(config.CallbackDelayMs, cancellationToken);
+        }
+
+        var reorder = Outcomes.CallbackReorderDelay(attempt.Key, config.Seed, config.CallbackReorderWindowMs);
+        if (reorder > TimeSpan.Zero)
+        {
+            await Task.Delay(reorder, cancellationToken);
         }
 
         var eventId = "evt_" + Convert.ToHexString(

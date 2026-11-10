@@ -34,6 +34,8 @@ public sealed class MockConfig
 
     public double CallbackDuplicateRate { get; set; }
 
+    public double CallbackReorderWindowMs { get; set; }
+
     public double CallbackRedeliverUntilS { get; set; } = 259200;
 
     public bool SupportsSale { get; set; } = true;
@@ -124,6 +126,11 @@ public sealed class MockConfig
             CallbackDuplicateRate = Math.Clamp(duplicateRate, 0, 1);
         }
 
+        if (update.CallbackReorderWindowMs is { } reorderWindow)
+        {
+            CallbackReorderWindowMs = Math.Max(0, reorderWindow);
+        }
+
         if (update.CallbackRedeliverUntilS is { } redeliver)
         {
             CallbackRedeliverUntilS = Math.Max(0, redeliver);
@@ -195,6 +202,8 @@ public sealed class MockConfigUpdate
     public double? CallbackRate { get; set; }
 
     public double? CallbackDuplicateRate { get; set; }
+
+    public double? CallbackReorderWindowMs { get; set; }
 
     public double? CallbackRedeliverUntilS { get; set; }
 
@@ -384,6 +393,17 @@ public static class Outcomes
 
     public static bool Hit(string key, int seed, string tag, double rate) =>
         rate > 0 && Roll(key, seed, tag) < rate;
+
+    /// <summary>The callback's reorder delay (Task 24): deterministic per key, inside the window.</summary>
+    public static TimeSpan CallbackReorderDelay(string key, int seed, double windowMs)
+    {
+        if (windowMs <= 0)
+        {
+            return TimeSpan.Zero;
+        }
+
+        return TimeSpan.FromMilliseconds(Roll(key, seed, "callback_reorder") * windowMs);
+    }
 
     public static string Reference(string key, int seed)
     {
