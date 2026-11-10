@@ -1,0 +1,112 @@
+[
+  {
+    "check": "CK1",
+    "applicable": true,
+    "passed": true,
+    "rows_examined": 257376,
+    "violations": 0,
+    "sample_ids": [],
+    "money_impact_minor": 0,
+    "reason": null,
+    "duration_ms": 3345
+  },
+  {
+    "check": "CK2",
+    "applicable": true,
+    "passed": true,
+    "rows_examined": 101067,
+    "violations": 0,
+    "sample_ids": [],
+    "money_impact_minor": 0,
+    "reason": null,
+    "duration_ms": 370
+  },
+  {
+    "check": "CK3",
+    "applicable": true,
+    "passed": true,
+    "rows_examined": 76514,
+    "violations": 0,
+    "sample_ids": [],
+    "money_impact_minor": 0,
+    "reason": null,
+    "duration_ms": 17
+  },
+  {
+    "check": "CK4",
+    "applicable": true,
+    "passed": true,
+    "rows_examined": 180875,
+    "violations": 0,
+    "sample_ids": [],
+    "money_impact_minor": 0,
+    "reason": null,
+    "duration_ms": 300
+  },
+  {
+    "check": "CK5",
+    "applicable": true,
+    "passed": true,
+    "rows_examined": 180645,
+    "violations": 0,
+    "sample_ids": [],
+    "money_impact_minor": 0,
+    "reason": null,
+    "duration_ms": 27
+  },
+  {
+    "check": "CK6",
+    "applicable": true,
+    "passed": true,
+    "rows_examined": 14,
+    "violations": 0,
+    "sample_ids": [],
+    "money_impact_minor": 0,
+    "reason": null,
+    "duration_ms": 36
+  },
+  {
+    "check": "CK7",
+    "applicable": false,
+    "passed": false,
+    "rows_examined": 0,
+    "violations": 0,
+    "sample_ids": [],
+    "money_impact_minor": 0,
+    "reason": "CK7 starts after Phase 2",
+    "duration_ms": 0
+  },
+  {
+    "check": "CK8",
+    "applicable": false,
+    "passed": false,
+    "rows_examined": 0,
+    "violations": 0,
+    "sample_ids": [],
+    "money_impact_minor": 0,
+    "reason": "CK8 starts after Phase 2",
+    "duration_ms": 0
+  },
+  {
+    "check": "CK9",
+    "applicable": true,
+    "passed": true,
+    "rows_examined": 76514,
+    "violations": 0,
+    "sample_ids": [],
+    "money_impact_minor": 0,
+    "reason": null,
+    "duration_ms": 160
+  },
+  {
+    "check": "CK10",
+    "applicable": true,
+    "passed": true,
+    "rows_examined": 76514,
+    "violations": 0,
+    "sample_ids": [],
+    "money_impact_minor": 0,
+    "reason": null,
+    "duration_ms": 142
+  }
+]

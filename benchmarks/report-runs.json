@@ -3,33 +3,185 @@
   "milestone_completed_per_second": 500,
   "milestone_runs": 3,
   "milestone_target_rps": 1000,
-  "thresholds": { "p50_ms": 25, "p99_ms": 100, "error_rate_pct": 0.1 },
+  "thresholds": {
+    "p50_ms": 25,
+    "p99_ms": 100,
+    "error_rate_pct": 0.1
+  },
   "correctness_requires": "CK7 and CK8 start in Phase 2, and CK11 isn't built.",
   "runs": [
-    { "id": "20261109T040109Z-3d728c1-s0-3b3c", "exclude": "Sent no API token; every request 401" },
-    { "id": "20261109T040758Z-4540c23-s0-2958", "exclude": "Ran before the full reset: count mismatch (E8)" },
-    { "id": "20261109T042813Z-18d0f63-s0-2291", "exclude": "Counted setup() latency (E8)" },
-    { "id": "20261109T043519Z-3faaaf6-s0-14c1" },
-    { "id": "20261109T044032Z-3faaaf6-s1-005e" },
-    { "id": "20261109T044543Z-3faaaf6-s3-7dce" },
-    { "id": "20261109T045857Z-e4bff52-s5-47d3" },
-    { "id": "20261109T050918Z-786d8ef-s6-0bba", "note": "Ends the D47 search under E4" },
-    { "id": "20261109T082010Z-7323d59-s6-5db4", "note": "Fresh DB; BASELINE records p99 173.47 ms, invalid on its completed count" },
-    { "id": "20261109T100730Z-96384d2-s6-1daa", "exclude": "Another session's run, not in BASELINE" },
-    { "id": "20261109T110048Z-9874593-s6-0fae", "exclude": "Another session's run, not in BASELINE" },
-    { "id": "20261109T112159Z-9874593-s6-7b7b", "exclude": "Another session's run, not in BASELINE" }
+    {
+      "id": "20261109T040109Z-3d728c1-s0-3b3c",
+      "exclude": "Sent no API token; every request 401"
+    },
+    {
+      "id": "20261109T040758Z-4540c23-s0-2958",
+      "exclude": "Ran before the full reset: count mismatch (E8)"
+    },
+    {
+      "id": "20261109T042813Z-18d0f63-s0-2291",
+      "exclude": "Counted setup() latency (E8)"
+    },
+    {
+      "id": "20261109T043519Z-3faaaf6-s0-14c1"
+    },
+    {
+      "id": "20261109T044032Z-3faaaf6-s1-005e"
+    },
+    {
+      "id": "20261109T044543Z-3faaaf6-s3-7dce"
+    },
+    {
+      "id": "20261109T045857Z-e4bff52-s5-47d3"
+    },
+    {
+      "id": "20261109T050918Z-786d8ef-s6-0bba",
+      "note": "Ends the D47 search under E4"
+    },
+    {
+      "id": "20261109T082010Z-7323d59-s6-5db4",
+      "note": "Fresh DB; BASELINE records p99 173.47 ms, invalid on its completed count"
+    },
+    {
+      "id": "20261109T100730Z-96384d2-s6-1daa",
+      "exclude": "Another session's run, not in BASELINE"
+    },
+    {
+      "id": "20261109T110048Z-9874593-s6-0fae",
+      "exclude": "Another session's run, not in BASELINE"
+    },
+    {
+      "id": "20261109T112159Z-9874593-s6-7b7b",
+      "exclude": "Another session's run, not in BASELINE"
+    },
+    {
+      "id": "20261110T033617Z-13e851a-s4-0a10",
+      "note": "D56 capacity: step 4 from a reset, two API instances behind nginx"
+    },
+    {
+      "id": "20261110T034647Z-13e851a-s6-7887",
+      "note": "D56 capacity: step 6 run 1 of 3, two API instances"
+    },
+    {
+      "id": "20261110T040232Z-13e851a-s6-1e11",
+      "note": "D56 capacity: step 6 run 2 of 3, two API instances"
+    },
+    {
+      "id": "20261110T041814Z-13e851a-s6-7017",
+      "note": "D56 capacity: step 6 run 3 of 3; CK5 failed on 177 UNKNOWN payments left by overload"
+    },
+    {
+      "id": "20261110T043457Z-28e4bc5-s100-1e77",
+      "note": "D56 soak at 500 req/s, 60 min; config had ALTER SYSTEM drift (autovacuum off), fixed in D57"
+    },
+    {
+      "id": "20261110T063020Z-74490ef-s100-4375",
+      "note": "D56 soak at 500 req/s, 60 min, D57 config; p99 rose during the primary's checkpoint"
+    },
+    {
+      "id": "20261110T074536Z-2f1ca8a-s102-6ab6",
+      "note": "D56 soak at 250 req/s, 60 min, D57+D58. Every gate passed; invalid only on 22 arrivals k6 dropped (undersized generator, fixed in 3f56a33). Owner ruling: generator FAIL, payment system PASS"
+    }
   ],
-  "gate_order": ["correctness", "duplicates", "throughput", "platform_overhead", "error_rate", "bounded_retries", "tx1", "tx2", "c54", "recovery", "psp_lifecycle", "crash_recovery", "diagnostics", "soak", "run_validity"],
+  "gate_order": [
+    "correctness",
+    "duplicates",
+    "throughput",
+    "platform_overhead",
+    "error_rate",
+    "bounded_retries",
+    "tx1",
+    "tx2",
+    "c54",
+    "recovery",
+    "psp_lifecycle",
+    "crash_recovery",
+    "diagnostics",
+    "soak",
+    "run_validity"
+  ],
   "static_gates": [
-    { "id": "bounded_retries", "name": "Bounded retries", "requirement": "No transaction > 2 retries; app retries agree with PG deadlocks", "kind": "reliability", "status": "INCONCLUSIVE", "evidence": "Retry counts by SQLSTATE aren't in the run report.", "source": "op_tx_retries_total · not reported" },
-    { "id": "tx1", "name": "Forced deadlock", "requirement": "TX1 and C34 pass, deadlocks > 0 seen", "kind": "reliability", "status": "INCONCLUSIVE", "evidence": "TX1 isn't built. A fixture test raises a real deadlock (`0f92846`), but it isn't TX1.", "source": "no evidence" },
-    { "id": "tx2", "name": "Retry exhaustion", "requirement": "TX2 passes", "kind": "reliability", "status": "INCONCLUSIVE", "evidence": "TX2 isn't built.", "source": "no evidence" },
-    { "id": "c54", "name": "Restart durability", "requirement": "C54 passes, fault verified", "kind": "reliability", "status": "INCONCLUSIVE", "evidence": "C54 isn't built. Crash tests K1–K3 pass 6 of 6 (`823a100`), related evidence, not this gate.", "source": "K1–K3" },
-    { "id": "recovery", "name": "Recovery", "requirement": "First success ≤ 30 s; p99 under SLO ≤ 2 min after removal", "kind": "reliability", "status": "INCONCLUSIVE", "evidence": "No fault-driver run yet.", "source": "ack log · none" },
-    { "id": "psp_lifecycle", "name": "PSP lifecycle", "requirement": "Every interrupted payment classed L0–L5", "kind": "reliability", "status": "INCONCLUSIVE", "evidence": "Needs CK11.", "source": "no evidence" },
-    { "id": "crash_recovery", "name": "Crash recovery", "requirement": "Resolver reconciles unknown outcomes", "kind": "reliability", "status": "NOT_APPLICABLE", "evidence": "The resolver arrives in Stage 2. Expected until then.", "source": "spec §7" },
-    { "id": "diagnostics", "name": "Diagnostics", "requirement": "`pg_stat_statements` and manifest complete", "kind": "evidence", "status": "INCONCLUSIVE", "evidence": "Runs record `config.json`; the §8.1 manifest isn't written yet.", "source": "manifest.json · none" },
-    { "id": "soak", "name": "Soak", "requirement": "No upward trend in RSS, Gen 2 GC/s, pool wait", "kind": "reliability", "status": "INCONCLUSIVE", "evidence": "Needs a stable rate first (D56).", "source": "not run" }
+    {
+      "id": "bounded_retries",
+      "name": "Bounded retries",
+      "requirement": "No transaction > 2 retries; app retries agree with PG deadlocks",
+      "kind": "reliability",
+      "status": "INCONCLUSIVE",
+      "evidence": "Retry counts by SQLSTATE aren't in the run report.",
+      "source": "op_tx_retries_total · not reported"
+    },
+    {
+      "id": "tx1",
+      "name": "Forced deadlock",
+      "requirement": "TX1 and C34 pass, deadlocks > 0 seen",
+      "kind": "reliability",
+      "status": "INCONCLUSIVE",
+      "evidence": "TX1 isn't built. A fixture test raises a real deadlock (`0f92846`), but it isn't TX1.",
+      "source": "no evidence"
+    },
+    {
+      "id": "tx2",
+      "name": "Retry exhaustion",
+      "requirement": "TX2 passes",
+      "kind": "reliability",
+      "status": "INCONCLUSIVE",
+      "evidence": "TX2 isn't built.",
+      "source": "no evidence"
+    },
+    {
+      "id": "c54",
+      "name": "Restart durability",
+      "requirement": "C54 passes, fault verified",
+      "kind": "reliability",
+      "status": "INCONCLUSIVE",
+      "evidence": "C54 isn't built. Crash tests K1–K3 pass 6 of 6 (`823a100`), related evidence, not this gate.",
+      "source": "K1–K3"
+    },
+    {
+      "id": "recovery",
+      "name": "Recovery",
+      "requirement": "First success ≤ 30 s; p99 under SLO ≤ 2 min after removal",
+      "kind": "reliability",
+      "status": "INCONCLUSIVE",
+      "evidence": "No fault-driver run yet.",
+      "source": "ack log · none"
+    },
+    {
+      "id": "psp_lifecycle",
+      "name": "PSP lifecycle",
+      "requirement": "Every interrupted payment classed L0–L5",
+      "kind": "reliability",
+      "status": "INCONCLUSIVE",
+      "evidence": "Needs CK11.",
+      "source": "no evidence"
+    },
+    {
+      "id": "crash_recovery",
+      "name": "Crash recovery",
+      "requirement": "Resolver reconciles unknown outcomes",
+      "kind": "reliability",
+      "status": "NOT_APPLICABLE",
+      "evidence": "The resolver arrives in Stage 2. Expected until then.",
+      "source": "spec §7"
+    },
+    {
+      "id": "diagnostics",
+      "name": "Diagnostics",
+      "requirement": "`pg_stat_statements` and manifest complete",
+      "kind": "evidence",
+      "status": "INCONCLUSIVE",
+      "evidence": "Runs record `config.json`; the §8.1 manifest isn't written yet.",
+      "source": "manifest.json · none"
+    },
+    {
+      "id": "soak",
+      "name": "Soak",
+      "requirement": "60 min at a stable rate: gates hold, CK1–CK6 pass, no upward trend in RSS, Gen 2 GC/s, ThreadPool queue, pool wait",
+      "kind": "reliability",
+      "status": "PASS",
+      "evidence": "At 250 req/s (125 completed payments/s) for 60 min, on the D57 config and D58 build: p99 28.60 ms, 5-minute p99 19–33 ms including the 30-minute checkpoint, 0 errors, CK1–CK6, CK9, CK10 pass. RSS flat at 172–179 MB after warm-up; Gen 2 GC, ThreadPool queue and pool wait 0 throughout. The run is invalid only because k6 dropped 22 of ~900,000 arrivals with 0.8 s of VU headroom (fixed in `3f56a33`); the owner ruled the generator failed and the payment system passed, and defers the rerun to Stage 2. At 500 req/s both 60-min soaks failed p99 (589.57 ms, 298.14 ms) on WAL commit stalls on the shared virtual disk.",
+      "source": "s102-6ab6 · Prometheus · owner ruling"
+    }
   ],
   "not_established": [
     "**No capacity `C` and no instance count `N`.** Laptop runs are previews; D53 moves both to the first Linux run.",
@@ -37,20 +189,80 @@
     "No bottleneck is named from a generator limit or from an invalid run."
   ],
   "d56": [
-    { "check": "Capacity", "run": "Step 4 once, step 6 three times, each from a reset, two API instances behind nginx", "passes_if": "Valid runs whose gates all pass; sets the stable rate", "result": "NOT RUN" },
-    { "check": "Soak", "run": "60 min at the stable rate", "passes_if": "Gates hold; CK1–CK6 pass; no upward trend in memory, Gen 2 GC, ThreadPool queue, pool wait", "result": "BLOCKED", "note": "needs stable rate" },
-    { "check": "L3, scaled", "run": "3× the stable rate for 10 min", "passes_if": "Excess rejected as 429/503; no restart or OOM; p99 < 100 ms within 2 min after; CK1–CK6 pass", "result": "BLOCKED", "note": "needs stable rate" },
-    { "check": "C1, scaled", "run": "Primary CPU throttled ~5× slower at stable load", "passes_if": "Fast 503 shedding; `40P01`/`40001` retries < 1%; no ThreadPool starvation", "result": "BLOCKED", "note": "needs stable rate" },
-    { "check": "C2", "run": "PgBouncer pool shrunk below demand, then restored", "passes_if": "Waits bounded by `query_wait_timeout`, failed as 503; recovers with no restart", "result": "NOT RUN" },
-    { "check": "C7, partial", "run": "Primary killed under load; higher-replay standby promoted by hand", "passes_if": "RPO 0: every 200/202 payment on the new primary; CK1, CK3 pass", "result": "NOT RUN" },
-    { "check": "Alerts", "run": "`CommitWarning`, `AbandonedCommitsStuck`, `UnresolvedOperationAging`", "passes_if": "Each seen firing in a running Prometheus", "result": "NOT RUN" }
+    {
+      "check": "Capacity",
+      "run": "Step 4 once, step 6 three times, each from a reset, two API instances behind nginx",
+      "passes_if": "Valid runs whose gates all pass; sets the stable rate",
+      "result": "FAIL",
+      "note": "Step 4 passed, valid. Step 6 failed p99 all 3 times (1,084–1,771 ms), invalid on dropped arrivals; two instances did worse than one. Stable rate stays step 5 (500 req/s), from 11-09."
+    },
+    {
+      "check": "Soak",
+      "run": "60 min at the stable rate",
+      "passes_if": "Gates hold; CK1–CK6 pass; no upward trend in memory, Gen 2 GC, ThreadPool queue, pool wait",
+      "result": "PASS",
+      "note": "At 250 req/s, by owner ruling (generator dropped 22 arrivals; system gates all passed). At 500 req/s: FAIL twice, p99 589.57 ms and 298.14 ms."
+    },
+    {
+      "check": "L3, scaled",
+      "run": "3× the stable rate for 10 min",
+      "passes_if": "Excess rejected as 429/503; no restart or OOM; p99 < 100 ms within 2 min after; CK1–CK6 pass",
+      "result": "FAIL",
+      "note": "Run once at 3× step 5 before D57/D58: excess shed as 503 (~400/s), no errors, but p99 stayed 430–660 ms after the burst and CK5 failed. Rerun in Stage 2."
+    },
+    {
+      "check": "C1, scaled",
+      "run": "Primary CPU throttled ~5× slower at stable load",
+      "passes_if": "Fast 503 shedding; `40P01`/`40001` retries < 1%; no ThreadPool starvation",
+      "result": "NOT RUN",
+      "note": "Deferred to Stage 2."
+    },
+    {
+      "check": "C2",
+      "run": "PgBouncer pool shrunk below demand, then restored",
+      "passes_if": "Waits bounded by `query_wait_timeout`, failed as 503; recovers with no restart",
+      "result": "NOT RUN",
+      "note": "Deferred to Stage 2."
+    },
+    {
+      "check": "C7, partial",
+      "run": "Primary killed under load; higher-replay standby promoted by hand",
+      "passes_if": "RPO 0: every 200/202 payment on the new primary; CK1, CK3 pass",
+      "result": "NOT RUN",
+      "note": "Deferred to Stage 2."
+    },
+    {
+      "check": "Alerts",
+      "run": "`CommitWarning`, `AbandonedCommitsStuck`, `UnresolvedOperationAging`",
+      "passes_if": "Each seen firing in a running Prometheus",
+      "result": "NOT RUN",
+      "note": "`UnresolvedOperationAging` seen firing on 2026-11-10; the two commit alerts deferred to Stage 2."
+    }
   ],
   "reproduce": [
-    ["Stack", "Docker Compose: PostgreSQL 18.6 primary with two quorum standbys, PgBouncer 1.26.1, one mock PSP; API instances per run"],
-    ["Mock PSP", "Fixed 200 ms, 0 ms jitter, 3% declines"],
-    ["Mix", "D47, `TWO_CALL_SHARE=0.2`: 40% sale, 10% authorize, 10% capture, 15% status, 10% refund, 10% retry, 5% other"],
-    ["Generator", "k6 `ramping-arrival-rate`, open model"],
-    ["Validity rules", "No dropped arrivals, generator CPU ≤ 80%, mock added p99 ≤ 5 ms, shares within `max(2 pp, 3·√(p(1−p)/n))`"],
-    ["Rebuild this page", "`scripts/bench-page.sh` after adding a run to `benchmarks/report-runs.json`"]
+    [
+      "Stack",
+      "Docker Compose: PostgreSQL 18.6 primary with two quorum standbys, PgBouncer 1.26.1, one mock PSP; API instances per run"
+    ],
+    [
+      "Mock PSP",
+      "Fixed 200 ms, 0 ms jitter, 3% declines"
+    ],
+    [
+      "Mix",
+      "D47, `TWO_CALL_SHARE=0.2`: 40% sale, 10% authorize, 10% capture, 15% status, 10% refund, 10% retry, 5% other"
+    ],
+    [
+      "Generator",
+      "k6 `ramping-arrival-rate`, open model"
+    ],
+    [
+      "Validity rules",
+      "No dropped arrivals, generator CPU ≤ 80%, mock added p99 ≤ 5 ms, shares within `max(2 pp, 3·√(p(1−p)/n))`"
+    ],
+    [
+      "Rebuild this page",
+      "`scripts/bench-page.sh` after adding a run to `benchmarks/report-runs.json`"
+    ]
   ]
 }

@@ -1,0 +1,123 @@
+[
+  {
+    "check": "CK1",
+    "applicable": true,
+    "passed": true,
+    "rows_examined": 1495394,
+    "violations": 0,
+    "sample_ids": [],
+    "money_impact_minor": 0,
+    "reason": null,
+    "duration_ms": 9562
+  },
+  {
+    "check": "CK2",
+    "applicable": true,
+    "passed": true,
+    "rows_examined": 586386,
+    "violations": 0,
+    "sample_ids": [],
+    "money_impact_minor": 0,
+    "reason": null,
+    "duration_ms": 1786
+  },
+  {
+    "check": "CK3",
+    "applicable": true,
+    "passed": true,
+    "rows_examined": 443383,
+    "violations": 0,
+    "sample_ids": [],
+    "money_impact_minor": 0,
+    "reason": null,
+    "duration_ms": 67
+  },
+  {
+    "check": "CK4",
+    "applicable": true,
+    "passed": true,
+    "rows_examined": 1049276,
+    "violations": 0,
+    "sample_ids": [],
+    "money_impact_minor": 0,
+    "reason": null,
+    "duration_ms": 819
+  },
+  {
+    "check": "CK5",
+    "applicable": true,
+    "passed": false,
+    "rows_examined": 1048227,
+    "violations": 383,
+    "sample_ids": [
+      "payment:859295c9-b293-402a-8d0a-8f7dc2f52f4a",
+      "payment:257d2f46-f4f4-47f4-9c85-6dc235b6d833",
+      "payment:47c5780b-0a37-4d7c-ae9d-c9fabf28e285",
+      "payment:4a8ab201-0a63-44b5-b434-18e8e558892c",
+      "payment:e5a342cf-ec5c-4a83-a8a3-db65f53bc2c9",
+      "payment:859e860f-81cc-41d7-86d3-52ca8545ea19",
+      "payment:7f1f43c8-457c-40e2-8f2a-c8a6dbcc2ac1",
+      "payment:fedecdc9-0d97-4182-8262-249fee591975",
+      "payment:ba6fc084-34bd-44de-93bb-9c6ec556f832",
+      "payment:008fbd45-6394-416f-b718-4be867bd2b40"
+    ],
+    "money_impact_minor": 0,
+    "reason": null,
+    "duration_ms": 66
+  },
+  {
+    "check": "CK6",
+    "applicable": true,
+    "passed": true,
+    "rows_examined": 62,
+    "violations": 0,
+    "sample_ids": [],
+    "money_impact_minor": 0,
+    "reason": null,
+    "duration_ms": 21
+  },
+  {
+    "check": "CK7",
+    "applicable": false,
+    "passed": false,
+    "rows_examined": 0,
+    "violations": 0,
+    "sample_ids": [],
+    "money_impact_minor": 0,
+    "reason": "CK7 starts after Phase 2",
+    "duration_ms": 0
+  },
+  {
+    "check": "CK8",
+    "applicable": false,
+    "passed": false,
+    "rows_examined": 0,
+    "violations": 0,
+    "sample_ids": [],
+    "money_impact_minor": 0,
+    "reason": "CK8 starts after Phase 2",
+    "duration_ms": 0
+  },
+  {
+    "check": "CK9",
+    "applicable": true,
+    "passed": true,
+    "rows_examined": 443383,
+    "violations": 0,
+    "sample_ids": [],
+    "money_impact_minor": 0,
+    "reason": null,
+    "duration_ms": 661
+  },
+  {
+    "check": "CK10",
+    "applicable": true,
+    "passed": true,
+    "rows_examined": 443383,
+    "violations": 0,
+    "sample_ids": [],
+    "money_impact_minor": 0,
+    "reason": null,
+    "duration_ms": 501
+  }
+]

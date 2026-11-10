@@ -1,5 +1,57 @@
 # First ramp baseline
 
+## D56 laptop verification (2026-11-10)
+
+Status: **local preview only**, under [D56](../docs/decisions.md#d56). Every run starts from a [full benchmark reset](README.md#full-benchmark-reset), with the D47 mix and the mock PSP fixed at 200 ms.
+
+### 60-minute soak baseline: 250 req/s
+
+| Item | Value |
+|---|---|
+| Run | `20261110T074536Z-2f1ca8a-s102-6ab6`, step 102: 250 req/s for 3,600 s, one API instance |
+| Build | [D57](../docs/decisions.md#d57) database config (no `ALTER SYSTEM` values, 64 MB `wal_buffers`, lz4) and [D58](../docs/decisions.md#d58) (the key's answer commits in transaction B) |
+| Achieved | 249.33 admitted req/s, **125.43 completed payments/s**, 0 rejected |
+| Platform overhead | p50 7.70 ms, p95 14.91 ms, **p99 28.60 ms** |
+| Unexpected errors | 0.000% |
+| Correctness | CK1-CK6, CK9 and CK10 pass; CK7 and CK8 start in Phase 2 |
+| Trends (5-minute windows) | p99 19-33 ms all hour, including the primary's checkpoint (08:15-08:42 UTC). RSS 165 MB rising to 172-179 MB in the first 10 minutes, then flat. Gen 2 GC, ThreadPool queue and pool wait 0 throughout |
+| Validity | **Invalid:** k6 dropped 22 of about 900,000 arrivals |
+| Verdict | **Payment system PASS, load generator FAIL** (owner ruling, 2026-11-10). Rerun in Stage 2 |
+
+**Why k6 dropped arrivals:** when the checkpoint began at 30 minutes, one request took 1.1 s. k6 had VUs for only 0.8 s of latency (`maxVus = 0.8 × rate`), so it dropped 22 arrivals instead of offering them. `3f56a33` sizes k6 for a 4 s stall. That makes the test stricter: a stall now gets the whole arrival stream instead of hiding from the latency figures.
+
+### 60-minute soak at 500 req/s: FAIL
+
+| Run | Build | p99 | Result |
+|---|---|---:|---|
+| `20261110T043457Z-28e4bc5-s100-1e77` | Before D57; the primary had `autovacuum = off` from a forgotten `ALTER SYSTEM` | 589.57 ms | FAIL, invalid (9,866 dropped) |
+| `20261110T063020Z-74490ef-s100-4375` | D57 | 298.14 ms | FAIL, invalid (2,038 dropped) |
+
+Both had 0 errors, every CK passing, and flat memory, GC and pool wait. **The cause is `COMMIT`s waiting on WAL fsync and synchronous replication** (`WALWriteLock`, `SyncRep`, `WalSync`), with no lock contention. The primary and both standbys share one Docker Desktop virtual disk, at about 2,500 flushes per second, and it stalls for 1-2 s at a time. In the D57 soak the stalls came with the primary's checkpoint: p99 was 19-157 ms before 07:00 UTC and 320-1,000 ms while the checkpoint wrote, from 07:00 to 07:27.
+
+**Production-valid fixes only:**
+- D57: WAL settings, and a guard against `ALTER SYSTEM` drift.
+- D58: one fewer synchronous commit per payment, cutting WAL fsyncs from 3.0 to 2.07 per auto-capture payment.
+
+Asynchronous replication, weaker `synchronous_commit`, `fsync = off` and RAM disks were ruled out (D57). A 500 req/s soak on the D58 build was stopped after 6 minutes, to run the 250 req/s baseline first.
+
+### Capacity: FAIL (two API instances)
+
+| Run | Step | Completed payments/s | p99 | Result |
+|---|---:|---:|---:|---|
+| `20261110T033617Z-13e851a-s4-0a10` | 4 | 124.80 | 28.91 ms | pass, valid |
+| `20261110T034647Z-13e851a-s6-7887` | 6 | 492.57 | 1,083.76 ms | fail, invalid (14,037 dropped) |
+| `20261110T040232Z-13e851a-s6-1e11` | 6 | 477.09 | 1,771.44 ms | fail, invalid (40,889 dropped) |
+| `20261110T041814Z-13e851a-s6-7017` | 6 | 485.46 | 1,467.80 ms | fail, invalid (26,761 dropped); CK5 failed |
+
+Two API instances behind nginx did worse at step 6 than one instance had (p99 173.47 ms on 11-09). The cause isn't isolated. CK5 failed on 177 payments left UNKNOWN by overload; Stage 1 has no resolver, so they stay unresolved past 60 s. CK1-CK3 passed in every run, so no completed payment was lost.
+
+**Other D56 checks:**
+- **L3:** ran once, before D57 and D58 (`20261110T054837Z-74490ef-s101-270f`). Excess load was shed as 503s at about 400/s, with 0 errors, but p99 stayed at 430-660 ms after the burst and CK5 failed. Result: FAIL.
+- **C1, C2, C7 and the two commit alerts:** deferred to Stage 2.
+- **`UnresolvedOperationAging`:** seen firing.
+- **Diagnostic step 5 runs:** `…053734Z-5967b83-s5-441f`, `…060550Z-74490ef-s5-2e18` and `…061741Z-74490ef-s5-4ebc`. Kept for the wait-event evidence, not as results.
+
 ## D47 laptop limit search (2026-11-09)
 
 Status: **local preview only.** No `C` or `N` comes from this ([E4](../docs/gates/stage-1-escalations.md#e4-task-17-has-no-linux-host-for-steps-4-5-escalation-e4)). It replaces the old-mix rows below for comparison.
