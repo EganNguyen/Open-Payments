@@ -27,6 +27,7 @@ builder.Services.AddSingleton<IPspAdapterFactory>(services =>
     new MockPspAdapterFactory(services.GetRequiredService<IHttpClientFactory>().CreateClient("psp")));
 builder.Services.AddSingleton(ReconcilerOptions.FromConfiguration(builder.Configuration));
 builder.Services.AddHostedService<TimerWorker>();
+builder.Services.AddHostedService<EscalationWorker>();
 builder.Services.AddHostedService<ParkedEventWorker>();
 builder.Services.AddHostedService<RecoveryWorker>();
 builder.Build().Run();

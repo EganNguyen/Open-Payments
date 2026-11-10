@@ -29,6 +29,17 @@ groups:
           severity: ticket
         annotations:
           summary: "{{ $labels.kind }} operations have been {{ $labels.state }} for over 60 s; their outcome isn't established."
+  - name: open-payments-escalation
+    rules:
+      # D45: a 2 h age limit. The exporter reads the same unresolved rows; if one is still
+      # UNKNOWN past the limit, escalation is not clearing it.
+      - alert: UnresolvedEscalated
+        expr: max by (kind) (op_unresolved_oldest_age_seconds{state="UNKNOWN"}) > 7200
+        for: 5m
+        labels:
+          severity: ticket
+        annotations:
+          summary: "An UNKNOWN {{ $labels.kind }} is past the 2 h escalation age limit; it should be in REVIEW (D45)."
   - name: open-payments-psp
     rules:
       - alert: PspBreakerOpen
