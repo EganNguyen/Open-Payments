@@ -1,0 +1,14 @@
+# The reconciler, timers and parked-event worker (D62, Task 26). Start beside the API:
+#   docker compose -f deploy/compose/compose.yaml -f deploy/compose/reconciler.yaml up -d --wait
+services:
+  reconciler:
+    build:
+      context: ../..
+      dockerfile: deploy/compose/reconciler/Dockerfile
+    environment:
+      DATABASE_URL: postgres://op_app:op_local_only@pgbouncer:6432/openpayments
+      RECONCILER_KEY_RETENTION_HOURS: "24"
+      RECONCILER_PARKED_LIMIT_MINUTES: "15"
+    depends_on:
+      pgbouncer:
+        condition: service_healthy

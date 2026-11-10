@@ -34,6 +34,7 @@ tests/                 One test project per kind of proof
 | `src/OpenPayments.Transitions` | Library | `TxRunner`, `PaymentStore` and SQL. The only money writer ([D2](../decisions.md#d2)) | `Domain`, Npgsql |
 | `src/OpenPayments.Psp` | Library | `IPspAdapter` and `MockPspAdapter` | `Domain` |
 | `src/OpenPayments.Api` | Deployable | Routes, `PaymentFlow`, auth, limits, metrics | `Domain`, `Psp`, `Transitions` |
+| `src/OpenPayments.Reconciler` | Deployable | Recovery by lease, timers, parked-event and expiry workers ([D62](../decisions.md#d62)) | `Domain`, `Transitions`, `Psp` |
 | `src/OpenPayments.Console` | Deployable | Staff console: Razor Pages and htmx, OIDC sign-in, money actions through the API ([console spec](../superpowers/specs/2026-11-05-console-design.md)) | Npgsql only, with the read-only `op_console_read` and `op_console` roles |
 | `tools/OpenPayments.MockPsp` | Test tool | Test PSP with an effect log | Nothing |
 | `tools/OpenPayments.Checks` | Test tool | CK1-CK10 as raw SQL. Independent of `src/` | Npgsql |

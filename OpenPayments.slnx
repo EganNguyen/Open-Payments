@@ -5,6 +5,7 @@
     <Project Path="src/OpenPayments.Psp/OpenPayments.Psp.csproj" />
     <Project Path="src/OpenPayments.Api/OpenPayments.Api.csproj" />
     <Project Path="src/OpenPayments.Console/OpenPayments.Console.csproj" />
+    <Project Path="src/OpenPayments.Reconciler/OpenPayments.Reconciler.csproj" />
   </Folder>
   <Folder Name="/tools/">
     <Project Path="tools/OpenPayments.Checks/OpenPayments.Checks.csproj" />
@@ -19,5 +20,6 @@
     <Project Path="tests/OpenPayments.Acceptance.Tests/OpenPayments.Acceptance.Tests.csproj" />
     <Project Path="tests/OpenPayments.Domain.Tests/OpenPayments.Domain.Tests.csproj" />
     <Project Path="tests/OpenPayments.MockPsp.Tests/OpenPayments.MockPsp.Tests.csproj" />
+    <Project Path="tests/OpenPayments.Reconciler.Tests/OpenPayments.Reconciler.Tests.csproj" />
   </Folder>
 </Solution>

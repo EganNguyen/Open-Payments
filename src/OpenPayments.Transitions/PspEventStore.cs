@@ -100,6 +100,7 @@ public enum EventOutcome
     Contradiction,
     Parked,
     Duplicate,
+    Expired,
 }
 
 public sealed class PspEventStore(TxRunner runner)
@@ -192,29 +193,209 @@ public sealed class PspEventStore(TxRunner runner)
                     return EventOutcome.Ignored;
                 }
 
-                var beforeState = view.State;
-                var beforeAttempt = view.Attempt?.State;
-                var beforeRefund = view.Refund?.State;
-                var result = await _store.ApplyInTransactionAsync(
-                    connection, transaction, paymentId.Value, merchantId, command, null, ct);
-                if (result is not ApplyResult.Applied applied)
+                return await ApplyCommandAndMarkAsync(
+                    connection, transaction, merchantId, paymentId.Value,
+                    pspAccountId, pspEvent.EventId, command, ct);
+            },
+            cancellationToken);
+    }
+
+    private async Task<EventOutcome> ApplyCommandAndMarkAsync(
+        NpgsqlConnection connection,
+        NpgsqlTransaction transaction,
+        MerchantId merchantId,
+        PaymentId paymentId,
+        Guid pspAccountId,
+        string eventId,
+        PaymentCommand command,
+        CancellationToken ct)
+    {
+        var view = await PaymentStore.LoadPaymentAsync(
+            paymentId, merchantId, ct, connection, transaction);
+        if (view is null)
+        {
+            await ParkAsync(connection, transaction, pspAccountId, eventId, ct);
+            Count("parked");
+            CountParked();
+            return EventOutcome.Parked;
+        }
+
+        var beforeState = view.State;
+        var beforeAttempt = view.Attempt?.State;
+        var beforeRefund = view.Refund?.State;
+        var result = await _store!.ApplyInTransactionAsync(
+            connection, transaction, paymentId, merchantId, command, null, ct);
+        if (result is not ApplyResult.Applied applied)
+        {
+            await ParkAsync(connection, transaction, pspAccountId, eventId, ct);
+            Count("parked");
+            CountParked();
+            return EventOutcome.Parked;
+        }
+
+        var changed = applied.Payment.State != beforeState
+            || applied.Payment.Attempt?.State != beforeAttempt
+            || applied.Payment.Refund?.State != beforeRefund;
+        await MarkAsync(
+            connection, transaction, pspAccountId, eventId,
+            changed ? "applied" : "ignored", ct);
+        Count(changed ? "applied" : "ignored");
+        return changed ? EventOutcome.Applied : EventOutcome.Ignored;
+    }
+
+    /// <summary>
+    /// Re-applies a parked row from its stored payload (Task 26). The row's source decides how:
+    /// an <c>api_answer</c> row holds the parked command, a <c>callback</c> row holds the raw event.
+    /// Past the parked limit the row expires and the operation is left to the reconciler.
+    /// </summary>
+    public async Task<EventOutcome> ReplayAsync(
+        Guid pspAccountId,
+        string eventId,
+        DateTimeOffset now,
+        TimeSpan parkedLimit,
+        CancellationToken cancellationToken)
+    {
+        var (source, payload, storedPayment, receivedAt) = await LoadParkedAsync(
+            pspAccountId, eventId, cancellationToken);
+        if (source is null)
+        {
+            return EventOutcome.Ignored;
+        }
+
+        if (now - receivedAt > parkedLimit)
+        {
+            await ExpireAsync(pspAccountId, eventId, cancellationToken);
+            return EventOutcome.Expired;
+        }
+
+        if (source == "api_answer")
+        {
+            PaymentCommand command;
+            try
+            {
+                command = ParkedAnswer.Deserialize(payload).ToCommand();
+            }
+            catch (InvalidOperationException)
+            {
+                await ExpireAsync(pspAccountId, eventId, cancellationToken);
+                return EventOutcome.Expired;
+            }
+
+            var merchant = storedPayment is { } payment
+                ? await MerchantForPaymentAsync(payment, cancellationToken)
+                : null;
+            if (merchant is null || storedPayment is null)
+            {
+                return EventOutcome.Parked;
+            }
+
+            return await runner.RunAsync(
+                merchant.Value,
+                (connection, transaction, ct) => ApplyCommandAndMarkAsync(
+                    connection, transaction, merchant.Value, storedPayment.Value,
+                    pspAccountId, eventId, command, ct),
+                cancellationToken);
+        }
+
+        var parsed = PspEventJson.Parse(payload);
+        if (parsed.IsFailure)
+        {
+            await ExpireAsync(pspAccountId, eventId, cancellationToken);
+            return EventOutcome.Expired;
+        }
+
+        var (resolvedMerchant, resolvedPayment) = await ResolveAsync(parsed.Value.Reference, cancellationToken);
+        var paymentId = storedPayment ?? resolvedPayment;
+        if (resolvedMerchant is null || paymentId is null)
+        {
+            return EventOutcome.Parked;
+        }
+
+        return await runner.RunAsync(
+            resolvedMerchant.Value,
+            async (connection, transaction, ct) =>
+            {
+                var view = await PaymentStore.LoadPaymentAsync(
+                    paymentId.Value, resolvedMerchant.Value, ct, connection, transaction);
+                if (view is null)
                 {
-                    await ParkAsync(connection, transaction, pspAccountId, pspEvent.EventId, ct);
+                    await ParkAsync(connection, transaction, pspAccountId, eventId, ct);
                     Count("parked");
                     CountParked();
                     return EventOutcome.Parked;
                 }
 
-                var changed = applied.Payment.State != beforeState
-                    || applied.Payment.Attempt?.State != beforeAttempt
-                    || applied.Payment.Refund?.State != beforeRefund;
-                await MarkAsync(
-                    connection, transaction, pspAccountId, pspEvent.EventId,
-                    changed ? "applied" : "ignored", ct);
-                Count(changed ? "applied" : "ignored");
-                return changed ? EventOutcome.Applied : EventOutcome.Ignored;
+                var (command, contradiction) = Map(parsed.Value, view);
+                if (contradiction)
+                {
+                    await MarkAsync(connection, transaction, pspAccountId, eventId, "contradiction", ct);
+                    Count("contradiction");
+                    return EventOutcome.Contradiction;
+                }
+
+                if (command is null)
+                {
+                    await MarkAsync(connection, transaction, pspAccountId, eventId, "ignored", ct);
+                    Count("ignored");
+                    return EventOutcome.Ignored;
+                }
+
+                return await ApplyCommandAndMarkAsync(
+                    connection, transaction, resolvedMerchant.Value, paymentId.Value,
+                    pspAccountId, eventId, command, ct);
             },
             cancellationToken);
+    }
+
+    private async Task<(string? Source, string Payload, PaymentId? Payment, DateTimeOffset ReceivedAt)> LoadParkedAsync(
+        Guid account, string eventId, CancellationToken ct)
+    {
+        await using var connection = await runner.DataSource.OpenConnectionAsync(ct);
+        await using var command = new NpgsqlCommand(
+            """
+            select source, payload::text, payment_id, received_at
+            from psp_events
+            where psp_account_id = @account and psp_event_id = @event and processed_at is null
+            """,
+            connection);
+        command.Parameters.AddWithValue("account", account);
+        command.Parameters.AddWithValue("event", eventId);
+        await using var reader = await command.ExecuteReaderAsync(ct);
+        if (!await reader.ReadAsync(ct))
+        {
+            return (null, string.Empty, null, default);
+        }
+
+        return (
+            reader.GetString(0),
+            reader.GetString(1),
+            reader.IsDBNull(2) ? null : new PaymentId(reader.GetGuid(2)),
+            reader.GetDateTime(3));
+    }
+
+    private async Task<MerchantId?> MerchantForPaymentAsync(PaymentId paymentId, CancellationToken ct)
+    {
+        await using var connection = await runner.DataSource.OpenConnectionAsync(ct);
+        await using var command = new NpgsqlCommand(
+            "select merchant_id from payments where id = @id", connection);
+        command.Parameters.AddWithValue("id", paymentId.Value);
+        var value = await command.ExecuteScalarAsync(ct);
+        return value is Guid merchant ? new MerchantId(merchant) : null;
+    }
+
+    private async Task ExpireAsync(Guid account, string eventId, CancellationToken ct)
+    {
+        await using var connection = await runner.DataSource.OpenConnectionAsync(ct);
+        await using var command = new NpgsqlCommand(
+            """
+            update psp_events
+               set processed_at = now(), outcome = 'expired'
+             where psp_account_id = @account and psp_event_id = @event and processed_at is null
+            """,
+            connection);
+        command.Parameters.AddWithValue("account", account);
+        command.Parameters.AddWithValue("event", eventId);
+        await command.ExecuteNonQueryAsync(ct);
     }
 
     private async Task<(MerchantId? Merchant, PaymentId? Payment)> ResolveAsync(
