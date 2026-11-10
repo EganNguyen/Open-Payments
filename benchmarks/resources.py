@@ -62,9 +62,9 @@ def main():
     args = parser.parse_args()
 
     api_cpu = average(query_range(
-        args.prom, "rate(process_cpu_seconds_total{job=\"api\"}[1m]) * 100", args.start, args.end))
+        args.prom, "sum(rate(process_cpu_seconds_total{job=\"api\"}[1m])) * 100", args.start, args.end))
     api_memory = maximum(query_range(
-        args.prom, "process_resident_memory_bytes{job=\"api\"}", args.start, args.end))
+        args.prom, "sum(process_resident_memory_bytes{job=\"api\"})", args.start, args.end))
     threadpool_queue = maximum(query_range(
         args.prom, "op_threadpool_queue", args.start, args.end))
     gen2 = average(query_range(

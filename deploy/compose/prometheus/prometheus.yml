@@ -22,4 +22,5 @@ scrape_configs:
   # as well as Docker Desktop.
   - job_name: api
     static_configs:
-      - targets: ["host.docker.internal:8080"]
+      # One target per API instance. 8082 is down unless two-api.yaml runs the second one.
+      - targets: ["host.docker.internal:8081", "host.docker.internal:8082"]

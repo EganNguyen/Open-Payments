@@ -113,6 +113,8 @@ services:
         condition: service_healthy
     ports:
       - "127.0.0.1:8080:8080"
+      # Prometheus scrapes the instance here, so it reads one process even behind a balancer.
+      - "127.0.0.1:8081:8080"
 
   pgbouncer:
     <<: *pgbouncer
