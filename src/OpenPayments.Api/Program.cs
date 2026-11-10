@@ -1,6 +1,7 @@
 using System.Text.Json;
 using Microsoft.AspNetCore.Http.Json;
 using OpenPayments.Api;
+using OpenPayments.Api.Endpoints;
 using OpenPayments.Domain;
 using OpenPayments.Psp;
 using OpenPayments.Psp.Resilience;
@@ -24,6 +25,8 @@ var database = NormalizeConnectionString(
     ?? "postgres://op_app:op_local_only@127.0.0.1:16432/openpayments");
 builder.Services.AddSingleton(_ => new TxRunner(database));
 builder.Services.AddSingleton<PaymentStore>();
+builder.Services.AddSingleton<IPspEventParser, MockPspEventParser>();
+builder.Services.AddSingleton<ICallbackSecretProvider, EnvironmentCallbackSecretProvider>();
 builder.Services.AddSingleton<ApiKeyAuthenticator>();
 builder.Services.AddSingleton(new InFlightLimiter(
     int.TryParse(builder.Configuration["INFLIGHT_CAP"], out var cap) ? cap : 500));
@@ -89,6 +92,8 @@ app.Use(async (context, next) =>
         }
     }
 });
+
+app.MapPost("/psp/v1/accounts/{pspAccountId:guid}/events", PspEventsEndpoint.HandleAsync);
 
 app.MapGet("/health", () => Results.Json(new { status = "ok" }, ApiJson.Options));
 app.MapGet("/metrics", (PaymentMetrics metrics) =>

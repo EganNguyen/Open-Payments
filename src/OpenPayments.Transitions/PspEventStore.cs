@@ -93,8 +93,228 @@ public sealed record ParkedAnswer(
 /// The PSP event log's writer (D59). A PSP answer that transaction B can't apply is parked here
 /// in its own short transaction, so it is never dropped.
 /// </summary>
+public enum EventOutcome
+{
+    Applied,
+    Ignored,
+    Contradiction,
+    Parked,
+    Duplicate,
+}
+
 public sealed class PspEventStore(TxRunner runner)
 {
+    private PaymentStore? _store;
+
+    internal void Attach(PaymentStore store) => _store = store;
+
+
+    /// <summary>
+    /// D30/D59: insert the event and apply what it says in one transaction; a duplicate changes
+    /// nothing, an event the operation can't take yet is parked, and a contradiction is recorded.
+    /// </summary>
+    public async Task<EventOutcome> ReceiveAsync(
+        Guid pspAccountId,
+        PspEvent pspEvent,
+        string payload,
+        CancellationToken cancellationToken)
+    {
+        var (merchant, paymentId) = await ResolveAsync(pspEvent.Reference, cancellationToken);
+        var merchantId = merchant ?? new MerchantId(Guid.Empty);
+        return await runner.RunAsync(
+            merchantId,
+            async (connection, transaction, ct) =>
+            {
+                if (!await InsertAsync(connection, transaction, pspAccountId, pspEvent, payload, paymentId, ct))
+                {
+                    return EventOutcome.Duplicate;
+                }
+
+                if (paymentId is null || _store is null)
+                {
+                    return EventOutcome.Parked;
+                }
+
+                var view = await PaymentStore.LoadPaymentAsync(paymentId.Value, merchantId, ct, connection, transaction);
+                if (view is null)
+                {
+                    return EventOutcome.Parked;
+                }
+
+                var (command, contradiction) = Map(pspEvent, view);
+                if (contradiction)
+                {
+                    await MarkAsync(connection, transaction, pspAccountId, pspEvent.EventId, "contradiction", ct);
+                    return EventOutcome.Contradiction;
+                }
+
+                if (command is null)
+                {
+                    await MarkAsync(connection, transaction, pspAccountId, pspEvent.EventId, "ignored", ct);
+                    return EventOutcome.Ignored;
+                }
+
+                var beforeState = view.State;
+                var beforeAttempt = view.Attempt?.State;
+                var beforeRefund = view.Refund?.State;
+                var result = await _store.ApplyInTransactionAsync(
+                    connection, transaction, paymentId.Value, merchantId, command, null, ct);
+                if (result is not ApplyResult.Applied applied)
+                {
+                    await ParkAsync(connection, transaction, pspAccountId, pspEvent.EventId, ct);
+                    return EventOutcome.Parked;
+                }
+
+                var changed = applied.Payment.State != beforeState
+                    || applied.Payment.Attempt?.State != beforeAttempt
+                    || applied.Payment.Refund?.State != beforeRefund;
+                await MarkAsync(
+                    connection, transaction, pspAccountId, pspEvent.EventId,
+                    changed ? "applied" : "ignored", ct);
+                return changed ? EventOutcome.Applied : EventOutcome.Ignored;
+            },
+            cancellationToken);
+    }
+
+    private async Task<(MerchantId? Merchant, PaymentId? Payment)> ResolveAsync(
+        PspEventReference reference, CancellationToken ct)
+    {
+        await using var connection = await runner.DataSource.OpenConnectionAsync(ct);
+        await using var command = new NpgsqlCommand(
+            """
+            select p.merchant_id, p.id
+            from payment_attempts a join payments p on p.id = a.payment_id
+            where a.attempt_id = @attempt
+            union all
+            select merchant_id, payment_id from refunds where id = @refund
+            limit 1
+            """,
+            connection);
+        command.Parameters.AddWithValue("attempt", NpgsqlTypes.NpgsqlDbType.Uuid,
+            (object?)reference.Attempt?.Value ?? DBNull.Value);
+        command.Parameters.AddWithValue("refund", NpgsqlTypes.NpgsqlDbType.Uuid,
+            (object?)reference.Refund?.Value ?? DBNull.Value);
+        await using var reader = await command.ExecuteReaderAsync(ct);
+        return await reader.ReadAsync(ct)
+            ? (new MerchantId(reader.GetGuid(0)), new PaymentId(reader.GetGuid(1)))
+            : (null, null);
+    }
+
+    private static async Task<bool> InsertAsync(
+        NpgsqlConnection connection, NpgsqlTransaction transaction, Guid account,
+        PspEvent e, string payload, PaymentId? paymentId, CancellationToken ct)
+    {
+        await using var command = new NpgsqlCommand(
+            """
+            insert into psp_events
+              (psp_account_id, psp_event_id, source, payload, payment_id, attempt_id, refund_id)
+            values (@account, @event, 'callback', @payload::jsonb, @payment, @attempt, @refund)
+            on conflict (psp_account_id, psp_event_id) do nothing
+            """,
+            connection,
+            transaction);
+        command.Parameters.AddWithValue("account", account);
+        command.Parameters.AddWithValue("event", e.EventId);
+        command.Parameters.AddWithValue("payload", NpgsqlTypes.NpgsqlDbType.Jsonb, payload);
+        command.Parameters.AddWithValue("payment", NpgsqlTypes.NpgsqlDbType.Uuid,
+            (object?)paymentId?.Value ?? DBNull.Value);
+        command.Parameters.AddWithValue("attempt", NpgsqlTypes.NpgsqlDbType.Uuid,
+            (object?)e.Reference.Attempt?.Value ?? DBNull.Value);
+        command.Parameters.AddWithValue("refund", NpgsqlTypes.NpgsqlDbType.Uuid,
+            (object?)e.Reference.Refund?.Value ?? DBNull.Value);
+        return await command.ExecuteNonQueryAsync(ct) > 0;
+    }
+
+    private static async Task MarkAsync(
+        NpgsqlConnection connection, NpgsqlTransaction transaction, Guid account, string eventId,
+        string outcome, CancellationToken ct)
+    {
+        await using var command = new NpgsqlCommand(
+            """
+            update psp_events
+               set processed_at = now(), outcome = @outcome, attempts = attempts + 1
+             where psp_account_id = @account and psp_event_id = @event
+            """,
+            connection,
+            transaction);
+        command.Parameters.AddWithValue("account", account);
+        command.Parameters.AddWithValue("event", eventId);
+        command.Parameters.AddWithValue("outcome", outcome);
+        await command.ExecuteNonQueryAsync(ct);
+    }
+
+    private static async Task ParkAsync(
+        NpgsqlConnection connection, NpgsqlTransaction transaction, Guid account, string eventId,
+        CancellationToken ct)
+    {
+        await using var command = new NpgsqlCommand(
+            """
+            update psp_events
+               set attempts = attempts + 1,
+                   next_attempt_at = now() + make_interval(secs => least(60, power(2, attempts))),
+                   last_error = 'not_applicable'
+             where psp_account_id = @account and psp_event_id = @event and processed_at is null
+            """,
+            connection,
+            transaction);
+        command.Parameters.AddWithValue("account", account);
+        command.Parameters.AddWithValue("event", eventId);
+        await command.ExecuteNonQueryAsync(ct);
+    }
+
+    private static (PaymentCommand? Command, bool Contradiction) Map(PspEvent e, PaymentView view)
+    {
+        var at = DateTimeOffset.UtcNow;
+        if (e.Reference.Refund is { } refundId)
+        {
+            var refund = view.Refund;
+            if (refund is null || refund.Id != refundId)
+            {
+                return (null, false);
+            }
+
+            return e.Kind switch
+            {
+                PspEventKind.Refunded when refund.State == RefundState.Pending =>
+                    (new PaymentCommand.RefundConfirm(refundId, e.Amount, at), false),
+                PspEventKind.Refunded => (null, false),
+                PspEventKind.RefundFailed when refund.State == RefundState.Pending =>
+                    (new PaymentCommand.RefundRelease(refundId, ProvenNotCharged: true, e.FailureCode, at), false),
+                PspEventKind.RefundFailed => (null, false),
+                _ => (null, false),
+            };
+        }
+
+        var attempt = view.Attempt;
+        if (attempt is null || attempt.Id != e.Reference.Attempt)
+        {
+            return (null, false);
+        }
+
+        return e.Kind switch
+        {
+            PspEventKind.Authorized when attempt.State == AttemptState.Pending =>
+                (new PaymentCommand.PspAnswer(attempt.Id, attempt.Operation, PspAnswerOutcome.Approved, e.Amount, null, null, at), false),
+            PspEventKind.Authorized when attempt.State == AttemptState.Failed =>
+                (new PaymentCommand.LateApproval(attempt.Id, attempt.Operation, e.Amount, null, at), false),
+            PspEventKind.Authorized => (null, false),
+            PspEventKind.SaleCaptured when attempt.State == AttemptState.Pending =>
+                (new PaymentCommand.PspAnswer(attempt.Id, attempt.Operation, PspAnswerOutcome.Approved, e.Amount, null, null, at), false),
+            PspEventKind.Captured when attempt.Operation == AttemptOperation.Capture && attempt.State == AttemptState.Pending =>
+                (new PaymentCommand.CaptureAnswer(attempt.Id, true, e.Amount, null, false, at), false),
+            PspEventKind.Declined when attempt.State == AttemptState.Pending =>
+                (new PaymentCommand.PspAnswer(attempt.Id, attempt.Operation, PspAnswerOutcome.Declined, null, e.FailureCode, null, at), false),
+            PspEventKind.Declined when attempt.State == AttemptState.Succeeded => (null, true),
+            PspEventKind.ActionRequired when attempt.State == AttemptState.Pending =>
+                (new PaymentCommand.PspAnswer(attempt.Id, attempt.Operation, PspAnswerOutcome.RequiresAction, e.Amount, null, e.ActionType, at), false),
+            PspEventKind.Voided when attempt.Operation == AttemptOperation.Void && attempt.State == AttemptState.Pending =>
+                (new PaymentCommand.VoidAnswer(attempt.Id, true, false, null, at), false),
+            PspEventKind.VoidFailed when attempt.Operation == AttemptOperation.Void && attempt.State == AttemptState.Pending =>
+                (new PaymentCommand.VoidAnswer(attempt.Id, false, false, e.FailureCode, at), false),
+            _ => (null, false),
+        };
+    }
+
     public async Task<string> ParkApiAnswerAsync(
         Guid account,
         OperationRef operation,

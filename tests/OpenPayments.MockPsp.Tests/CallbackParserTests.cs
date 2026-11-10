@@ -1,5 +1,6 @@
 using System.Security.Cryptography;
 using System.Text;
+using OpenPayments.Domain;
 using OpenPayments.Psp;
 using Xunit;
 

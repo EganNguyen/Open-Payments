@@ -173,7 +173,11 @@ public sealed class PaymentStore
     {
         _runner = runner;
         _events = events ?? new PspEventStore(runner);
+        _events.Attach(this);
     }
+
+    /// <summary>The event log, for the callback route and the reconciler (D59).</summary>
+    public PspEventStore Events => _events;
 
     /// <summary>Test-only failpoint used by the atomicity test.</summary>
     public Action? BeforeOutboxInsert { get; set; }
@@ -515,7 +519,7 @@ public sealed class PaymentStore
         return new BeginResult.Started(attemptId, started!);
     }
 
-    private async Task<ApplyResult> ApplyInTransactionAsync(
+    internal async Task<ApplyResult> ApplyInTransactionAsync(
         NpgsqlConnection connection,
         NpgsqlTransaction transaction,
         PaymentId paymentId,
@@ -1186,6 +1190,27 @@ public sealed class PaymentStore
         return await LoadPaymentAsync(paymentId, merchant, cancellationToken);
     }
 
+    public sealed record CallbackAccount(MerchantId Merchant, string? SecretRef, bool Disabled);
+
+    public async Task<CallbackAccount?> GetCallbackAccountAsync(Guid pspAccountId, CancellationToken ct)
+    {
+        await using var connection = await _runner.DataSource.OpenConnectionAsync(ct);
+        await using var command = new NpgsqlCommand(
+            """
+            select merchant_id, callback_secret_ref, disabled_at is not null
+            from psp_accounts where id = @id
+            """,
+            connection);
+        command.Parameters.AddWithValue("id", pspAccountId);
+        await using var reader = await command.ExecuteReaderAsync(ct);
+        return await reader.ReadAsync(ct)
+            ? new CallbackAccount(
+                new MerchantId(reader.GetGuid(0)),
+                reader.IsDBNull(1) ? null : reader.GetString(1),
+                reader.GetBoolean(2))
+            : null;
+    }
+
     public async Task<MerchantPspAccount?> GetPspAccountAsync(
         MerchantId merchant,
         CancellationToken cancellationToken)
@@ -1435,7 +1460,7 @@ public sealed class PaymentStore
         return await LoadPaymentAsync(paymentId, merchant, cancellationToken, connection, null);
     }
 
-    private static async Task<PaymentView?> LoadPaymentAsync(
+    internal static async Task<PaymentView?> LoadPaymentAsync(
         PaymentId paymentId,
         MerchantId merchant,
         CancellationToken cancellationToken,

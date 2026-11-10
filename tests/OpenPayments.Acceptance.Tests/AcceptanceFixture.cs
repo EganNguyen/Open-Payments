@@ -7,6 +7,7 @@ using Microsoft.Extensions.DependencyInjection.Extensions;
 using Microsoft.Extensions.Logging;
 using Npgsql;
 using OpenPayments.Api;
+using OpenPayments.Api.Endpoints;
 using OpenPayments.Domain;
 using OpenPayments.Psp;
 using OpenPayments.Psp.Resilience;
@@ -89,6 +90,8 @@ public sealed class AcceptanceFixture : IAsyncLifetime
                     AppConnectionString, loggerFactory: Queries));
                 services.RemoveAll<IPspAdapterFactory>();
                 services.AddSingleton<AccountGate>();
+                services.RemoveAll<ICallbackSecretProvider>();
+                services.AddSingleton<ICallbackSecretProvider>(new FixedSecretProvider("whsec_test"));
                 services.AddSingleton<IPspAdapterFactory>(sp => new ResilientPspAdapterFactory(
                     Psp, sp.GetRequiredService<AccountGate>()));
                 services.RemoveAll<IFraudCheck>();
@@ -432,6 +435,11 @@ public sealed class TestFraud : IFraudCheck
 }
 
 public sealed record PspCall(string Operation, string Key, long Amount);
+
+public sealed class FixedSecretProvider(string secret) : ICallbackSecretProvider
+{
+    public string? Get(string? reference) => secret;
+}
 
 public sealed class TestPsp : IPspAdapterFactory, IPspAdapter
 {
