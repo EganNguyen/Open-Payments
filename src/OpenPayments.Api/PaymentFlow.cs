@@ -86,7 +86,9 @@ public sealed class PaymentFlow(
                 CreatePayment: true,
                 DateTimeOffset.UtcNow.Add(PaymentWindow),
                 MethodRef: method?.Ref ?? string.Empty,
-                MethodType: method?.Type ?? string.Empty);
+                MethodType: method?.Type ?? string.Empty,
+                // Two-call auto-capture: the create's key stays open until its capture answers.
+                ResolvesKey: !(request.CaptureMode == "auto" && !supportsSale));
 
             if (method is null)
             {

@@ -355,6 +355,19 @@ public sealed class PaymentStoreTests(DbFixture db)
         command.Parameters.AddWithValue("body", (object?)responseBody ?? DBNull.Value);
         command.Parameters.AddWithValue("resolved", responseCode is null ? DBNull.Value : DateTimeOffset.UtcNow);
         await command.ExecuteNonQueryAsync();
+
+        // D61: the operation row carries the key, and finishing it resolves the key in the store.
+        await using var link = new NpgsqlCommand(
+            """
+            update payment_attempts
+               set idempotency_key = @key, resolves_key = true
+             where payment_id = @payment and attempt_id = @attempt
+            """,
+            connection);
+        link.Parameters.AddWithValue("key", key);
+        link.Parameters.AddWithValue("payment", payment.Value);
+        link.Parameters.AddWithValue("attempt", attempt.Value);
+        await link.ExecuteNonQueryAsync();
     }
 
     private static byte[] Hash(string body) => SHA256.HashData(Encoding.UTF8.GetBytes(body));

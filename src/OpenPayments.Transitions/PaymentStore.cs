@@ -13,7 +13,9 @@ public sealed record AttemptView(
     AttemptId? TargetAttemptId,
     string? FailureCode,
     string Psp,
-    Guid PspAccountId);
+    Guid PspAccountId,
+    string? IdempotencyKey = null,
+    bool ResolvesKey = true);
 
 public sealed record RefundView(
     RefundId Id,
@@ -22,7 +24,9 @@ public sealed record RefundView(
     string? FailureCode,
     string Psp,
     Guid PspAccountId,
-    DateTimeOffset CreatedAt = default);
+    DateTimeOffset CreatedAt = default,
+    string? IdempotencyKey = null,
+    bool ResolvesKey = true);
 
 public sealed record RefundRecord(
     RefundId Id,
@@ -86,7 +90,8 @@ public sealed record BeginAttempt(
     string Psp = "mock",
     Guid? PspAccountId = null,
     string MethodRef = "tok_test",
-    string MethodType = "card");
+    string MethodType = "card",
+    bool ResolvesKey = true);
 
 public abstract record KeyLookup
 {
@@ -252,19 +257,8 @@ public sealed class PaymentStore
             merchant.Value,
             async (connection, transaction, ct) =>
             {
-                var result = await ApplyInTransactionAsync(
-                    connection, transaction, paymentId, merchant.Value, command, response, ct);
-                // D58: the result and the key's answer commit together, so a payment never sits
-                // final while its key is unresolved, and the answer costs no commit of its own.
-                if (keyAnswer is not null
-                    && result is ApplyResult.Applied applied
-                    && keyAnswer.Render(applied.Payment) is { } answer)
-                {
-                    await ResolveKeyInTransactionAsync(
-                        connection, transaction, merchant.Value, keyAnswer.Key, answer, ct);
-                }
-
-                return result;
+                return await ApplyInTransactionAsync(
+                    connection, transaction, paymentId, merchant.Value, command, response, ct, keyAnswer);
             },
             cancellationToken);
     }
@@ -281,7 +275,7 @@ public sealed class PaymentStore
             """
             update idempotency_keys
                set response_code = @code, response_body = @body::jsonb, resolved_at = now()
-             where merchant_id = @merchant and key = @key
+             where merchant_id = @merchant and key = @key and resolved_at is null
             """,
             connection,
             transaction);
@@ -439,6 +433,8 @@ public sealed class PaymentStore
             command.Psp,
             command.MethodRef,
             command.MethodType,
+            command.Key,
+            command.ResolvesKey,
             cancellationToken);
 
         var started = await LoadPaymentAsync(
@@ -453,7 +449,8 @@ public sealed class PaymentStore
         MerchantId merchant,
         PaymentCommand command,
         StoredResponse? response,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken,
+        KeyAnswer? keyAnswer = null)
     {
         var view = await LoadPaymentAsync(
             paymentId, merchant,
@@ -475,8 +472,60 @@ public sealed class PaymentStore
         }
 
         var accepted = (TransitionResult.Accepted)transition;
-        return await PersistAsync(
+        var applied = await PersistAsync(
             connection, transaction, view, command, accepted, response, cancellationToken);
+        if (applied is ApplyResult.Applied done)
+        {
+            await ResolveFinishedOperationAsync(
+                connection, transaction, done.Payment, accepted, keyAnswer, cancellationToken);
+        }
+
+        return applied;
+    }
+
+    /// <summary>
+    /// D61: the transaction that finishes an attempt or refund resolves the key that started it,
+    /// whoever finished it. The row carries the key and whether it resolves; a two-call
+    /// authorize's row does not, so the capture's row is the one that resolves the create key.
+    /// </summary>
+    private static async Task ResolveFinishedOperationAsync(
+        NpgsqlConnection connection,
+        NpgsqlTransaction transaction,
+        PaymentView payment,
+        TransitionResult.Accepted accepted,
+        KeyAnswer? keyAnswer,
+        CancellationToken cancellationToken)
+    {
+        OperationRef? operation = null;
+        string? key = null;
+        var resolves = false;
+        if (accepted.Attempt is { State: AttemptState.Succeeded or AttemptState.Failed } attempt
+            && payment.Attempt is { } attemptRow
+            && attemptRow.Id == attempt.Id)
+        {
+            operation = new OperationRef.Attempt(attemptRow.Id, attemptRow.Operation);
+            key = attemptRow.IdempotencyKey;
+            resolves = attemptRow.ResolvesKey;
+        }
+        else if (accepted.Refund is { State: RefundState.Succeeded or RefundState.Failed } refund
+            && payment.Refund is { } refundRow
+            && refundRow.Id == refund.Id)
+        {
+            operation = new OperationRef.Refund(refundRow.Id);
+            key = refundRow.IdempotencyKey;
+            resolves = refundRow.ResolvesKey;
+        }
+
+        if (!resolves || key is null || operation is null)
+        {
+            return;
+        }
+
+        // The request path may override the body it would have stored before D61; a callback or
+        // the reconciler uses the one renderer.
+        var response = keyAnswer?.Render(payment) ?? AnswerRenderer.Render(payment, operation);
+        await ResolveKeyInTransactionAsync(
+            connection, transaction, payment.MerchantId, key, response, cancellationToken);
     }
 
     private async Task<ApplyResult> PersistAsync(
@@ -486,7 +535,9 @@ public sealed class PaymentStore
         PaymentCommand command,
         TransitionResult.Accepted accepted,
         StoredResponse? response,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken,
+        string? idempotencyKey = null,
+        bool resolvesKey = false)
     {
         var paymentId = view.Id;
         var captured = accepted.NewState is PaymentState.Captured
@@ -552,13 +603,11 @@ public sealed class PaymentStore
         await InsertLedgerAsync(connection, transaction, view, paymentId, accepted.Ledger, ct: cancellationToken);
         BeforeOutboxInsert?.Invoke();
         await InsertOutboxAsync(connection, transaction, view, accepted.Events, cancellationToken);
-        await UpdateAttemptAsync(connection, transaction, view, accepted.Attempt, ct: cancellationToken);
-        await UpdateRefundAsync(connection, transaction, view, accepted.Refund, command, ct: cancellationToken);
-
-        if (response is not null)
-        {
-            await StoreResponseAsync(connection, transaction, view, command, response, cancellationToken);
-        }
+        await UpdateAttemptAsync(
+            connection, transaction, view, accepted.Attempt, idempotencyKey, resolvesKey, cancellationToken);
+        await UpdateRefundAsync(
+            connection, transaction, view, accepted.Refund, command, idempotencyKey, resolvesKey, cancellationToken);
+        _ = response;
 
         var updated = await LoadPaymentAsync(
             paymentId, view.MerchantId, cancellationToken, connection, transaction);
@@ -606,16 +655,20 @@ public sealed class PaymentStore
         string psp,
         string methodRef,
         string methodType,
+        string? idempotencyKey,
+        bool resolvesKey,
         CancellationToken cancellationToken)
     {
         await using var insert = new NpgsqlCommand(
             """
             insert into payment_attempts
               (attempt_id, payment_id, merchant_id, operation, psp, psp_account_id,
-               target_attempt_id, state, failure_code, method_ref, method_type, created_at)
+               target_attempt_id, state, failure_code, method_ref, method_type,
+               idempotency_key, resolves_key, created_at)
             values
               (@attempt, @payment, @merchant, @operation, @psp, @psp_account,
-               @target, @state, @failure, @method_ref, @method_type, now())
+               @target, @state, @failure, @method_ref, @method_type,
+               @key, @resolves_key, now())
             """,
             connection,
             transaction);
@@ -630,6 +683,8 @@ public sealed class PaymentStore
         insert.Parameters.AddWithValue("failure", (object?)attempt.FailureCode ?? DBNull.Value);
         insert.Parameters.AddWithValue("method_ref", (object?)methodRef ?? DBNull.Value);
         insert.Parameters.AddWithValue("method_type", (object?)methodType ?? DBNull.Value);
+        insert.Parameters.AddWithValue("key", (object?)idempotencyKey ?? DBNull.Value);
+        insert.Parameters.AddWithValue("resolves_key", resolvesKey);
         await insert.ExecuteNonQueryAsync(cancellationToken);
     }
 
@@ -724,6 +779,8 @@ public sealed class PaymentStore
         NpgsqlTransaction transaction,
         PaymentView view,
         AttemptChange? change,
+        string? idempotencyKey,
+        bool resolvesKey,
         CancellationToken ct)
     {
         if (change is null)
@@ -762,6 +819,8 @@ public sealed class PaymentStore
             psp,
             change.Operation is AttemptOperation.Authorize or AttemptOperation.Sale ? "tok_test" : null!,
             change.Operation is AttemptOperation.Authorize or AttemptOperation.Sale ? "card" : null!,
+            idempotencyKey,
+            resolvesKey,
             ct);
     }
 
@@ -771,6 +830,8 @@ public sealed class PaymentStore
         PaymentView view,
         RefundChange? change,
         PaymentCommand command,
+        string? idempotencyKey,
+        bool resolvesKey,
         CancellationToken ct)
     {
         if (change is null)
@@ -801,9 +862,11 @@ public sealed class PaymentStore
         await using var insert = new NpgsqlCommand(
             """
             insert into refunds
-              (id, payment_id, merchant_id, amount_minor, state, psp, psp_account_id, created_at)
+              (id, payment_id, merchant_id, amount_minor, state, psp, psp_account_id,
+               idempotency_key, resolves_key, created_at)
             values
-              (@id, @payment, @merchant, @amount, @state, @psp, @psp_account, now())
+              (@id, @payment, @merchant, @amount, @state, @psp, @psp_account,
+               @key, @resolves_key, now())
             """,
             connection,
             transaction);
@@ -814,60 +877,9 @@ public sealed class PaymentStore
         insert.Parameters.AddWithValue("state", StateText.Refund(change.State));
         insert.Parameters.AddWithValue("psp", psp);
         insert.Parameters.AddWithValue("psp_account", pspAccount);
+        insert.Parameters.AddWithValue("key", (object?)idempotencyKey ?? DBNull.Value);
+        insert.Parameters.AddWithValue("resolves_key", resolvesKey);
         await insert.ExecuteNonQueryAsync(ct);
-    }
-
-    private static async Task StoreResponseAsync(
-        NpgsqlConnection connection,
-        NpgsqlTransaction transaction,
-        PaymentView view,
-        PaymentCommand command,
-        StoredResponse response,
-        CancellationToken cancellationToken)
-    {
-        var attempt = command switch
-        {
-            PaymentCommand.PspAnswer answer => answer.AttemptId.Value,
-            PaymentCommand.RecoveryAnswer answer => answer.AttemptId.Value,
-            PaymentCommand.Timeout timeout => timeout.AttemptId.Value,
-            PaymentCommand.Capture capture => capture.CaptureAttemptId.Value,
-            PaymentCommand.CaptureAnswer answer => answer.CaptureAttemptId.Value,
-            PaymentCommand.Void voidCommand => voidCommand.VoidAttemptId.Value,
-            PaymentCommand.VoidAnswer answer => answer.VoidAttemptId.Value,
-            PaymentCommand.LateApproval approval => approval.AttemptId.Value,
-            _ => (Guid?)null,
-        };
-        var refund = command switch
-        {
-            PaymentCommand.RefundReserve reserve => reserve.RefundId.Value,
-            PaymentCommand.RefundConfirm confirm => confirm.RefundId.Value,
-            PaymentCommand.RefundRelease release => release.RefundId.Value,
-            PaymentCommand.RefundTimeout timeout => timeout.RefundId.Value,
-            PaymentCommand.RefundMismatch mismatch => mismatch.RefundId.Value,
-            _ => (Guid?)null,
-        };
-
-        await using var update = new NpgsqlCommand(
-            """
-            update idempotency_keys
-               set response_code = @code,
-                   response_body = @body::jsonb,
-                   resolved_at = now()
-             where merchant_id = @merchant
-               and (
-                 (@attempt is not null and attempt_id = @attempt)
-                 or (@refund is not null and refund_id = @refund)
-                 or (@attempt is null and @refund is null and payment_id = @payment))
-            """,
-            connection,
-            transaction);
-        update.Parameters.AddWithValue("code", response.StatusCode);
-        update.Parameters.AddWithValue("body", NpgsqlTypes.NpgsqlDbType.Jsonb, response.Body);
-        update.Parameters.AddWithValue("merchant", view.MerchantId.Value);
-        update.Parameters.AddWithValue("attempt", NpgsqlTypes.NpgsqlDbType.Uuid, (object?)attempt ?? DBNull.Value);
-        update.Parameters.AddWithValue("refund", NpgsqlTypes.NpgsqlDbType.Uuid, (object?)refund ?? DBNull.Value);
-        update.Parameters.AddWithValue("payment", view.Id.Value);
-        await update.ExecuteNonQueryAsync(cancellationToken);
     }
 
     private static async Task InsertFraudOutboxAsync(
@@ -1040,7 +1052,7 @@ public sealed class PaymentStore
         await using var command = new NpgsqlCommand(
             """
             select r.id, r.payment_id, r.state, r.amount_minor, r.psp,
-                   r.psp_account_id, r.created_at, p.currency
+                   r.psp_account_id, r.created_at, p.currency, r.idempotency_key, r.resolves_key
             from refunds r
             join payments p on p.id = r.payment_id
             where r.id = @id and r.merchant_id = @merchant
@@ -1065,7 +1077,9 @@ public sealed class PaymentStore
                 null,
                 reader.GetString(4),
                 reader.GetGuid(5),
-                reader.GetDateTime(6)));
+                reader.GetDateTime(6),
+                reader.IsDBNull(8) ? null : reader.GetString(8),
+                reader.GetBoolean(9)));
     }
 
     public async Task<AttemptId?> GetAuthorizedAttemptAsync(
@@ -1176,13 +1190,11 @@ public sealed class PaymentStore
                 await InsertAttemptAsync(
                     connection, transaction, command.PaymentId, merchant,
                     new AttemptChange(attemptId, AttemptOperation.Authorize, AttemptState.Failed, "fraud_blocked"),
-                    pspAccount, command.Psp, command.MethodRef, command.MethodType, ct);
+                    pspAccount, command.Psp, command.MethodRef, command.MethodType,
+                    command.Key, false, ct);
                 await InsertFraudOutboxAsync(connection, transaction, command.PaymentId, merchant, attemptId, ct);
-                await StoreResponseAsync(
-                    connection, transaction,
-                    (await LoadPaymentAsync(command.PaymentId, merchant, ct, connection, transaction))!,
-                    new PaymentCommand.FraudBlock(attemptId, "fraud_blocked", DateTimeOffset.UtcNow),
-                    response, ct);
+                await ResolveKeyInTransactionAsync(
+                    connection, transaction, merchant, command.Key, response, ct);
                 var view = await LoadPaymentAsync(
                     command.PaymentId, merchant, ct, connection, transaction);
                 return new BeginResult.Created(view!);
@@ -1198,7 +1210,8 @@ public sealed class PaymentStore
         PaymentCommand command,
         AttemptId? attemptId,
         RefundId? refundId,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken,
+        bool resolvesKey = true)
     {
         var existing = await ReadKeyAsync(merchant, key, requestHash, cancellationToken);
         switch (existing)
@@ -1253,7 +1266,7 @@ public sealed class PaymentStore
                 }
 
                 var applied = await PersistAsync(
-                    connection, transaction, view, command, accepted, null, ct);
+                    connection, transaction, view, command, accepted, null, ct, key, resolvesKey);
                     if (applied is ApplyResult.Applied done)
                     {
                         return new BeginOperationResult.Started(done.Payment);
@@ -1408,7 +1421,9 @@ public sealed class PaymentStore
                     reader.IsDBNull(3) ? null : new AttemptId(reader.GetGuid(3)),
                     reader.IsDBNull(4) ? null : reader.GetString(4),
                     reader.GetString(5),
-                    reader.GetGuid(6));
+                    reader.GetGuid(6),
+                    reader.IsDBNull(7) ? null : reader.GetString(7),
+                    reader.GetBoolean(8));
             }
         }
 
@@ -1426,7 +1441,9 @@ public sealed class PaymentStore
                     null,
                     reader.GetString(3),
                     reader.GetGuid(4),
-                    reader.GetDateTime(5));
+                    reader.GetDateTime(5),
+                    reader.IsDBNull(6) ? null : reader.GetString(6),
+                    reader.GetBoolean(7));
             }
         }
 

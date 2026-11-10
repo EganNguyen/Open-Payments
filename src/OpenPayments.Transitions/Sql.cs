@@ -13,7 +13,8 @@ internal static class Sql
         """;
 
     public const string LoadAttempt = """
-        select attempt_id, operation, state, target_attempt_id, failure_code, psp, psp_account_id
+        select attempt_id, operation, state, target_attempt_id, failure_code, psp, psp_account_id,
+               idempotency_key, resolves_key
         from payment_attempts
         where payment_id = @payment_id
         order by created_at desc
@@ -21,7 +22,8 @@ internal static class Sql
         """;
 
     public const string LoadRefund = """
-        select id, state, amount_minor, psp, psp_account_id, created_at
+        select id, state, amount_minor, psp, psp_account_id, created_at,
+               idempotency_key, resolves_key
         from refunds
         where payment_id = @payment_id
         order by created_at desc
