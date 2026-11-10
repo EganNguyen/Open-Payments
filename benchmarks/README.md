@@ -138,6 +138,10 @@ no request can append between the truncate and the restart.
 
 The tests are the validity rules themselves: dropped arrivals, generator CPU, mock latency, a failed applicable check, an inapplicable check shown as n/a, a metric/database mismatch, the achieved mix shares, and the preview label.
 
+## Results page
+
+After a run is recorded in [BASELINE](BASELINE.md), add its ID to `report-runs.json` and run `scripts/bench-page.sh` to rebuild the [results page](https://egannguyen.github.io/Open-Payments/). The steps and rules are in [Keeping the results page in sync](../docs/benchmarks/results-page.md).
+
 ## Limitations
 
 - A laptop run is a **preview**. Only a Linux run from Phase 3 onward, with all applicable checks and a clean tree, is a recorded result.

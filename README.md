@@ -8,12 +8,12 @@ Status: Stage 1 built and reviewed, D56 laptop verification not yet run · Last 
 
 ### Benchmark report
 
-The [OP-BENCH Results](https://egannguyen.github.io/Open-Payments/) page shows the highest valid laptop result, 248.32 completed payments/s at step 5, then the overall verdict, every gate with its source, and every run, including excluded ones. It's a laptop preview as of `13e851a`, not a capacity number.
+The [OP-BENCH Results](https://egannguyen.github.io/Open-Payments/) page shows the highest valid laptop result, then the overall verdict, every gate with its source, and every run, including excluded ones. It's generated from the recorded runs and is a laptop preview, not a capacity number. To update it, see [Keeping the results page in sync](docs/benchmarks/results-page.md).
 
 <a href="https://egannguyen.github.io/Open-Payments/">
   <picture>
     <source media="(prefers-color-scheme: dark)" srcset="docs/design/op-bench-report/preview-dark.png">
-    <img src="docs/design/op-bench-report/preview-light.png" width="800" alt="OP-BENCH Results: highest valid result 248.32 completed payments/s at step 5 with p50 6.07 ms and p99 17.74 ms; overall verdict INCONCLUSIVE (PREVIEW)">
+    <img src="docs/design/op-bench-report/preview-light.png" width="800" alt="OP-BENCH Results: the highest valid result with its latency and correctness gates, then the overall verdict and how it was reached">
   </picture>
 </a>
 
@@ -87,6 +87,7 @@ Read them in this order if you are new.
 | [Load harness](benchmarks/README.md) | Running a ramp step against the API, reset, validity rules | You run a platform benchmark |
 | [BASELINE](benchmarks/BASELINE.md) | Laptop ramp results at the D47 mix | You need the latest platform numbers |
 | [Open experiments](docs/benchmarks/open-experiments.md) | What's still unmeasured, and in what order to run it | You plan the next benchmark |
+| [Results page sync](docs/benchmarks/results-page.md) | Where each fact on the results page lives, and how to update and publish it | A run finishes or other evidence changes |
 | [Development challenges](docs/development-challenges.md) | Problems found so far, their root causes, fixes and evidence | You want to know what went wrong and why |
 | Gate records in [`docs/gates/`](docs/gates/) | Design approvals, build progress, escalations | You check what's approved, built or blocked |
 | [Stripe research](docs/stripe-research.md) | What Stripe has published, proposed design changes, what not to copy | Before accepting the design or starting Phase 0 |
