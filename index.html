@@ -3,7 +3,8 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-<meta name="description" content="Stage 1 benchmark report for Open Payments: verdict first, the rule that produced it, gates with sources, and every run.">
+<meta name="description" content="Open Payments benchmark report: the highest valid result, the verdict and the rule that produced it, gates with sources, and every run.">
+<!-- Template for benchmarks/bench_page.py. Data goes into the report-data slot; edit layout here, never numbers. -->
 <style>body{margin:0}[hidden]{display:none!important}img{max-width:100%}</style>
 <title>OP-BENCH Results</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
@@ -204,9 +205,818 @@ footer.foot { padding-top: 28px; font-size: 12.5px; color: var(--muted); display
   .chart .pt circle { transition: stroke-width 120ms ease; }
 }
 </style>
+<style>
+.st.missing { color: var(--inc); border: 1px dashed var(--inc); background: transparent; }
+.st.missing::before { content: "!"; }
+.empty { padding: 18px 20px; background: var(--surface); border: 1px dashed var(--rule-strong); color: var(--muted); }
+</style>
 </head>
 <body>
-
+<script type="application/json" id="report-data">{
+ "as_of": "2026-11-10",
+ "tree": "2940311",
+ "label": "PREVIEW",
+ "thresholds": {
+  "p50_ms": 25,
+  "p99_ms": 100,
+  "error_rate_pct": 0.1
+ },
+ "headline": {
+  "run_id": "20261109T045857Z-e4bff52-s5-47d3",
+  "short_id": "s5-47d3",
+  "step": 5,
+  "target": 500.0,
+  "admitted": 491.98,
+  "completed_exact": 248.32,
+  "completed_whole": 248,
+  "milestone": 500,
+  "milestone_pct": 49.7,
+  "p50": 6.07,
+  "p99": 17.74,
+  "error_pct": 0.0,
+  "api_cpu_pct": 117.88,
+  "pool_wait_s": 0.0,
+  "deadlocks": 0.0,
+  "checks_passed": 8,
+  "checks_applicable": 8,
+  "checks_passing": [
+   "CK1",
+   "CK2",
+   "CK3",
+   "CK4",
+   "CK5",
+   "CK6",
+   "CK9",
+   "CK10"
+  ],
+  "checks_na": [
+   "CK7",
+   "CK8"
+  ]
+ },
+ "gates": [
+  {
+   "id": "correctness",
+   "name": "Correctness",
+   "requirement": "All applicable CK checks pass in every run",
+   "kind": "correctness",
+   "status": "INCONCLUSIVE",
+   "evidence": "CK1, CK2, CK3, CK4, CK5, CK6, CK9, CK10 pass in all 5 runs. CK7, CK8 n/a. CK7 and CK8 start in Phase 2, and CK11 isn't built.",
+   "source": "op-checks · checks in result.md",
+   "runs": [
+    "20261109T043519Z-3faaaf6-s0-14c1",
+    "20261109T044032Z-3faaaf6-s1-005e",
+    "20261109T044543Z-3faaaf6-s3-7dce",
+    "20261109T045857Z-e4bff52-s5-47d3",
+    "20261109T050918Z-786d8ef-s6-0bba"
+   ]
+  },
+  {
+   "id": "duplicates",
+   "name": "Duplicates, missing, partial",
+   "requirement": "0, from CK1, CK2 and CK9",
+   "kind": "correctness",
+   "status": "PASS",
+   "evidence": "CK1, CK2 and CK9 pass in all 5 runs.",
+   "source": "CK1 CK2 CK9",
+   "runs": [
+    "20261109T043519Z-3faaaf6-s0-14c1",
+    "20261109T044032Z-3faaaf6-s1-005e",
+    "20261109T044543Z-3faaaf6-s3-7dce",
+    "20261109T045857Z-e4bff52-s5-47d3",
+    "20261109T050918Z-786d8ef-s6-0bba"
+   ]
+  },
+  {
+   "id": "throughput",
+   "name": "Throughput",
+   "requirement": "≥ 500 completed payments/s in each of 3 valid runs",
+   "kind": "performance",
+   "status": "INCONCLUSIVE",
+   "evidence": "0 of 3 valid runs reached 500 completed payments/s. Best valid: 248/s at step 5. Best in any run: 498/s, in an invalid run.",
+   "source": "DB count · result.md",
+   "runs": []
+  },
+  {
+   "id": "platform_overhead",
+   "name": "Platform overhead",
+   "requirement": "p50 ≤ 25 ms, p99 ≤ 100 ms",
+   "kind": "performance",
+   "status": "INCONCLUSIVE",
+   "evidence": "Held through step 5 (p99 17.74 ms). Above that, only invalid runs: worst p99 58.43 ms, which can't count as a FAIL either.",
+   "source": "op_platform_overhead_seconds",
+   "runs": [
+    "20261109T045857Z-e4bff52-s5-47d3",
+    "20261109T050918Z-786d8ef-s6-0bba"
+   ]
+  },
+  {
+   "id": "error_rate",
+   "name": "Error rate",
+   "requirement": "< 0.1%, excluding 402, 409, 429, 503",
+   "kind": "performance",
+   "status": "PASS",
+   "evidence": "Highest: 0.000% (step 0) across 4 valid runs.",
+   "source": "k6 + API",
+   "runs": [
+    "20261109T043519Z-3faaaf6-s0-14c1"
+   ]
+  },
+  {
+   "id": "bounded_retries",
+   "name": "Bounded retries",
+   "requirement": "No transaction > 2 retries; app retries agree with PG deadlocks",
+   "kind": "reliability",
+   "status": "INCONCLUSIVE",
+   "evidence": "Retry counts by SQLSTATE aren't in the run report.",
+   "source": "op_tx_retries_total · not reported",
+   "runs": []
+  },
+  {
+   "id": "tx1",
+   "name": "Forced deadlock",
+   "requirement": "TX1 and C34 pass, deadlocks > 0 seen",
+   "kind": "reliability",
+   "status": "INCONCLUSIVE",
+   "evidence": "TX1 isn't built. A fixture test raises a real deadlock (`0f92846`), but it isn't TX1.",
+   "source": "no evidence",
+   "runs": []
+  },
+  {
+   "id": "tx2",
+   "name": "Retry exhaustion",
+   "requirement": "TX2 passes",
+   "kind": "reliability",
+   "status": "INCONCLUSIVE",
+   "evidence": "TX2 isn't built.",
+   "source": "no evidence",
+   "runs": []
+  },
+  {
+   "id": "c54",
+   "name": "Restart durability",
+   "requirement": "C54 passes, fault verified",
+   "kind": "reliability",
+   "status": "INCONCLUSIVE",
+   "evidence": "C54 isn't built. Crash tests K1–K3 pass 6 of 6 (`823a100`), related evidence, not this gate.",
+   "source": "K1–K3",
+   "runs": []
+  },
+  {
+   "id": "recovery",
+   "name": "Recovery",
+   "requirement": "First success ≤ 30 s; p99 under SLO ≤ 2 min after removal",
+   "kind": "reliability",
+   "status": "INCONCLUSIVE",
+   "evidence": "No fault-driver run yet.",
+   "source": "ack log · none",
+   "runs": []
+  },
+  {
+   "id": "psp_lifecycle",
+   "name": "PSP lifecycle",
+   "requirement": "Every interrupted payment classed L0–L5",
+   "kind": "reliability",
+   "status": "INCONCLUSIVE",
+   "evidence": "Needs CK11.",
+   "source": "no evidence",
+   "runs": []
+  },
+  {
+   "id": "crash_recovery",
+   "name": "Crash recovery",
+   "requirement": "Resolver reconciles unknown outcomes",
+   "kind": "reliability",
+   "status": "NOT_APPLICABLE",
+   "evidence": "The resolver arrives in Stage 2. Expected until then.",
+   "source": "spec §7",
+   "runs": []
+  },
+  {
+   "id": "diagnostics",
+   "name": "Diagnostics",
+   "requirement": "`pg_stat_statements` and manifest complete",
+   "kind": "evidence",
+   "status": "INCONCLUSIVE",
+   "evidence": "Runs record `config.json`; the §8.1 manifest isn't written yet.",
+   "source": "manifest.json · none",
+   "runs": []
+  },
+  {
+   "id": "soak",
+   "name": "Soak",
+   "requirement": "No upward trend in RSS, Gen 2 GC/s, pool wait",
+   "kind": "reliability",
+   "status": "INCONCLUSIVE",
+   "evidence": "Needs a stable rate first (D56).",
+   "source": "not run",
+   "runs": []
+  },
+  {
+   "id": "run_validity",
+   "name": "Run validity",
+   "requirement": "No dropped arrivals, generator CPU ≤ 80%, mix within bounds",
+   "kind": "validity",
+   "status": "FAIL",
+   "evidence": "Step 6 (s6-0bba): generator dropped 68 arrivals.",
+   "source": "report.py",
+   "runs": [
+    "20261109T050918Z-786d8ef-s6-0bba"
+   ]
+  }
+ ],
+ "verdict": {
+  "verdict": "INCONCLUSIVE",
+  "rule": 2,
+  "triggers": [
+   "correctness",
+   "throughput",
+   "platform_overhead",
+   "bounded_retries",
+   "tx1",
+   "tx2",
+   "c54",
+   "recovery",
+   "psp_lifecycle",
+   "crash_recovery",
+   "diagnostics",
+   "soak",
+   "run_validity"
+  ]
+ },
+ "runs": [
+  {
+   "step": 0,
+   "target": 1.0,
+   "duration_s": 300,
+   "started_at": "2026-11-09T04:01:09Z",
+   "commit": "3d728c1",
+   "admitted": 1.09,
+   "completed": 0.0,
+   "p50": 0.0,
+   "p95": 0.0,
+   "p99": 0.0,
+   "error_pct": 100.0,
+   "api_cpu_pct": 0.26,
+   "pool_wait_s": 0.0,
+   "deadlocks": 0.0,
+   "gates_passed": false,
+   "valid": false,
+   "invalid_because": [
+    "sale share 37.2% misses 40.0% by 2.8 points",
+    "authorize share 18.9% misses 10.0% by 8.9 points",
+    "capture share 0.0% misses 10.0% by 10.0 points",
+    "status share 19.5% misses 15.0% by 4.5 points"
+   ],
+   "gate_reasons": [
+    "error rate 100.000% is over 0.1%"
+   ],
+   "checks": {
+    "CK1": "pass",
+    "CK2": "pass",
+    "CK3": "pass",
+    "CK4": "pass",
+    "CK5": "pass",
+    "CK6": "pass",
+    "CK7": "n/a",
+    "CK8": "n/a",
+    "CK9": "pass",
+    "CK10": "pass"
+   },
+   "run_id": "20261109T040109Z-3d728c1-s0-3b3c",
+   "short_id": "s0-3b3c",
+   "status": "excluded",
+   "exclude_reason": "Sent no API token; every request 401",
+   "note": null,
+   "completed_whole": 0,
+   "result_path": "benchmarks/runs/20261109T040109Z-3d728c1-s0-3b3c/result.md"
+  },
+  {
+   "step": 0,
+   "target": 1.0,
+   "duration_s": 300,
+   "started_at": "2026-11-09T04:07:58Z",
+   "commit": "4540c23",
+   "admitted": 1.09,
+   "completed": 0.61,
+   "p50": 26.18,
+   "p95": 39.3,
+   "p99": 123.55,
+   "error_pct": 0.0,
+   "api_cpu_pct": 1.39,
+   "pool_wait_s": 0.0,
+   "deadlocks": 0.0,
+   "gates_passed": false,
+   "valid": false,
+   "invalid_because": [
+    "completed metric 188 differs from database 312801"
+   ],
+   "gate_reasons": [
+    "p99 123.55 ms is over 100 ms",
+    "p50 26.18 ms is over 25 ms"
+   ],
+   "checks": {
+    "CK1": "pass",
+    "CK2": "pass",
+    "CK3": "pass",
+    "CK4": "pass",
+    "CK5": "pass",
+    "CK6": "pass",
+    "CK7": "n/a",
+    "CK8": "n/a",
+    "CK9": "pass",
+    "CK10": "pass"
+   },
+   "run_id": "20261109T040758Z-4540c23-s0-2958",
+   "short_id": "s0-2958",
+   "status": "excluded",
+   "exclude_reason": "Ran before the full reset: count mismatch (E8)",
+   "note": null,
+   "completed_whole": 0,
+   "result_path": "benchmarks/runs/20261109T040758Z-4540c23-s0-2958/result.md"
+  },
+  {
+   "step": 0,
+   "target": 1.0,
+   "duration_s": 300,
+   "started_at": "2026-11-09T04:28:13Z",
+   "commit": "18d0f63",
+   "admitted": 1.09,
+   "completed": 0.66,
+   "p50": 19.97,
+   "p95": 30.11,
+   "p99": 137.61,
+   "error_pct": 0.0,
+   "api_cpu_pct": 1.54,
+   "pool_wait_s": 0.0,
+   "deadlocks": 0.0,
+   "gates_passed": false,
+   "valid": true,
+   "invalid_because": [],
+   "gate_reasons": [
+    "p99 137.61 ms is over 100 ms"
+   ],
+   "checks": {
+    "CK1": "pass",
+    "CK2": "pass",
+    "CK3": "pass",
+    "CK4": "pass",
+    "CK5": "pass",
+    "CK6": "pass",
+    "CK7": "n/a",
+    "CK8": "n/a",
+    "CK9": "pass",
+    "CK10": "pass"
+   },
+   "run_id": "20261109T042813Z-18d0f63-s0-2291",
+   "short_id": "s0-2291",
+   "status": "excluded",
+   "exclude_reason": "Counted setup() latency (E8)",
+   "note": null,
+   "completed_whole": 0,
+   "result_path": "benchmarks/runs/20261109T042813Z-18d0f63-s0-2291/result.md"
+  },
+  {
+   "step": 0,
+   "target": 1.0,
+   "duration_s": 300,
+   "started_at": "2026-11-09T04:35:19Z",
+   "commit": "3faaaf6",
+   "admitted": 1.09,
+   "completed": 0.64,
+   "p50": 20.41,
+   "p95": 28.15,
+   "p99": 30.35,
+   "error_pct": 0.0,
+   "api_cpu_pct": 1.04,
+   "pool_wait_s": 0.0,
+   "deadlocks": 0.0,
+   "gates_passed": true,
+   "valid": true,
+   "invalid_because": [],
+   "gate_reasons": [],
+   "checks": {
+    "CK1": "pass",
+    "CK2": "pass",
+    "CK3": "pass",
+    "CK4": "pass",
+    "CK5": "pass",
+    "CK6": "pass",
+    "CK7": "n/a",
+    "CK8": "n/a",
+    "CK9": "pass",
+    "CK10": "pass"
+   },
+   "run_id": "20261109T043519Z-3faaaf6-s0-14c1",
+   "short_id": "s0-14c1",
+   "status": "included",
+   "exclude_reason": null,
+   "note": null,
+   "completed_whole": 0,
+   "result_path": "benchmarks/runs/20261109T043519Z-3faaaf6-s0-14c1/result.md"
+  },
+  {
+   "step": 1,
+   "target": 10.0,
+   "duration_s": 300,
+   "started_at": "2026-11-09T04:40:32Z",
+   "commit": "3faaaf6",
+   "admitted": 9.98,
+   "completed": 5.09,
+   "p50": 15.4,
+   "p95": 23.01,
+   "p99": 26.46,
+   "error_pct": 0.0,
+   "api_cpu_pct": 6.49,
+   "pool_wait_s": 0.0,
+   "deadlocks": 0.0,
+   "gates_passed": true,
+   "valid": true,
+   "invalid_because": [],
+   "gate_reasons": [],
+   "checks": {
+    "CK1": "pass",
+    "CK2": "pass",
+    "CK3": "pass",
+    "CK4": "pass",
+    "CK5": "pass",
+    "CK6": "pass",
+    "CK7": "n/a",
+    "CK8": "n/a",
+    "CK9": "pass",
+    "CK10": "pass"
+   },
+   "run_id": "20261109T044032Z-3faaaf6-s1-005e",
+   "short_id": "s1-005e",
+   "status": "included",
+   "exclude_reason": null,
+   "note": null,
+   "completed_whole": 5,
+   "result_path": "benchmarks/runs/20261109T044032Z-3faaaf6-s1-005e/result.md"
+  },
+  {
+   "step": 3,
+   "target": 100.0,
+   "duration_s": 600,
+   "started_at": "2026-11-09T04:45:43Z",
+   "commit": "3faaaf6",
+   "admitted": 99.16,
+   "completed": 49.81,
+   "p50": 6.79,
+   "p95": 9.72,
+   "p99": 12.57,
+   "error_pct": 0.0,
+   "api_cpu_pct": 34.28,
+   "pool_wait_s": 0.0,
+   "deadlocks": 0.0,
+   "gates_passed": true,
+   "valid": true,
+   "invalid_because": [],
+   "gate_reasons": [],
+   "checks": {
+    "CK1": "pass",
+    "CK2": "pass",
+    "CK3": "pass",
+    "CK4": "pass",
+    "CK5": "pass",
+    "CK6": "pass",
+    "CK7": "n/a",
+    "CK8": "n/a",
+    "CK9": "pass",
+    "CK10": "pass"
+   },
+   "run_id": "20261109T044543Z-3faaaf6-s3-7dce",
+   "short_id": "s3-7dce",
+   "status": "included",
+   "exclude_reason": null,
+   "note": null,
+   "completed_whole": 49,
+   "result_path": "benchmarks/runs/20261109T044543Z-3faaaf6-s3-7dce/result.md"
+  },
+  {
+   "step": 5,
+   "target": 500.0,
+   "duration_s": 600,
+   "started_at": "2026-11-09T04:58:57Z",
+   "commit": "e4bff52",
+   "admitted": 491.98,
+   "completed": 248.32,
+   "p50": 6.07,
+   "p95": 12.07,
+   "p99": 17.74,
+   "error_pct": 0.0,
+   "api_cpu_pct": 117.88,
+   "pool_wait_s": 0.0,
+   "deadlocks": 0.0,
+   "gates_passed": true,
+   "valid": true,
+   "invalid_because": [],
+   "gate_reasons": [],
+   "checks": {
+    "CK1": "pass",
+    "CK2": "pass",
+    "CK3": "pass",
+    "CK4": "pass",
+    "CK5": "pass",
+    "CK6": "pass",
+    "CK7": "n/a",
+    "CK8": "n/a",
+    "CK9": "pass",
+    "CK10": "pass"
+   },
+   "run_id": "20261109T045857Z-e4bff52-s5-47d3",
+   "short_id": "s5-47d3",
+   "status": "included",
+   "exclude_reason": null,
+   "note": null,
+   "completed_whole": 248,
+   "result_path": "benchmarks/runs/20261109T045857Z-e4bff52-s5-47d3/result.md"
+  },
+  {
+   "step": 6,
+   "target": 1000.0,
+   "duration_s": 900,
+   "started_at": "2026-11-09T05:09:18Z",
+   "commit": "786d8ef",
+   "admitted": 988.84,
+   "completed": 498.33,
+   "p50": 12.21,
+   "p95": 28.73,
+   "p99": 58.43,
+   "error_pct": 0.0,
+   "api_cpu_pct": 194.25,
+   "pool_wait_s": 0.0,
+   "deadlocks": 0.0,
+   "gates_passed": true,
+   "valid": false,
+   "invalid_because": [
+    "generator dropped 68 arrivals"
+   ],
+   "gate_reasons": [],
+   "checks": {
+    "CK1": "pass",
+    "CK2": "pass",
+    "CK3": "pass",
+    "CK4": "pass",
+    "CK5": "pass",
+    "CK6": "pass",
+    "CK7": "n/a",
+    "CK8": "n/a",
+    "CK9": "pass",
+    "CK10": "pass"
+   },
+   "run_id": "20261109T050918Z-786d8ef-s6-0bba",
+   "short_id": "s6-0bba",
+   "status": "included",
+   "exclude_reason": null,
+   "note": "Ends the D47 search under E4",
+   "completed_whole": 498,
+   "result_path": "benchmarks/runs/20261109T050918Z-786d8ef-s6-0bba/result.md"
+  },
+  {
+   "step": null,
+   "target": null,
+   "duration_s": null,
+   "started_at": null,
+   "commit": null,
+   "admitted": null,
+   "completed": null,
+   "p50": null,
+   "p95": null,
+   "p99": null,
+   "error_pct": null,
+   "api_cpu_pct": null,
+   "pool_wait_s": null,
+   "deadlocks": null,
+   "gates_passed": null,
+   "valid": null,
+   "invalid_because": [],
+   "gate_reasons": [],
+   "checks": {},
+   "run_id": "20261109T082010Z-7323d59-s6-5db4",
+   "short_id": "s6-5db4",
+   "status": "missing",
+   "exclude_reason": null,
+   "note": "Fresh DB; BASELINE records p99 173.47 ms, invalid on its completed count",
+   "completed_whole": null,
+   "result_path": "benchmarks/runs/20261109T082010Z-7323d59-s6-5db4/result.md"
+  },
+  {
+   "step": 6,
+   "target": 1000.0,
+   "duration_s": 900,
+   "started_at": "2026-11-09T10:07:30Z",
+   "commit": "96384d2",
+   "admitted": 982.51,
+   "completed": 491.86,
+   "p50": 27.52,
+   "p95": 461.52,
+   "p99": 861.57,
+   "error_pct": 0.001,
+   "api_cpu_pct": 175.27,
+   "pool_wait_s": 0.0,
+   "deadlocks": 0.0,
+   "gates_passed": false,
+   "valid": false,
+   "invalid_because": [
+    "generator dropped 5607 arrivals"
+   ],
+   "gate_reasons": [
+    "p99 861.57 ms is over 100 ms",
+    "p50 27.52 ms is over 25 ms",
+    "CK5 failed"
+   ],
+   "checks": {
+    "CK1": "pass",
+    "CK2": "pass",
+    "CK3": "pass",
+    "CK4": "pass",
+    "CK5": "FAIL",
+    "CK6": "pass",
+    "CK7": "n/a",
+    "CK8": "n/a",
+    "CK9": "pass",
+    "CK10": "pass"
+   },
+   "run_id": "20261109T100730Z-96384d2-s6-1daa",
+   "short_id": "s6-1daa",
+   "status": "excluded",
+   "exclude_reason": "Another session's run, not in BASELINE",
+   "note": null,
+   "completed_whole": 491,
+   "result_path": "benchmarks/runs/20261109T100730Z-96384d2-s6-1daa/result.md"
+  },
+  {
+   "step": 6,
+   "target": 1000.0,
+   "duration_s": 900,
+   "started_at": "2026-11-09T11:00:48Z",
+   "commit": "9874593",
+   "admitted": 986.23,
+   "completed": 496.58,
+   "p50": 30.57,
+   "p95": 361.89,
+   "p99": 588.03,
+   "error_pct": 0.0,
+   "api_cpu_pct": 198.21,
+   "pool_wait_s": 0.0,
+   "deadlocks": 0.0,
+   "gates_passed": false,
+   "valid": false,
+   "invalid_because": [
+    "generator dropped 2319 arrivals"
+   ],
+   "gate_reasons": [
+    "p99 588.03 ms is over 100 ms",
+    "p50 30.57 ms is over 25 ms"
+   ],
+   "checks": {
+    "CK1": "pass",
+    "CK2": "pass",
+    "CK3": "pass",
+    "CK4": "pass",
+    "CK5": "pass",
+    "CK6": "pass",
+    "CK7": "n/a",
+    "CK8": "n/a",
+    "CK9": "pass",
+    "CK10": "pass"
+   },
+   "run_id": "20261109T110048Z-9874593-s6-0fae",
+   "short_id": "s6-0fae",
+   "status": "excluded",
+   "exclude_reason": "Another session's run, not in BASELINE",
+   "note": null,
+   "completed_whole": 496,
+   "result_path": "benchmarks/runs/20261109T110048Z-9874593-s6-0fae/result.md"
+  },
+  {
+   "step": 6,
+   "target": 1000.0,
+   "duration_s": 900,
+   "started_at": "2026-11-09T11:22:00Z",
+   "commit": "9874593",
+   "admitted": 14.36,
+   "completed": 6.8,
+   "p50": 49.63,
+   "p95": 1190.38,
+   "p99": 967400.19,
+   "error_pct": 0.15,
+   "api_cpu_pct": 107.27,
+   "pool_wait_s": 0.0,
+   "deadlocks": 0.0,
+   "gates_passed": false,
+   "valid": false,
+   "invalid_because": [
+    "generator dropped 119539 arrivals",
+    "completed metric 374639 differs from database 374930"
+   ],
+   "gate_reasons": [
+    "p99 967400.19 ms is over 100 ms",
+    "p50 49.63 ms is over 25 ms",
+    "error rate 0.150% is over 0.1%",
+    "CK5 failed"
+   ],
+   "checks": {
+    "CK1": "pass",
+    "CK2": "pass",
+    "CK3": "pass",
+    "CK4": "pass",
+    "CK5": "FAIL",
+    "CK6": "pass",
+    "CK7": "n/a",
+    "CK8": "n/a",
+    "CK9": "pass",
+    "CK10": "pass"
+   },
+   "run_id": "20261109T112159Z-9874593-s6-7b7b",
+   "short_id": "s6-7b7b",
+   "status": "excluded",
+   "exclude_reason": "Another session's run, not in BASELINE",
+   "note": null,
+   "completed_whole": 6,
+   "result_path": "benchmarks/runs/20261109T112159Z-9874593-s6-7b7b/result.md"
+  }
+ ],
+ "d56": [
+  {
+   "check": "Capacity",
+   "run": "Step 4 once, step 6 three times, each from a reset, two API instances behind nginx",
+   "passes_if": "Valid runs whose gates all pass; sets the stable rate",
+   "result": "NOT RUN"
+  },
+  {
+   "check": "Soak",
+   "run": "60 min at the stable rate",
+   "passes_if": "Gates hold; CK1–CK6 pass; no upward trend in memory, Gen 2 GC, ThreadPool queue, pool wait",
+   "result": "BLOCKED",
+   "note": "needs stable rate"
+  },
+  {
+   "check": "L3, scaled",
+   "run": "3× the stable rate for 10 min",
+   "passes_if": "Excess rejected as 429/503; no restart or OOM; p99 < 100 ms within 2 min after; CK1–CK6 pass",
+   "result": "BLOCKED",
+   "note": "needs stable rate"
+  },
+  {
+   "check": "C1, scaled",
+   "run": "Primary CPU throttled ~5× slower at stable load",
+   "passes_if": "Fast 503 shedding; `40P01`/`40001` retries < 1%; no ThreadPool starvation",
+   "result": "BLOCKED",
+   "note": "needs stable rate"
+  },
+  {
+   "check": "C2",
+   "run": "PgBouncer pool shrunk below demand, then restored",
+   "passes_if": "Waits bounded by `query_wait_timeout`, failed as 503; recovers with no restart",
+   "result": "NOT RUN"
+  },
+  {
+   "check": "C7, partial",
+   "run": "Primary killed under load; higher-replay standby promoted by hand",
+   "passes_if": "RPO 0: every 200/202 payment on the new primary; CK1, CK3 pass",
+   "result": "NOT RUN"
+  },
+  {
+   "check": "Alerts",
+   "run": "`CommitWarning`, `AbandonedCommitsStuck`, `UnresolvedOperationAging`",
+   "passes_if": "Each seen firing in a running Prometheus",
+   "result": "NOT RUN"
+  }
+ ],
+ "not_established": [
+  "**No capacity `C` and no instance count `N`.** Laptop runs are previews; D53 moves both to the first Linux run.",
+  "Nothing about the **5,000 payments/s** target. A laptop result can't be scaled to it.",
+  "No bottleneck is named from a generator limit or from an invalid run."
+ ],
+ "reproduce": [
+  [
+   "Stack",
+   "Docker Compose: PostgreSQL 18.6 primary with two quorum standbys, PgBouncer 1.26.1, one mock PSP; API instances per run"
+  ],
+  [
+   "Mock PSP",
+   "Fixed 200 ms, 0 ms jitter, 3% declines"
+  ],
+  [
+   "Mix",
+   "D47, `TWO_CALL_SHARE=0.2`: 40% sale, 10% authorize, 10% capture, 15% status, 10% refund, 10% retry, 5% other"
+  ],
+  [
+   "Generator",
+   "k6 `ramping-arrival-rate`, open model"
+  ],
+  [
+   "Validity rules",
+   "No dropped arrivals, generator CPU ≤ 80%, mock added p99 ≤ 5 ms, shares within `max(2 pp, 3·√(p(1−p)/n))`"
+  ],
+  [
+   "Rebuild this page",
+   "`scripts/bench-page.sh` after adding a run to `benchmarks/report-runs.json`"
+  ]
+ ]
+}</script>
 <div class="page">
 
   <header class="masthead">
@@ -215,128 +1025,47 @@ footer.foot { padding-top: 28px; font-size: 12.5px; color: var(--muted); display
         <span class="eyebrow">Open Payments · Stage 1 · Benchmark report</span>
         <h1>OP-BENCH Results</h1>
       </div>
-      <div class="idline">
-        <span>as of <b>2026-11-10</b></span>
-        <span>tree <b>13e851a</b></span>
-        <span>rules <b>spec §7</b></span>
-        <span>mix <b>D47</b></span>
-      </div>
+      <div class="idline" id="idline"></div>
     </div>
-
-    <section class="headline" aria-label="Highest valid result">
-      <div class="hl-main">
-        <div class="hl-eyebrow">
-          <span class="eyebrow">Highest valid result · step 5</span>
-          <span class="st pass">VALID</span>
-          <span class="tag label" title="Laptop result. Only a Linux run from Phase 3 on can be RECORDED.">PREVIEW</span>
-        </div>
-        <div class="hl-figure">
-          <span class="hl-num num">248.32</span>
-          <span class="hl-unit">completed<br>payments/s</span>
-        </div>
-        <p class="hl-context">At 500 req/s offered (491.98 admitted) on one API instance with the D47 mix. Every gate passed. <button class="src" title="20261109T045857Z-e4bff52-s5-47d3 · result.md, DB count">s5-47d3</button></p>
-        <div class="milestone">
-          <div class="ms-track" role="img" aria-label="248.32 of the 500 completed payments per second laptop milestone, 49.7 percent">
-            <span class="ms-fill" style="width:49.66%"></span>
-            <span class="ms-ghost" title="500.03/s at step 6, invalid run"></span>
-          </div>
-          <div class="ms-scale"><span class="num">0</span><span class="num">250</span><span class="num">500 · D51 milestone</span></div>
-          <p class="ms-note">49.7% of the laptop milestone. Step 6 reached 500.03/s (hollow mark), but only in invalid runs, so it doesn't count.</p>
-        </div>
-      </div>
-      <dl class="hl-stats">
-        <div><dt>Platform p50</dt><dd class="num">6.07 ms</dd><div class="gauge"><i style="width:24.3%"></i></div><span class="gate-of">gate ≤ 25 ms</span></div>
-        <div><dt>Platform p99</dt><dd class="num">17.74 ms</dd><div class="gauge"><i style="width:17.7%"></i></div><span class="gate-of">gate ≤ 100 ms</span></div>
-        <div><dt>Unexpected errors</dt><dd class="num">0.000%</dd><div class="gauge"><i style="width:0%"></i></div><span class="gate-of">gate &lt; 0.1%</span></div>
-        <div><dt>Correctness</dt><dd>8 of 8 pass</dd><div class="gauge"><i style="width:100%"></i></div><span class="gate-of">CK1–CK6, CK9, CK10 · CK7, CK8 n/a</span></div>
-        <div><dt>API CPU</dt><dd class="num">117.9%</dd><span class="gate-of">of one core · no gate</span></div>
-        <div><dt>Pool wait · deadlocks</dt><dd class="num">0.0 s · 0</dd><span class="gate-of">no gate</span></div>
-      </dl>
-    </section>
-
+    <section class="headline" id="headline" aria-label="Highest valid result"></section>
     <section class="verdict" aria-label="Overall verdict">
       <div class="verdict-main">
         <span class="eyebrow">Overall verdict</span>
-        <div class="verdict-word">INCONCLUSIVE</div>
-        <div class="verdict-tags">
-          <span class="tag label" title="Laptop result. Only a Linux run from Phase 3 on can be RECORDED.">PREVIEW</span>
-        </div>
-        <p class="muted" style="font-size:13.5px">The OP-BENCH orchestrator isn't built yet. This report applies the suite's verdict rules to the harness's per-run results in <code>benchmarks/runs/</code> and the records they point to.</p>
+        <div class="verdict-word" id="verdict-word"></div>
+        <div class="verdict-tags"><span class="tag label" id="label-tag" title="Laptop result. Only a Linux run from Phase 3 on can be RECORDED."></span></div>
+        <p class="muted" style="font-size:13.5px" id="verdict-note"></p>
       </div>
       <div style="display:grid;gap:12px;align-content:start">
         <span class="eyebrow">How the verdict was reached · evaluated in order</span>
-        <ol class="ladder">
-          <li class="skip"><span class="k">1</span><span>Any correctness gate fails → <b>FAIL</b>. CK1–CK6, CK9 and CK10 passed at every counted step.</span><span class="out">not triggered</span></li>
-          <li class="hit"><span class="k">2</span><span>Any run invalid, required scenario skipped, value null, or required gate inconclusive → <b>INCONCLUSIVE</b>. Step 6 is invalid, and 11 of 15 gates are inconclusive.</span><span class="out">stopped here</span></li>
-          <li class="skip"><span class="k">3</span><span>Any performance or reliability gate missed → <b>FAIL</b>.</span><span class="out">not reached</span></li>
-          <li class="skip"><span class="k">4</span><span>Otherwise → <b>PASS</b>.</span><span class="out">not reached</span></li>
-        </ol>
+        <ol class="ladder" id="ladder"></ol>
       </div>
     </section>
   </header>
 
-  <!-- Claims -->
   <section class="section" id="claims">
     <header><span class="eyebrow">§1</span><h2>What the evidence supports</h2><p>Read this before any number below.</p></header>
     <div class="body">
       <div class="claims">
-        <div>
-          <h3>Established, on this laptop</h3>
-          <ul>
-            <li>One API instance holds the platform-overhead gates through <b>500 req/s offered</b>: p50 6.07 ms, p99 17.74 ms at step 5. <button class="src" title="20261109T045857Z-e4bff52-s5-47d3 · result.md">s5-47d3</button></li>
-            <li>No unexpected errors and no correctness failure at any counted step. <button class="src" title="checks.json in the five counted runs">checks.json ×5</button></li>
-            <li>Pool wait was 0.0 s and deadlocks 0 under load at every counted step. <button class="src" title="pgbouncer_pools_client_maxwait_seconds; pg_stat_database_deadlocks">resources.json ×5</button></li>
-            <li>The real API, killed at the money path's three dangerous moments, recovers with no second PSP call. <button class="src" title="dotnet test --filter CrashTests · 6 of 6 · commit 823a100">K1–K3 · 823a100</button></li>
-          </ul>
-        </div>
-        <div class="no">
-          <h3>Not established</h3>
-          <ul>
-            <li><b>No capacity <code>C</code> and no instance count <code>N</code>.</b> Laptop runs are previews; D53 moves both to the first Linux run.</li>
-            <li>Nothing about the <b>5,000 payments/s</b> target. A laptop result can't be scaled to it.</li>
-            <li>The <b>500 payments/s milestone</b> (D51) isn't met: it needs three valid 10-minute runs, and there are none.</li>
-            <li>No bottleneck is named. Step 6's dropped arrivals were a generator limit, and its p99 breach came from a run that was invalid on its count.</li>
-            <li>None of the D56 laptop verification has run, including two API instances behind nginx.</li>
-          </ul>
-        </div>
+        <div><h3>Established, on this laptop</h3><ul id="established"></ul></div>
+        <div class="no"><h3>Not established</h3><ul id="not-established"></ul></div>
       </div>
     </div>
   </section>
 
-  <!-- Gates -->
   <section class="section" id="gates">
     <header><span class="eyebrow">§2</span><h2>Gates</h2><p>Each gate gets its own result. <span class="st na" style="font-size:10.5px">NOT_APPLICABLE</span> is never a pass.</p></header>
     <div class="body">
-      <div class="tablewrap">
-        <table>
-          <thead><tr><th>Gate</th><th>Result</th><th>Evidence</th><th>Source</th></tr></thead>
-          <tbody>
-            <tr><td><div class="gate-name">Correctness</div><div class="gate-req">All applicable CK1–CK11 pass in every scenario</div></td><td><span class="st inc">INCONCLUSIVE</span></td><td>CK1–CK6, CK9, CK10 pass at all 5 counted steps. CK7, CK8 n/a until Phase 2. CK11 isn't built.</td><td><button class="src" title="benchmarks/runs/*/checks.json">op-checks</button></td></tr>
-            <tr><td><div class="gate-name">Duplicates, missing, partial</div><div class="gate-req">0</div></td><td><span class="st pass">PASS</span></td><td>0 via CK1, CK2, CK9 in counted runs. CK11's client-side count is missing.</td><td><button class="src" title="CK1, CK2, CK9 in checks.json">CK1 CK2 CK9</button></td></tr>
-            <tr><td><div class="gate-name">Throughput</div><div class="gate-req">≥ 500 completed/s in each of 3 runs</div></td><td><span class="st inc">INCONCLUSIVE</span></td><td>0 of 3 valid runs. Best was <span class="num">500.03/s</span>, in a run invalid on its completed count.</td><td><button class="src" title="20261109T082010Z-7323d59-s6-5db4 · DB count">s6-5db4</button></td></tr>
-            <tr><td><div class="gate-name">Platform overhead</div><div class="gate-req">p50 ≤ 25 ms, p99 ≤ 100 ms</div></td><td><span class="st inc">INCONCLUSIVE</span></td><td>Held through step 5. At 1,000 req/s offered p99 was <span class="over num">173.47 ms</span> in an invalid run, so it can't count as a FAIL either.</td><td><button class="src" title="op_platform_overhead_seconds; k6 http_req_duration{scenario:mix} − 200 ms">overhead hist.</button></td></tr>
-            <tr><td><div class="gate-name">Error rate</div><div class="gate-req">&lt; 0.1%, excluding 402, 409, 429, 503</div></td><td><span class="st pass">PASS</span></td><td><span class="num">0.000%</span> at every counted step.</td><td><button class="src" title="k6-summary.json + API error responses">k6 + api</button></td></tr>
-            <tr><td><div class="gate-name">Bounded retries</div><div class="gate-req">No transaction &gt; 2 retries; app retries agree with PG deadlocks</div></td><td><span class="st inc">INCONCLUSIVE</span></td><td>Deadlocks 0. Retry counts by SQLSTATE aren't in the run report.</td><td><span class="unmeasured">op_tx_retries_total · not reported</span></td></tr>
-            <tr><td><div class="gate-name">Forced deadlock</div><div class="gate-req">TX1 and C34 pass, deadlocks &gt; 0 seen</div></td><td><span class="st inc">INCONCLUSIVE</span></td><td>TX1 isn't built. A fixture test raises a real deadlock, but it isn't TX1.</td><td><button class="src" title="commit 0f92846">0f92846</button></td></tr>
-            <tr><td><div class="gate-name">Retry exhaustion</div><div class="gate-req">TX2 passes</div></td><td><span class="st inc">INCONCLUSIVE</span></td><td>TX2 isn't built.</td><td><span class="unmeasured">no evidence</span></td></tr>
-            <tr><td><div class="gate-name">Restart durability</div><div class="gate-req">C54 passes, fault verified</div></td><td><span class="st inc">INCONCLUSIVE</span></td><td>C54 isn't built. K1–K3 crash tests are related evidence, not this gate.</td><td><button class="src" title="dotnet test --filter CrashTests · 6 of 6">K1–K3</button></td></tr>
-            <tr><td><div class="gate-name">Recovery</div><div class="gate-req">First success ≤ 30 s; p99 under SLO ≤ 2 min after removal</div></td><td><span class="st inc">INCONCLUSIVE</span></td><td>No fault-driver run yet.</td><td><span class="unmeasured">ack log · none</span></td></tr>
-            <tr><td><div class="gate-name">PSP lifecycle</div><div class="gate-req">Every interrupted payment classed L0–L5</div></td><td><span class="st inc">INCONCLUSIVE</span></td><td>Needs CK11.</td><td><span class="unmeasured">no evidence</span></td></tr>
-            <tr><td><div class="gate-name">Crash recovery</div><div class="gate-req">Resolver reconciles unknown outcomes</div></td><td><span class="st na">NOT_APPLICABLE</span></td><td>The resolver arrives in Stage 2. Expected until then.</td><td><button class="src" title="Spec §7, expected output until Stage 2">spec §7</button></td></tr>
-            <tr><td><div class="gate-name">Diagnostics</div><div class="gate-req"><code>pg_stat_statements</code> and manifest complete</div></td><td><span class="st inc">INCONCLUSIVE</span></td><td>Runs record <code>config.json</code>; the §8.1 manifest isn't written yet.</td><td><span class="unmeasured">manifest.json · none</span></td></tr>
-            <tr><td><div class="gate-name">Soak</div><div class="gate-req">No upward trend in RSS, Gen 2 GC/s, pool wait</div></td><td><span class="st inc">INCONCLUSIVE</span></td><td>Needs a stable rate first (D56).</td><td><span class="unmeasured">not run</span></td></tr>
-            <tr><td><div class="gate-name">Run validity</div><div class="gate-req">No dropped arrivals, generator CPU ≤ 80%, mix within bounds</div></td><td><span class="st fail">FAIL</span></td><td>Steps 0–5 valid. Step 6: k6 dropped <span class="num">68 of 902,428</span> arrivals while adding VUs past its 300 pre-allocated.</td><td><button class="src" title="20261109T050918Z-786d8ef-s6-0bba · report.py">s6-0bba</button></td></tr>
-          </tbody>
-        </table>
-      </div>
+      <div class="tablewrap"><table>
+        <thead><tr><th>Gate</th><th>Result</th><th>Evidence</th><th>Source</th></tr></thead>
+        <tbody id="gate-rows"></tbody>
+      </table></div>
     </div>
   </section>
 
-  <!-- Ramp -->
   <section class="section" id="ramp">
-    <header><span class="eyebrow">§3</span><h2>Laptop limit search</h2><p>D47 mix, one API instance, steps run in order from a full reset at 04:28 UTC on 2026-11-09.</p></header>
-    <div class="body">
-      <figure class="figure" style="margin:0">
+    <header><span class="eyebrow">§3</span><h2>Runs in this report</h2><p>Platform overhead against offered load, then every number from each run's <code>result.md</code>.</p></header>
+    <div class="body" id="ramp-body">
+      <figure class="figure" style="margin:0" id="chart-figure">
         <figcaption>
           <h3>Platform overhead against offered load</h3>
           <div class="legend">
@@ -346,231 +1075,291 @@ footer.foot { padding-top: 28px; font-size: 12.5px; color: var(--muted); display
             <span><svg width="12" height="12" aria-hidden="true"><circle cx="6" cy="6" r="4" fill="var(--surface)" stroke="var(--accent)" stroke-width="1.5"/></svg>invalid run</span>
           </div>
         </figcaption>
-        <div class="chart-scroll">
-          <svg class="chart" viewBox="0 0 720 312" role="img" aria-label="Platform overhead p50 and p99 in milliseconds, log scale, against offered requests per second, log scale. p99 stays under 31 ms through 500 req/s, then rises to 58 ms and 173 ms in two invalid runs at 1,000 req/s.">
-            <g class="grid">
-              <line x1="64" y1="256.7" x2="690" y2="256.7"/><line x1="64" y1="215.5" x2="690" y2="215.5"/>
-              <line x1="64" y1="119.7" x2="690" y2="119.7"/><line x1="64" y1="37.3" x2="690" y2="37.3"/>
-              <line x1="92.5" y1="24" x2="92.5" y2="270"/><line x1="282.2" y1="24" x2="282.2" y2="270"/>
-              <line x1="471.8" y1="24" x2="471.8" y2="270"/><line x1="604.4" y1="24" x2="604.4" y2="270"/><line x1="661.5" y1="24" x2="661.5" y2="270"/>
-            </g>
-            <g class="axis">
-              <text x="56" y="260.7" text-anchor="end">5 ms</text><text x="56" y="219.5" text-anchor="end">10</text>
-              <text x="56" y="165" text-anchor="end">25</text><text x="56" y="123.7" text-anchor="end">50</text>
-              <text x="56" y="82.5" text-anchor="end">100</text><text x="56" y="41.3" text-anchor="end">200</text>
-              <text x="92.5" y="290" text-anchor="middle">1</text><text x="282.2" y="290" text-anchor="middle">10</text>
-              <text x="471.8" y="290" text-anchor="middle">100</text><text x="604.4" y="290" text-anchor="middle">500</text>
-              <text x="661.5" y="290" text-anchor="middle">1,000</text>
-              <text x="690" y="307" text-anchor="end">offered req/s (log)</text>
-              <line x1="64" y1="270" x2="690" y2="270" stroke="var(--rule-strong)"/>
-            </g>
-            <!-- Gates -->
-            <line class="gate p99" x1="64" y1="78.5" x2="690" y2="78.5"/>
-            <text class="gate-label" x="70" y="72" fill="var(--fail)">p99 gate 100 ms</text>
-            <line class="gate p50" x1="64" y1="161" x2="690" y2="161"/>
-            <text class="gate-label" x="70" y="154.5" fill="var(--inc)">p50 gate 25 ms</text>
-            <!-- Lines: valid segments solid, into invalid runs dashed -->
-            <polyline class="l99" points="92.5,149.4 282.2,157.6 471.8,201.9 604.4,181.4"/>
-            <polyline class="l99 dash" points="604.4,181.4 652,110.5"/>
-            <polyline class="l99 dash" points="604.4,181.4 671,45.8"/>
-            <polyline class="l50" points="92.5,173.1 282.2,189.8 471.8,238.5 604.4,245.2"/>
-            <polyline class="l50 dash" points="604.4,245.2 652,203.6"/>
-            <polyline class="l50 dash" points="604.4,245.2 671,200.9"/>
-            <!-- Points -->
-            <g id="pts"></g>
-            <text x="671" y="33" text-anchor="middle" fill="var(--muted)" font-size="10.5">fresh DB</text>
-          </svg>
-        </div>
+        <div class="chart-scroll"><svg class="chart" id="chart" viewBox="0 0 720 312" role="img"></svg></div>
         <div class="readout" id="readout" aria-live="polite">Hover or focus a point to see its run and source.</div>
       </figure>
-
-      <div class="tablewrap">
-        <table>
-          <thead><tr><th>Step</th><th class="r">Target</th><th class="r">Admitted</th><th class="r">Completed /s</th><th class="r">p50</th><th class="r">p95</th><th class="r">p99</th><th class="r">API CPU</th><th>Result</th><th>Run</th></tr></thead>
-          <tbody id="stepRows"></tbody>
-        </table>
-      </div>
-      <p class="muted" style="font-size:13px">Latency is platform overhead: k6's <code>http_req_duration{scenario:mix}</code> minus the mock's fixed 200 ms. API CPU is percent of one core. Completed payments are about half of admitted requests by design of the D47 mix. Steps 2 and 4 weren't run in this search.</p>
+      <div class="tablewrap"><table>
+        <thead><tr><th>Step</th><th class="r">Target req/s</th><th class="r">Admitted req/s</th><th class="r">Completed payments/s</th><th class="r">p50</th><th class="r">p95</th><th class="r">p99</th><th class="r">API CPU</th><th>Result</th><th>Run</th></tr></thead>
+        <tbody id="step-rows"></tbody>
+      </table></div>
+      <p class="muted" style="font-size:13px">Rates are whole payments and requests per second, rounded down so the page never overstates; hover a rate for the recorded value. Latency is platform overhead: k6's <code>http_req_duration{scenario:mix}</code> minus the mock's fixed 200 ms. API CPU is percent of one core.</p>
     </div>
   </section>
 
-  <!-- D56 -->
   <section class="section" id="d56">
-    <header><span class="eyebrow">§4</span><h2>D56 laptop verification</h2><p>Pass conditions fixed by the owner on 2026-11-10, before any run. Nothing here has run.</p></header>
+    <header><span class="eyebrow">§4</span><h2>D56 laptop verification</h2><p>Pass conditions fixed by the owner on 2026-11-10, before any run.</p></header>
     <div class="body">
-      <div class="tablewrap">
-        <table>
-          <thead><tr><th>Check</th><th>Run</th><th>Passes if</th><th>Result</th></tr></thead>
-          <tbody>
-            <tr><td class="gate-name">Capacity</td><td>Step 4 once, step 6 three times, each from a reset, two API instances behind nginx</td><td>Valid runs whose gates all pass; sets the stable rate</td><td><span class="st notrun">NOT RUN</span></td></tr>
-            <tr><td class="gate-name">Soak</td><td>60 min at the stable rate</td><td>Gates hold; CK1–CK6 pass; no upward trend in memory, Gen 2 GC, ThreadPool queue, pool wait</td><td><span class="st notrun">BLOCKED</span><div class="gate-req">needs stable rate</div></td></tr>
-            <tr><td class="gate-name">L3, scaled</td><td>3× the stable rate for 10 min</td><td>Excess rejected as 429/503; no restart or OOM; p99 &lt; 100 ms within 2 min after; CK1–CK6 pass</td><td><span class="st notrun">BLOCKED</span><div class="gate-req">needs stable rate</div></td></tr>
-            <tr><td class="gate-name">C1, scaled</td><td>Primary CPU throttled ~5× slower at stable load</td><td>Fast 503 shedding; <code>40P01</code>/<code>40001</code> retries &lt; 1%; no ThreadPool starvation</td><td><span class="st notrun">BLOCKED</span><div class="gate-req">needs stable rate</div></td></tr>
-            <tr><td class="gate-name">C2</td><td>PgBouncer pool shrunk below demand, then restored</td><td>Waits bounded by <code>query_wait_timeout</code>, failed as 503; recovers with no restart</td><td><span class="st notrun">NOT RUN</span></td></tr>
-            <tr><td class="gate-name">C7, partial</td><td>Primary killed under load; higher-replay standby promoted by hand</td><td>RPO 0: every 200/202 payment on the new primary; CK1, CK3 pass</td><td><span class="st notrun">NOT RUN</span></td></tr>
-            <tr><td class="gate-name">Alerts</td><td><code>CommitWarning</code>, <code>AbandonedCommitsStuck</code>, <code>UnresolvedOperationAging</code></td><td>Each seen firing in a running Prometheus</td><td><span class="st notrun">NOT RUN</span></td></tr>
-          </tbody>
-        </table>
-      </div>
+      <div class="tablewrap"><table>
+        <thead><tr><th>Check</th><th>Run</th><th>Passes if</th><th>Result</th></tr></thead>
+        <tbody id="d56-rows"></tbody>
+      </table></div>
     </div>
   </section>
 
-  <!-- Run ledger -->
   <section class="section" id="runs">
-    <header><span class="eyebrow">§5</span><h2>Run ledger</h2><p>Every run from 2026-11-09 and whether this report uses it. Excluded runs stay visible.</p></header>
+    <header><span class="eyebrow">§5</span><h2>Run ledger</h2><p>Every listed run and whether this report uses it. Excluded runs stay visible.</p></header>
     <div class="body">
       <div class="filters" role="group" aria-label="Filter runs">
         <button type="button" id="f-all" data-f="all" aria-pressed="true">All <span class="num" data-count="all"></span></button>
-        <button type="button" id="f-counted" data-f="counted" aria-pressed="false">In report <span class="num" data-count="counted"></span></button>
+        <button type="button" id="f-included" data-f="included" aria-pressed="false">In report <span class="num" data-count="included"></span></button>
         <button type="button" id="f-excluded" data-f="excluded" aria-pressed="false">Excluded <span class="num" data-count="excluded"></span></button>
+        <button type="button" id="f-missing" data-f="missing" aria-pressed="false">Missing <span class="num" data-count="missing"></span></button>
       </div>
-      <div class="tablewrap">
-        <table>
-          <thead><tr><th>Run ID</th><th>Step</th><th>Status</th><th>Reason</th></tr></thead>
-          <tbody id="ledgerRows"></tbody>
-        </table>
-      </div>
-      <p class="muted" style="font-size:13px">The three late step-6 runs came from another session and are not in BASELINE. Their CK5 failures match the 1,033 <code>UNKNOWN</code> and 939 <code>PSP_PENDING</code> payments they left behind, recorded in Stage 1 progress. The four old-mix runs from 2026-11-06 predate D47 and are kept only for history.</p>
+      <div class="tablewrap"><table>
+        <thead><tr><th>Run ID</th><th>Step</th><th>Status</th><th>Reason</th></tr></thead>
+        <tbody id="ledger-rows"></tbody>
+      </table></div>
     </div>
   </section>
 
-  <!-- Reproduction -->
   <section class="section" id="repro">
-    <header><span class="eyebrow">§6</span><h2>Reproduce</h2><p>What a rerun needs to match. A result that can't be compared with history isn't evidence.</p></header>
+    <header><span class="eyebrow">§6</span><h2>Reproduce</h2><p>What a rerun needs to match.</p></header>
     <div class="body">
-      <dl class="kv">
-        <dt>Stack</dt><dd>Docker Compose: one API instance, PostgreSQL 18.6 primary with two quorum standbys, PgBouncer 1.26.1, one mock PSP</dd>
-        <dt>Mock PSP</dt><dd>Fixed 200 ms, 0 ms jitter, 3% declines. Added p99 <span class="unmeasured">not measured</span> in these runs</dd>
-        <dt>Mix</dt><dd>D47, <code>TWO_CALL_SHARE=0.2</code>: 40% sale, 10% authorize, 10% capture, 15% status, 10% refund, 10% retry, 5% other</dd>
-        <dt>Generator</dt><dd>k6 <code>ramping-arrival-rate</code>, open model. Peak generator CPU 1.9%</dd>
-        <dt>Harness fixes</dt><dd><code>4540c23</code> error rate · <code>18d0f63</code> E8 share bound · <code>3faaaf6</code> latency without <code>setup()</code> · <code>7dd42a7</code> pre-allocate all VUs</dd>
-        <dt>Validity rules</dt><dd>No dropped arrivals, generator CPU ≤ 80%, mock added p99 ≤ 5 ms, shares within <code>max(2 pp, 3·√(p(1−p)/n))</code></dd>
-      </dl>
+      <dl class="kv" id="repro-list"></dl>
       <pre class="cmd">docker compose -f deploy/compose/compose.yaml up -d --wait
 scripts/migrate.sh
-benchmarks/run.sh 5 --env local --stage phase1 --psp-latency 200</pre>
+benchmarks/run.sh &lt;step&gt; --env local --stage phase1 --psp-latency 200</pre>
     </div>
   </section>
 
   <footer class="foot">
-    <span>Sources: <code>benchmarks/BASELINE.md</code>, <code>benchmarks/runs/*/result.md</code>, <code>docs/phase-gates/phase-1.md</code>, <code>docs/gates/stage-1-progress.md</code>, benchmark suite spec §7–§8.</span>
+    <span id="foot-generated"></span>
     <span>Every value on this page is a laptop preview. None of it sizes production.</span>
   </footer>
 </div>
 
 <script>
 (function () {
-  var steps = [
-    { step: "0", target: 1, adm: 1.09, done: 0.64, p50: 20.41, p95: 28.15, p99: 30.35, cpu: 1.0, valid: true, result: "pass", run: "20261109T043519Z-3faaaf6-s0-14c1", x: 92.5, y99: 149.4, y50: 173.1 },
-    { step: "1", target: 10, adm: 9.98, done: 5.09, p50: 15.40, p95: 23.01, p99: 26.46, cpu: 6.5, valid: true, result: "pass", run: "20261109T044032Z-3faaaf6-s1-005e", x: 282.2, y99: 157.6, y50: 189.8 },
-    { step: "3", target: 100, adm: 99.16, done: 49.81, p50: 6.79, p95: 9.72, p99: 12.57, cpu: 34.3, valid: true, result: "pass", run: "20261109T044543Z-3faaaf6-s3-7dce", x: 471.8, y99: 201.9, y50: 238.5 },
-    { step: "5", target: 500, adm: 491.98, done: 248.32, p50: 6.07, p95: 12.07, p99: 17.74, cpu: 117.9, valid: true, result: "pass", run: "20261109T045857Z-e4bff52-s5-47d3", x: 604.4, y99: 181.4, y50: 245.2 },
-    { step: "6", target: 1000, adm: 988.84, done: 498.33, p50: 12.21, p95: 28.73, p99: 58.43, cpu: 194.3, valid: false, result: "gates pass, invalid", why: "68 dropped arrivals", run: "20261109T050918Z-786d8ef-s6-0bba", x: 652, y99: 110.5, y50: 203.6 },
-    { step: "6 · fresh DB", target: 1000, adm: null, done: 500.03, p50: 12.77, p95: null, p99: 173.47, cpu: 186.9, valid: false, result: "p99 over gate, invalid", why: "completed count invalid: API rebuilt mid-run", run: "20261109T082010Z-7323d59-s6-5db4", x: 671, y99: 45.8, y50: 200.9 }
-  ];
-
-  var ledger = [
-    ["20261109T040109Z-3d728c1-s0-3b3c", "0", "excluded", "Sent no API token; every request 401"],
-    ["20261109T040758Z-4540c23-s0-2958", "0", "excluded", "Ran before the reset: count mismatch (E8)"],
-    ["20261109T042813Z-18d0f63-s0-2291", "0", "excluded", "Counted setup() latency (E8)"],
-    ["20261109T043519Z-3faaaf6-s0-14c1", "0", "counted", "Valid; all gates pass"],
-    ["20261109T044032Z-3faaaf6-s1-005e", "1", "counted", "Valid; all gates pass"],
-    ["20261109T044543Z-3faaaf6-s3-7dce", "3", "counted", "Valid; all gates pass"],
-    ["20261109T045857Z-e4bff52-s5-47d3", "5", "counted", "Valid; all gates pass"],
-    ["20261109T050918Z-786d8ef-s6-0bba", "6", "counted", "Gates pass but invalid: 68 dropped arrivals. Ends the search under E4"],
-    ["20261109T082010Z-7323d59-s6-5db4", "6", "counted", "Invalid on completed count. p99 173.47 ms closed Task 17 under D53"],
-    ["20261109T100730Z-96384d2-s6-1daa", "6", "excluded", "Invalid: 5,607 dropped arrivals. p99 861.57 ms, CK5 FAIL"],
-    ["20261109T110048Z-9874593-s6-0fae", "6", "excluded", "Invalid: 2,319 dropped arrivals. p99 588.03 ms"],
-    ["20261109T112159Z-9874593-s6-7b7b", "6", "excluded", "Invalid: 119,539 dropped arrivals, metric/DB mismatch. Error 0.150%, CK5 FAIL"]
-  ];
-
-  function fmt(v, d) { return v == null ? null : v.toLocaleString("en-US", { minimumFractionDigits: d, maximumFractionDigits: d }); }
+  var D = JSON.parse(document.getElementById("report-data").textContent);
+  var T = D.thresholds;
+  function $(id) { return document.getElementById(id); }
+  function esc(s) { return String(s).replace(/[&<>"]/g, function (c) { return { "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]; }); }
+  // `code` and **bold** in config text, after escaping
+  function rich(s) { return esc(s).replace(/`([^`]+)`/g, "<code>$1</code>").replace(/\*\*([^*]+)\*\*/g, "<b>$1</b>"); }
+  function fix(v, d) { return v.toLocaleString("en-US", { minimumFractionDigits: d, maximumFractionDigits: d }); }
+  function whole(v) { return Math.floor(v + 1e-9).toLocaleString("en-US"); }
+  var NM = '<span class="unmeasured">not measured</span>';
+  function rate(v) { return v == null ? NM : '<span title="recorded ' + fix(v, 2) + '">' + whole(v) + "</span>"; }
   function ms(v, gate) {
-    if (v == null) return '<span class="unmeasured">n/a</span>';
-    var s = fmt(v, 2) + " ms";
+    if (v == null) return NM;
+    var s = fix(v, 2) + " ms";
     return gate != null && v > gate ? '<span class="over">' + s + "</span>" : s;
   }
-  function esc(s) { return String(s).replace(/[&<>"]/g, function (c) { return { "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]; }); }
-  function shortId(id) { return id.split("-").slice(-2).join("-"); }
+  function src(label, title) { return '<button class="src" title="' + esc(title || label) + '">' + esc(label) + "</button>"; }
+  var CHIP = { PASS: "pass", FAIL: "fail", INCONCLUSIVE: "inc", NOT_APPLICABLE: "na" };
+  function chip(status) { return '<span class="st ' + (CHIP[status] || "notrun") + '">' + esc(status) + "</span>"; }
+  // ["CK1","CK2","CK3","CK9"] -> "CK1–CK3, CK9"
+  function ckRanges(ids) {
+    var n = ids.map(function (s) { return parseInt(s.slice(2), 10); }).sort(function (a, b) { return a - b; });
+    var out = [], i = 0;
+    while (i < n.length) {
+      var j = i;
+      while (j + 1 < n.length && n[j + 1] === n[j] + 1) j++;
+      out.push(j - i >= 2 ? "CK" + n[i] + "–CK" + n[j] : n.slice(i, j + 1).map(function (x) { return "CK" + x; }).join(", "));
+      i = j + 1;
+    }
+    return out.join(", ");
+  }
 
-  // Step table
-  var tb = document.getElementById("stepRows");
-  tb.innerHTML = steps.map(function (s) {
-    var cpuW = Math.min(100, s.cpu / 200 * 100).toFixed(1);
-    var st = s.valid ? '<span class="st pass">VALID</span>' : '<span class="st fail">INVALID</span>';
-    return '<tr class="' + (s.valid ? "" : "invalid") + '">' +
-      '<td class="step num">' + esc(s.step) + "</td>" +
-      '<td class="r num">' + s.target.toLocaleString("en-US") + "</td>" +
-      '<td class="r num">' + (s.adm == null ? '<span class="unmeasured">n/a</span>' : fmt(s.adm, 2)) + "</td>" +
-      '<td class="r num">' + fmt(s.done, 2) + "</td>" +
-      '<td class="r num">' + ms(s.p50, 25) + "</td>" +
-      '<td class="r num">' + ms(s.p95) + "</td>" +
-      '<td class="r num">' + ms(s.p99, 100) + "</td>" +
-      '<td class="r"><div class="bar"><span class="num">' + fmt(s.cpu, 1) + '%</span><i aria-hidden="true"><b style="width:' + cpuW + '%"></b></i></div></td>' +
-      "<td>" + st + (s.why ? '<div class="gate-req">' + esc(s.why) + "</div>" : "") + "</td>" +
-      '<td><button class="src" title="' + esc(s.run) + ' · result.md">' + shortId(s.run) + "</button></td></tr>";
+  // Masthead
+  $("idline").innerHTML = "<span>as of <b>" + esc(D.as_of) + "</b></span><span>tree <b>" + esc(D.tree) + "</b></span><span>rules <b>spec §7</b></span><span>mix <b>D47</b></span>";
+
+  // Headline
+  var H = D.headline;
+  if (!H) {
+    $("headline").innerHTML = '<div class="hl-main"><span class="eyebrow">Highest valid result</span><p class="hl-context">No run in this report is both valid and passing its gates yet.</p></div>';
+  } else {
+    var pct = Math.min(100, H.completed_exact / H.milestone * 100);
+    function gauge(v, gate) { return v == null ? "" : '<div class="gauge"><i style="width:' + Math.min(100, v / gate * 100).toFixed(1) + '%"></i></div>'; }
+    $("headline").innerHTML =
+      '<div class="hl-main">' +
+        '<div class="hl-eyebrow"><span class="eyebrow">Highest valid result · step ' + esc(H.step) + '</span><span class="st pass">VALID</span><span class="tag label">' + esc(D.label) + "</span></div>" +
+        '<div class="hl-figure"><span class="hl-num num" title="recorded ' + fix(H.completed_exact, 2) + '">' + whole(H.completed_exact) + '</span><span class="hl-unit">completed<br>payments/s</span></div>' +
+        '<p class="hl-context">At ' + whole(H.target) + " req/s offered (" + (H.admitted == null ? "admitted not measured" : whole(H.admitted) + " admitted") + "), D47 mix. Every gate passed. " + src(H.short_id, H.run_id + " · result.md") + "</p>" +
+        '<div class="milestone"><div class="ms-track" role="img" aria-label="' + whole(H.completed_exact) + " of the " + H.milestone + ' completed payments per second laptop milestone"><span class="ms-fill" style="width:' + pct.toFixed(2) + '%"></span></div>' +
+        '<div class="ms-scale"><span class="num">0</span><span class="num">' + (H.milestone / 2).toLocaleString("en-US") + '</span><span class="num">' + H.milestone.toLocaleString("en-US") + " · D51 milestone</span></div>" +
+        '<p class="ms-note">' + H.milestone_pct.toFixed(1) + "% of the laptop milestone, which needs three valid runs at or above it.</p></div>" +
+      "</div>" +
+      '<dl class="hl-stats">' +
+        "<div><dt>Platform p50</dt><dd class=\"num\">" + (H.p50 == null ? "—" : fix(H.p50, 2) + " ms") + "</dd>" + gauge(H.p50, T.p50_ms) + '<span class="gate-of">gate ≤ ' + T.p50_ms + " ms</span></div>" +
+        "<div><dt>Platform p99</dt><dd class=\"num\">" + (H.p99 == null ? "—" : fix(H.p99, 2) + " ms") + "</dd>" + gauge(H.p99, T.p99_ms) + '<span class="gate-of">gate ≤ ' + T.p99_ms + " ms</span></div>" +
+        "<div><dt>Unexpected errors</dt><dd class=\"num\">" + (H.error_pct == null ? "—" : fix(H.error_pct, 3) + "%") + "</dd>" + gauge(H.error_pct, T.error_rate_pct) + '<span class="gate-of">gate &lt; ' + T.error_rate_pct + "%</span></div>" +
+        "<div><dt>Correctness</dt><dd>" + H.checks_passed + " of " + H.checks_applicable + " pass</dd>" + gauge(H.checks_passed, H.checks_applicable || 1) + '<span class="gate-of">' + esc(ckRanges(H.checks_passing)) + (H.checks_na.length ? " · " + esc(ckRanges(H.checks_na)) + " n/a" : "") + "</span></div>" +
+        "<div><dt>API CPU</dt><dd class=\"num\">" + (H.api_cpu_pct == null ? "—" : fix(H.api_cpu_pct, 1) + "%") + '</dd><span class="gate-of">of one core · no gate</span></div>' +
+        "<div><dt>Pool wait · deadlocks</dt><dd class=\"num\">" + (H.pool_wait_s == null ? "—" : fix(H.pool_wait_s, 1) + " s") + " · " + (H.deadlocks == null ? "—" : whole(H.deadlocks)) + '</dd><span class="gate-of">no gate</span></div>' +
+      "</dl>";
+  }
+
+  // Verdict
+  var V = D.verdict;
+  var word = $("verdict-word");
+  word.textContent = V.verdict;
+  word.style.color = V.verdict === "PASS" ? "var(--pass)" : V.verdict === "FAIL" ? "var(--fail)" : "var(--inc)";
+  $("label-tag").textContent = D.label;
+  $("verdict-note").innerHTML = "Built by <code>benchmarks/bench_page.py</code> from each listed run's <code>result.md</code>, under the suite's verdict rules. The OP-BENCH orchestrator isn't built yet.";
+  var counts = {};
+  D.gates.forEach(function (g) { counts[g.status] = (counts[g.status] || 0) + 1; });
+  var rules = [
+    "Any correctness gate fails → <b>FAIL</b>.",
+    "Any run invalid, required scenario skipped, value null, or required gate inconclusive → <b>INCONCLUSIVE</b>.",
+    "Any performance or reliability gate missed → <b>FAIL</b>.",
+    "Otherwise → <b>PASS</b>."
+  ];
+  var byId = {};
+  D.gates.forEach(function (g) { byId[g.id] = g; });
+  $("ladder").innerHTML = rules.map(function (r, i) {
+    var n = i + 1, cls = n < V.rule ? "skip" : n === V.rule ? "hit" : "skip";
+    var out = n < V.rule ? "not triggered" : n === V.rule ? "stopped here" : "not reached";
+    var extra = "";
+    if (n === V.rule && V.triggers.length) {
+      var names = V.triggers.map(function (t) { return esc(byId[t] ? byId[t].name : t); });
+      extra = " Triggered by " + (names.length <= 3 ? names.join(", ") : names.length + " of " + D.gates.length + ' gates, listed in <a href="#gates">§2</a>') + ".";
+    }
+    return '<li class="' + cls + '"><span class="k">' + n + "</span><span>" + r + extra + '</span><span class="out">' + out + "</span></li>";
   }).join("");
 
-  // Chart points
-  var NS = "http://www.w3.org/2000/svg";
-  var g = document.getElementById("pts");
-  var readout = document.getElementById("readout");
-  steps.forEach(function (s) {
-    [["p99", s.y99, s.p99, "var(--accent)"], ["p50", s.y50, s.p50, "var(--muted)"]].forEach(function (m) {
-      var a = document.createElementNS(NS, "g");
-      a.setAttribute("class", "pt");
-      a.setAttribute("tabindex", "0");
-      var label = "Step " + s.step + ", " + m[0] + " " + fmt(m[2], 2) + " ms, " + (s.valid ? "valid" : "invalid") + " run " + s.run;
-      a.setAttribute("aria-label", label);
-      var c = document.createElementNS(NS, "circle");
-      c.setAttribute("cx", s.x); c.setAttribute("cy", m[1]); c.setAttribute("r", m[0] === "p99" ? 5 : 4);
-      c.setAttribute("fill", s.valid ? m[3] : "var(--surface)");
-      c.setAttribute("stroke", m[3]); c.setAttribute("stroke-width", s.valid ? 0 : 1.75);
-      a.appendChild(c);
-      var t = document.createElementNS(NS, "title"); t.textContent = label; a.appendChild(t);
-      function show() {
-        readout.innerHTML = "<b>Step " + esc(s.step) + "</b> · " + m[0] + " <b>" + fmt(m[2], 2) + " ms</b> · " +
-          (s.valid ? "valid" : "invalid" + (s.why ? " (" + esc(s.why) + ")" : "")) + " · <span class=\"mono\">" + esc(s.run) + "</span>";
-      }
-      a.addEventListener("mouseenter", show); a.addEventListener("focus", show);
-      g.appendChild(a);
-    });
+  // Claims
+  var est = D.gates.filter(function (g) { return g.status === "PASS"; }).map(function (g) {
+    return "<li><b>" + esc(g.name) + ".</b> " + rich(g.evidence) + " " + src(g.source) + "</li>";
   });
+  if (H) est.unshift("<li>Highest valid result: <b>" + whole(H.completed_exact) + " completed payments/s</b> at step " + esc(H.step) + ". " + src(H.short_id, H.run_id) + "</li>");
+  $("established").innerHTML = est.join("") || "<li>Nothing yet.</li>";
+  var notEst = D.not_established.map(function (s) { return "<li>" + rich(s) + "</li>"; });
+  var tp = byId.throughput;
+  if (tp && tp.status !== "PASS") notEst.splice(2, 0, "<li>The <b>D51 laptop milestone</b> isn't met. " + rich(tp.evidence) + "</li>");
+  $("not-established").innerHTML = notEst.join("");
+
+  // Gates
+  $("gate-rows").innerHTML = D.gates.map(function (g) {
+    var srcCell = g.runs && g.runs.length ? src(g.source, g.runs.join("\n")) : (g.source === "no evidence" || /none|not /.test(g.source) ? '<span class="unmeasured">' + esc(g.source) + "</span>" : src(g.source));
+    return '<tr><td><div class="gate-name">' + esc(g.name) + '</div><div class="gate-req">' + rich(g.requirement) + "</div></td><td>" + chip(g.status) + "</td><td>" + rich(g.evidence) + "</td><td>" + srcCell + "</td></tr>";
+  }).join("");
+
+  // Runs in the report
+  var used = D.runs.filter(function (r) { return r.status === "included"; });
+  used.sort(function (a, b) { return (a.target - b.target) || String(a.started_at).localeCompare(String(b.started_at)); });
+  $("step-rows").innerHTML = used.map(function (r) {
+    var cpu = r.api_cpu_pct;
+    var bar = cpu == null ? NM : '<div class="bar"><span class="num">' + fix(cpu, 1) + '%</span><i aria-hidden="true"><b style="width:' + Math.min(100, cpu / 200 * 100).toFixed(1) + '%"></b></i></div>';
+    var res = r.valid ? (r.gates_passed ? '<span class="st pass">VALID</span>' : '<span class="st fail">GATE MISSED</span>') : '<span class="st fail">INVALID</span>';
+    var why = (r.invalid_because || []).concat(r.gate_reasons || []);
+    return '<tr class="' + (r.valid ? "" : "invalid") + '"><td class="step num">' + esc(r.step) + (r.note ? '<div class="gate-req">' + esc(r.note) + "</div>" : "") + "</td>" +
+      '<td class="r num">' + (r.target == null ? NM : whole(r.target)) + '</td><td class="r num">' + rate(r.admitted) + '</td><td class="r num">' + rate(r.completed) + "</td>" +
+      '<td class="r num">' + ms(r.p50, T.p50_ms) + '</td><td class="r num">' + ms(r.p95) + '</td><td class="r num">' + ms(r.p99, T.p99_ms) + "</td>" +
+      '<td class="r">' + bar + "</td><td>" + res + (why.length ? '<div class="gate-req">' + esc(why.join("; ")) + "</div>" : "") + "</td><td>" + src(r.short_id, r.run_id + " · result.md") + "</td></tr>";
+  }).join("");
+
+  // Chart
+  var chart = $("chart"), NS = "http://www.w3.org/2000/svg";
+  var pts = used.filter(function (r) { return r.target != null && (r.p50 != null || r.p99 != null); });
+  if (!pts.length) {
+    $("chart-figure").outerHTML = '<p class="empty">No performance runs in this report.</p>';
+  } else {
+    var X0 = 64, X1 = 690, Y0 = 270, Y1 = 24;
+    var tMin = Math.min.apply(null, pts.map(function (r) { return r.target; }).concat([1]));
+    var tMax = Math.max.apply(null, pts.map(function (r) { return r.target; }).concat([1000]));
+    var lx0 = Math.log10(tMin) - 0.15, lx1 = Math.log10(tMax) + 0.15;
+    var ly0 = Math.log10(4), ly1 = Math.log10(250);
+    function sx(v) { return X0 + (Math.log10(v) - lx0) / (lx1 - lx0) * (X1 - X0); }
+    function sy(v) { var c = Math.min(Math.max(v, 4), 250); return Y0 - (Math.log10(c) - ly0) / (ly1 - ly0) * (Y0 - Y1); }
+    function el(name, attrs, text) { var e = document.createElementNS(NS, name); for (var k in attrs) e.setAttribute(k, attrs[k]); if (text != null) e.textContent = text; chart.appendChild(e); return e; }
+    // offsets for runs sharing a target
+    var groups = {};
+    pts.forEach(function (r) { (groups[r.target] = groups[r.target] || []).push(r); });
+    pts.forEach(function (r) { var g = groups[r.target], i = g.indexOf(r); r._x = sx(r.target) + (g.length > 1 ? (i - (g.length - 1) / 2) * 20 : 0); });
+    [5, 10, 25, 50, 100, 200].forEach(function (v) {
+      el("line", { x1: X0, x2: X1, y1: sy(v), y2: sy(v), stroke: "var(--plot-grid)" });
+      el("text", { x: 56, y: sy(v) + 4, "text-anchor": "end", fill: "var(--muted)", "font-size": 11 }, v === 5 ? "5 ms" : String(v));
+    });
+    Object.keys(groups).map(Number).forEach(function (t) {
+      el("line", { x1: sx(t), x2: sx(t), y1: Y1, y2: Y0, stroke: "var(--plot-grid)" });
+      el("text", { x: sx(t), y: 290, "text-anchor": "middle", fill: "var(--muted)", "font-size": 11 }, t.toLocaleString("en-US"));
+    });
+    el("line", { x1: X0, x2: X1, y1: Y0, y2: Y0, stroke: "var(--rule-strong)" });
+    el("text", { x: X1, y: 307, "text-anchor": "end", fill: "var(--muted)", "font-size": 11 }, "offered req/s (log)");
+    el("line", { x1: X0, x2: X1, y1: sy(T.p99_ms), y2: sy(T.p99_ms), class: "gate p99" });
+    el("text", { x: 70, y: sy(T.p99_ms) - 6, fill: "var(--fail)", "font-size": 10.5 }, "p99 gate " + T.p99_ms + " ms");
+    el("line", { x1: X0, x2: X1, y1: sy(T.p50_ms), y2: sy(T.p50_ms), class: "gate p50" });
+    el("text", { x: 70, y: sy(T.p50_ms) - 6, fill: "var(--inc)", "font-size": 10.5 }, "p50 gate " + T.p50_ms + " ms");
+    var valid = pts.filter(function (r) { return r.valid; });
+    var lastValid = valid.length ? valid[valid.length - 1] : null;
+    [["p99", "l99"], ["p50", "l50"]].forEach(function (m) {
+      var vs = valid.filter(function (r) { return r[m[0]] != null; });
+      if (vs.length > 1) el("polyline", { class: m[1], points: vs.map(function (r) { return r._x + "," + sy(r[m[0]]); }).join(" ") });
+      var anchor = vs.length ? vs[vs.length - 1] : null;
+      pts.filter(function (r) { return !r.valid && r[m[0]] != null && anchor && r.target >= anchor.target; }).forEach(function (r) {
+        el("polyline", { class: m[1] + " dash", points: anchor._x + "," + sy(anchor[m[0]]) + " " + r._x + "," + sy(r[m[0]]) });
+      });
+    });
+    var readout = $("readout");
+    pts.forEach(function (r) {
+      [["p99", "var(--accent)", 5], ["p50", "var(--muted)", 4]].forEach(function (m) {
+        var v = r[m[0]];
+        if (v == null) return;
+        var g = document.createElementNS(NS, "g");
+        g.setAttribute("class", "pt"); g.setAttribute("tabindex", "0");
+        var label = "Step " + r.step + ", " + m[0] + " " + fix(v, 2) + " ms, " + (r.valid ? "valid" : "invalid") + " run " + r.run_id;
+        g.setAttribute("aria-label", label);
+        var c = document.createElementNS(NS, "circle");
+        c.setAttribute("cx", r._x); c.setAttribute("cy", sy(v)); c.setAttribute("r", m[2]);
+        c.setAttribute("fill", r.valid ? m[1] : "var(--surface)"); c.setAttribute("stroke", m[1]); c.setAttribute("stroke-width", r.valid ? 0 : 1.75);
+        g.appendChild(c);
+        var tt = document.createElementNS(NS, "title"); tt.textContent = label; g.appendChild(tt);
+        function show() { readout.innerHTML = "<b>Step " + esc(r.step) + "</b> · " + m[0] + " <b>" + fix(v, 2) + " ms</b> · " + (r.valid ? "valid" : "invalid") + ' · <span class="mono">' + esc(r.run_id) + "</span>"; }
+        g.addEventListener("mouseenter", show); g.addEventListener("focus", show);
+        chart.appendChild(g);
+        if (v > 250 || v < 4) el("text", { x: r._x, y: v > 250 ? 18 : 266, "text-anchor": "middle", fill: "var(--fail)", "font-size": 10 }, "off scale");
+      });
+    });
+    var p99s = pts.filter(function (r) { return r.p99 != null; }).map(function (r) { return r.p99; });
+    chart.setAttribute("aria-label", "Platform overhead p50 and p99 in milliseconds, log scale, against offered requests per second, log scale. p99 ranges from " + fix(Math.min.apply(null, p99s), 2) + " to " + fix(Math.max.apply(null, p99s), 2) + " ms across " + pts.length + " runs.");
+  }
+
+  // D56
+  var D56 = { "NOT RUN": "notrun", BLOCKED: "notrun", PASS: "pass", FAIL: "fail", INCONCLUSIVE: "inc" };
+  $("d56-rows").innerHTML = D.d56.map(function (c) {
+    return '<tr><td class="gate-name">' + esc(c.check) + "</td><td>" + rich(c.run) + "</td><td>" + rich(c.passes_if) + '</td><td><span class="st ' + (D56[c.result] || "notrun") + '">' + esc(c.result) + "</span>" + (c.note ? '<div class="gate-req">' + rich(c.note) + "</div>" : "") + "</td></tr>";
+  }).join("");
 
   // Ledger
-  var lb = document.getElementById("ledgerRows");
-  lb.innerHTML = ledger.map(function (r) {
-    var st = r[2] === "counted" ? '<span class="st pass">IN REPORT</span>' : '<span class="st na">EXCLUDED</span>';
-    return '<tr data-kind="' + r[2] + '"><td><span class="runid"><code>' + esc(r[0]) + '</code><button type="button" class="copy" data-id="' + esc(r[0]) + '">Copy</button></span></td>' +
-      '<td class="num">' + r[1] + "</td><td>" + st + "</td><td>" + esc(r[3]) + "</td></tr>";
+  var LCHIP = { included: '<span class="st pass">IN REPORT</span>', excluded: '<span class="st na">EXCLUDED</span>', missing: '<span class="st missing">MISSING</span>' };
+  $("ledger-rows").innerHTML = D.runs.map(function (r) {
+    var reason;
+    if (r.status === "missing") reason = "No <code>result.md</code> on this machine; nothing from this run is shown." + (r.note ? " " + esc(r.note) + "." : "");
+    else {
+      var bits = (r.invalid_because || []).concat(r.gate_reasons || []);
+      var base = r.status === "excluded" ? esc(r.exclude_reason) + "." : (r.valid && r.gates_passed ? "Valid; all gates pass." : r.valid ? "Valid; gate missed." : "Invalid.");
+      reason = base + (bits.length ? ' <span class="muted">' + esc(bits.join("; ")) + "</span>" : "") + (r.note && r.status !== "excluded" ? ' <span class="muted">' + esc(r.note) + ".</span>" : "");
+    }
+    return '<tr data-kind="' + r.status + '"><td><span class="runid"><code>' + esc(r.run_id) + '</code><button type="button" class="copy" data-id="' + esc(r.run_id) + '">Copy</button></span></td><td class="num">' + (r.step == null ? "—" : esc(r.step)) + "</td><td>" + LCHIP[r.status] + "</td><td>" + reason + "</td></tr>";
   }).join("");
-  ["all", "counted", "excluded"].forEach(function (k) {
-    var n = k === "all" ? ledger.length : ledger.filter(function (r) { return r[2] === k; }).length;
+  ["all", "included", "excluded", "missing"].forEach(function (k) {
+    var n = k === "all" ? D.runs.length : D.runs.filter(function (r) { return r.status === k; }).length;
     document.querySelector('[data-count="' + k + '"]').textContent = "(" + n + ")";
+    if (k === "missing" && n === 0) $("f-missing").hidden = true;
   });
   var buttons = document.querySelectorAll(".filters button");
   function applyFilter(f) {
     buttons.forEach(function (b) { b.setAttribute("aria-pressed", String(b.dataset.f === f)); });
-    lb.querySelectorAll("tr").forEach(function (tr) { tr.hidden = f !== "all" && tr.dataset.kind !== f; });
-    try { localStorage.setItem("opbench-ledger-filter", f); } catch (e) {}
+    $("ledger-rows").querySelectorAll("tr").forEach(function (tr) { tr.hidden = f !== "all" && tr.dataset.kind !== f; });
   }
   buttons.forEach(function (b) { b.addEventListener("click", function () { applyFilter(b.dataset.f); }); });
-  try { var saved = localStorage.getItem("opbench-ledger-filter"); if (saved) applyFilter(saved); } catch (e) {}
-
-  lb.addEventListener("click", function (e) {
+  $("ledger-rows").addEventListener("click", function (e) {
     var btn = e.target.closest(".copy");
     if (!btn) return;
-    var id = btn.dataset.id;
     function done(ok) { btn.textContent = ok ? "Copied" : "Select"; setTimeout(function () { btn.textContent = "Copy"; }, 1400); }
     try {
-      navigator.clipboard.writeText(id).then(function () { done(true); }, function () {
-        var r = document.createRange(); r.selectNodeContents(btn.previousElementSibling);
-        var s = window.getSelection(); s.removeAllRanges(); s.addRange(r); done(false);
+      navigator.clipboard.writeText(btn.dataset.id).then(function () { done(true); }, function () {
+        var rg = document.createRange(); rg.selectNodeContents(btn.previousElementSibling);
+        var s = window.getSelection(); s.removeAllRanges(); s.addRange(rg); done(false);
       });
     } catch (err) { done(false); }
   });
+
+  // Reproduce and footer
+  $("repro-list").innerHTML = D.reproduce.map(function (kv) { return "<dt>" + esc(kv[0]) + "</dt><dd>" + rich(kv[1]) + "</dd>"; }).join("");
+  $("foot-generated").innerHTML = "Generated " + esc(D.as_of) + " at <code>" + esc(D.tree) + "</code> from " + used.length + " runs in report, " + D.runs.length + " listed in <code>benchmarks/report-runs.json</code>.";
 })();
 </script>
-
 </body>
 </html>
