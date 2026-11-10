@@ -443,8 +443,8 @@ public sealed class PaymentFlow(
         var status = result is PspResult.Declined ? 402 : 200;
         return await AfterPspAsync(paymentId, null, merchant, attempt.Id, "capture", async () =>
         {
-            var applied = await store.ApplyAsync(
-                paymentId, answer, null, CancellationToken.None, PaymentKeyAnswer(key, status));
+            var applied = await store.ApplyPspAnswerAsync(
+                paymentId, answer, PaymentKeyAnswer(key, status), CancellationToken.None);
             return await FromAppliedAsync(
                 applied, merchant, key, status, 0, timedOut: false, countCompleted: countCompleted, keyResolved: true);
         });
@@ -550,8 +550,8 @@ public sealed class PaymentFlow(
         var status = result is PspResult.Approved ? 200 : 402;
         return await AfterPspAsync(paymentId, null, merchant, attempt.Id, "void", async () =>
         {
-            var applied = await store.ApplyAsync(
-                paymentId, answer, null, CancellationToken.None, PaymentKeyAnswer(key, status));
+            var applied = await store.ApplyPspAnswerAsync(
+                paymentId, answer, PaymentKeyAnswer(key, status), CancellationToken.None);
             return await FromAppliedAsync(
                 applied, merchant, key, status, 0, timedOut: false, countCompleted: false, keyResolved: true);
         });
@@ -664,14 +664,13 @@ public sealed class PaymentFlow(
         var status = result is PspResult.Approved ? 200 : 402;
         return await AfterPspAsync(paymentId, refundId, merchant, null, "refund", async () =>
         {
-            var applied = await store.ApplyAsync(
+            var applied = await store.ApplyPspAnswerAsync(
                 paymentId,
                 answer,
-                null,
-                CancellationToken.None,
                 new KeyAnswer(key, view => view.Refund is { } refund
                     ? new StoredResponse(status, JsonSerializer.Serialize(RefundBody.From(refund, view.Id), ApiJson.Options))
-                    : null));
+                    : null),
+                CancellationToken.None);
             return await FromRefundAppliedAsync(applied, merchant, key, status, refundId, keyResolved: true);
         });
     }
@@ -695,6 +694,11 @@ public sealed class PaymentFlow(
         RefundId refundId,
         bool keyResolved = false)
     {
+        if (result is ApplyResult.Parked parked)
+        {
+            return await PendingAsync(parked.Payment, parked.Payment.Refund?.Id ?? refundId, merchant);
+        }
+
         if (result is not ApplyResult.Applied applied)
         {
             return Refusal(new BeginOperationResult.Rejected("invalid_state"));
@@ -866,8 +870,8 @@ public sealed class PaymentFlow(
         var status = result is PspResult.Declined ? 402 : 200;
         return await AfterPspAsync(view.Id, null, merchant, attempt.Id, "authorize", async () =>
         {
-            var applied = await store.ApplyAsync(
-                view.Id, answer, null, CancellationToken.None, resolveKey ? PaymentKeyAnswer(key, status) : null);
+            var applied = await store.ApplyPspAnswerAsync(
+                view.Id, answer, resolveKey ? PaymentKeyAnswer(key, status) : null, CancellationToken.None);
             return await FromAppliedAsync(
                 applied, merchant, key, status, pspWatch.ElapsedMilliseconds, false, countCompleted, resolveKey,
                 keyResolved: resolveKey);
@@ -891,6 +895,8 @@ public sealed class PaymentFlow(
     {
         switch (result)
         {
+            case ApplyResult.Parked parked:
+                return await PendingAsync(parked.Payment, parked.Payment.Refund?.Id, merchant);
             case ApplyResult.Rejected rejected:
                 return ApiAnswer.Problem(409, "The transition was refused.", rejected.ReasonCode);
             case ApplyResult.AlreadyMoved already:

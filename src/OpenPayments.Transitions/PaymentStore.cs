@@ -147,6 +147,9 @@ public abstract record ApplyResult
     public sealed record Applied(PaymentView Payment) : ApplyResult;
     public sealed record AlreadyMoved(PaymentView Payment) : ApplyResult;
     public sealed record Rejected(string ReasonCode, PaymentView Payment) : ApplyResult;
+    // D59: the PSP's answer could not be applied even after a fresh retry, so it is parked and
+    // the client gets 202, never a refusal after the PSP acted.
+    public sealed record Parked(PaymentView Payment) : ApplyResult;
 }
 
 /// <summary>
@@ -164,10 +167,12 @@ public sealed class PaymentStore
     public static readonly TimeSpan InFlightWindow = TimeSpan.FromSeconds(30);
 
     private readonly TxRunner _runner;
+    private readonly PspEventStore _events;
 
-    public PaymentStore(TxRunner runner)
+    public PaymentStore(TxRunner runner, PspEventStore? events = null)
     {
         _runner = runner;
+        _events = events ?? new PspEventStore(runner);
     }
 
     /// <summary>Test-only failpoint used by the atomicity test.</summary>
@@ -262,6 +267,71 @@ public sealed class PaymentStore
             },
             cancellationToken);
     }
+
+    /// <summary>
+    /// D59/L7: apply a PSP answer; when it is refused or loses its conditional update, re-read
+    /// and apply once more; if it is still refused, park it in <c>psp_events</c> and answer 202.
+    /// </summary>
+    public async Task<ApplyResult> ApplyPspAnswerAsync(
+        PaymentId paymentId,
+        PaymentCommand answer,
+        KeyAnswer? keyAnswer,
+        CancellationToken cancellationToken)
+    {
+        var first = await ApplyAsync(paymentId, answer, null, cancellationToken, keyAnswer);
+        if (first is ApplyResult.Applied)
+        {
+            return first;
+        }
+
+        var second = await ApplyAsync(paymentId, answer, null, cancellationToken, keyAnswer);
+        if (second is ApplyResult.Applied)
+        {
+            return second;
+        }
+
+        var view = second switch
+        {
+            ApplyResult.AlreadyMoved already => already.Payment,
+            ApplyResult.Rejected rejected => rejected.Payment,
+            _ => null,
+        };
+        if (view is null)
+        {
+            return second;
+        }
+
+        var account = view.Attempt?.PspAccountId ?? view.Refund?.PspAccountId;
+        var operation = OperationFor(answer);
+        if (account is { } pspAccount && operation is not null)
+        {
+            try
+            {
+                await _events.ParkApiAnswerAsync(pspAccount, operation, answer, cancellationToken);
+            }
+#pragma warning disable CA1031 // D59: the answer is 202 even when the park write also fails.
+            catch (Exception)
+#pragma warning restore CA1031
+            {
+            }
+        }
+
+        return new ApplyResult.Parked(view);
+    }
+
+    private static OperationRef? OperationFor(PaymentCommand answer) => answer switch
+    {
+        PaymentCommand.PspAnswer psp => new OperationRef.Attempt(psp.AttemptId, psp.Operation),
+        PaymentCommand.RecoveryAnswer recovery => new OperationRef.Attempt(recovery.AttemptId, recovery.Operation),
+        PaymentCommand.CaptureAnswer capture => new OperationRef.Attempt(
+            capture.CaptureAttemptId, AttemptOperation.Capture),
+        PaymentCommand.VoidAnswer voidAnswer => new OperationRef.Attempt(
+            voidAnswer.VoidAttemptId, AttemptOperation.Void),
+        PaymentCommand.RefundConfirm confirm => new OperationRef.Refund(confirm.RefundId),
+        PaymentCommand.RefundRelease release => new OperationRef.Refund(release.RefundId),
+        PaymentCommand.RefundMismatch mismatch => new OperationRef.Refund(mismatch.RefundId),
+        _ => null,
+    };
 
     private static async Task ResolveKeyInTransactionAsync(
         NpgsqlConnection connection,
