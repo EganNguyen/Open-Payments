@@ -2,9 +2,20 @@
 
 An open-source payment processing system in C# (.NET), designed to handle 5,000 completed payments per second without double-charging anyone or losing a record of money.
 
-Status: Stage 1 built, review gate not yet run · Last updated: 2026-11-09
+Status: Stage 1 built and reviewed, D56 laptop verification not yet run · Last updated: 2026-11-10
 
 **Stage 1 is built:** the payments core, API, mock PSP, correctness checks, load harness and the staff console's first screens. The 5,000/s target is not proven: the measurements so far are laptop previews ([BASELINE](benchmarks/BASELINE.md)), and a capacity number needs a Linux run ([D53](docs/decisions.md#d53)).
+
+### Benchmark report
+
+The [OP-BENCH Results](https://egannguyen.github.io/Open-Payments/) page shows the highest valid laptop result, 248.32 completed payments/s at step 5, then the overall verdict, every gate with its source, and every run, including excluded ones. It's a laptop preview as of `13e851a`, not a capacity number.
+
+<a href="https://egannguyen.github.io/Open-Payments/">
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="docs/design/op-bench-report/preview-dark.png">
+    <img src="docs/design/op-bench-report/preview-light.png" width="800" alt="OP-BENCH Results: highest valid result 248.32 completed payments/s at step 5 with p50 6.07 ms and p99 17.74 ms; overall verdict INCONCLUSIVE (PREVIEW)">
+  </picture>
+</a>
 
 ## What it is
 
@@ -89,19 +100,21 @@ The clickable UX prototype and case study for the merchant dashboard and checkou
 
 - Architecture, data model, flows and failure handling, on paper.
 - Stage 1 build, Tasks 1-18: payments core, API, mock PSP, CK1-CK10, load harness, staff console. Evidence per task is in [Stage 1 progress](docs/gates/stage-1-progress.md).
-- A laptop limit search at the [D47](docs/decisions.md#d47) mix through step 6 (about 500 completed payments/s), with every correctness check passing. These are previews, not capacity ([BASELINE](benchmarks/BASELINE.md)).
+- The Stage 1 [review gate](docs/gates/stage-1-review.md), closed 2026-11-10 with no critical, high or medium finding open.
+- Crash tests K1-K3 against the real API, and alerts for unresolved payment outcomes ([runbook](docs/runbooks/unknown-outcomes.md)).
+- A laptop limit search at the [D47](docs/decisions.md#d47) mix: steps 0, 1, 3 and 5 valid and passing, and step 6 over the p99 gate with one API instance, closing Task 17 under [D53](docs/decisions.md#d53). These are previews, not capacity ([BASELINE](benchmarks/BASELINE.md)).
 
 **Not done:**
 
-- The Stage 1 [review gate](docs/delivery-workflow.md#review-gate), which a fresh session must run before Stage 2 starts.
+- The [D56](docs/decisions.md#d56) laptop verification: capacity with two API instances, soak, L3, C1, C2, C7 partial and alerts. The rows are in the [Phase 1 exit record](docs/phase-gates/phase-1.md#d56-laptop-verification).
 - A capacity number `C`. It needs a Linux host ([D53](docs/decisions.md#d53)).
 - [Verification](docs/verification.md#progress) rows stay unticked until a recorded run proves them.
 - Not designed: payouts and settlement beyond file ingestion, marketplace features, billing, advanced fraud, and the formal PCI assessment.
 
 **Next steps:**
 
-1. Rerun step 6 with pre-started k6 VUs, three times from a reset, for the [D51](docs/decisions.md#d51) laptop milestone.
-2. Run the Stage 1 review gate in a fresh session.
+1. Run step 4 once and step 6 three times from a reset on the two-API stack (`deploy/compose/two-api.yaml`) to set the stable rate under [D56](docs/decisions.md#d56).
+2. Run the rest of D56 at that rate: soak, L3, C1, C2, C7 partial and alerts.
 3. Start Stage 2's design gate: PSP sandbox, reconciler, callbacks.
 
 The [implementation guide](docs/implementation-guide.md) has the details.

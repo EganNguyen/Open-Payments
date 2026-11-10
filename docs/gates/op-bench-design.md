@@ -32,6 +32,7 @@ Confirm or change these before the build passes P1.
 | W3 | Case **L5 gets its own ID, C55**. | The owner listed it as a critical case and no existing test covers it. |
 | W4 | The environment label for production-grade evidence is **`RECORDED`**, the repository's existing word, not "PRODUCTION". | A Linux Phase 3 run is not production. Reusing the existing term keeps one trust rule. |
 | W5 | **C5, C6 and C36 are reused** from `OpenPayments.Acceptance.Tests`, not rewritten. | They already exist and pass. |
+| W6 | **`op-bench report` also writes `suite.html`** ([plan P7b](../superpowers/plans/2026-11-10-op-bench-html-report.md), [prototype](../design/op-bench-report/prototype.html)), and the §8 contract gains a `gates` array and a fixed `runs[]` shape. Proposed 2026-11-10; **confirmed by the owner, in chat, 2026-11-10**. Build after P7. | The page needs per-gate results and per-run values that §8 leaves unspecified. Both are already computed for `suite.md` and `verify`; nothing new is measured. |
 
 ## Must not change during the build
 

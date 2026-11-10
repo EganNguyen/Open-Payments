@@ -1,0 +1,565 @@
+<title>OP-BENCH Results</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans+Condensed:wght@500;600;700&family=IBM+Plex+Sans:wght@400;500;600&display=swap">
+<style>
+/* Layout: a lab report. Verdict first, then the rule that produced it, then the gates, then the numbers, then the runs they came from.
+   Every figure carries a source chip; a value nobody measured is shown as "not measured", never as zero. */
+:root {
+  --bg: #F3F6FA; --surface: #FFFFFF; --ink: #142033; --muted: #5A6678; --rule: #DAE1EA; --rule-strong: #B9C4D2;
+  --accent: #2C67C4; --accent-soft: #E6EEFA;
+  --pass: #1E7A4C; --pass-soft: #E3F3EA; --fail: #BE3A2C; --fail-soft: #FBE7E4;
+  --inc: #9A6100; --inc-soft: #FBF1DE; --na: #687384; --na-soft: #ECEFF3;
+  --plot-grid: #E4E9F0;
+  --font-display: "IBM Plex Sans Condensed", "Arial Narrow", system-ui, sans-serif;
+  --font-body: "IBM Plex Sans", system-ui, -apple-system, "Segoe UI", sans-serif;
+  --font-mono: "IBM Plex Mono", ui-monospace, "SF Mono", Menlo, monospace;
+}
+@media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) {
+  --bg: #0D131B; --surface: #141C27; --ink: #E2E8F0; --muted: #94A1B3; --rule: #263142; --rule-strong: #3A4759;
+  --accent: #6A9BE6; --accent-soft: #1A2A44;
+  --pass: #4FC48C; --pass-soft: #143224; --fail: #F07A6C; --fail-soft: #3A1C19;
+  --inc: #E5AE45; --inc-soft: #36290F; --na: #8C97A7; --na-soft: #1D2531;
+  --plot-grid: #1F2938; color-scheme: dark; } }
+:root[data-theme="dark"] {
+  --bg: #0D131B; --surface: #141C27; --ink: #E2E8F0; --muted: #94A1B3; --rule: #263142; --rule-strong: #3A4759;
+  --accent: #6A9BE6; --accent-soft: #1A2A44;
+  --pass: #4FC48C; --pass-soft: #143224; --fail: #F07A6C; --fail-soft: #3A1C19;
+  --inc: #E5AE45; --inc-soft: #36290F; --na: #8C97A7; --na-soft: #1D2531;
+  --plot-grid: #1F2938; color-scheme: dark; }
+
+* { box-sizing: border-box; }
+body { background: var(--bg); color: var(--ink); font-family: var(--font-body); font-size: 15px; line-height: 1.55; }
+.page { max-width: 1120px; margin: 0 auto; padding-block: 28px 64px;
+  padding-left: max(16px, env(safe-area-inset-left, 0px)); padding-right: max(16px, env(safe-area-inset-right, 0px)); }
+h1, h2, h3 { font-family: var(--font-display); text-wrap: balance; margin: 0; line-height: 1.15; }
+h2 { font-size: 22px; font-weight: 600; }
+h3 { font-size: 16px; font-weight: 600; }
+p { margin: 0; max-width: 68ch; }
+a { color: var(--accent); }
+code, .mono { font-family: var(--font-mono); font-size: 0.86em; }
+.num { font-variant-numeric: tabular-nums; }
+:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; border-radius: 3px; }
+.muted { color: var(--muted); }
+.eyebrow { font-family: var(--font-mono); font-size: 11.5px; letter-spacing: 0.08em; text-transform: uppercase; color: var(--muted); }
+
+/* Report header */
+.masthead { display: grid; gap: 18px; padding-bottom: 22px; border-bottom: 2px solid var(--ink); }
+.mast-top { display: flex; flex-wrap: wrap; justify-content: space-between; gap: 8px 24px; align-items: baseline; }
+.mast-top h1 { font-size: clamp(30px, 5vw, 44px); font-weight: 700; letter-spacing: -0.01em; }
+.idline { font-family: var(--font-mono); font-size: 13px; color: var(--muted); display: flex; flex-wrap: wrap; gap: 4px 18px; }
+.idline b { color: var(--ink); font-weight: 500; }
+
+.verdict { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1.25fr); gap: 0; border: 1px solid var(--rule-strong); background: var(--surface); }
+.verdict > div { padding: 20px 22px; min-width: 0; }
+.verdict-main { border-right: 1px solid var(--rule); display: grid; gap: 14px; align-content: start; }
+.verdict-word { font-family: var(--font-display); font-size: clamp(30px, 4.6vw, 40px); font-weight: 700; color: var(--inc); letter-spacing: 0.01em; line-height: 1; }
+.verdict-tags { display: flex; flex-wrap: wrap; gap: 8px; }
+.tag { font-family: var(--font-mono); font-size: 12px; font-weight: 600; letter-spacing: 0.06em; padding: 3px 8px; border: 1px solid var(--rule-strong); color: var(--muted); }
+.tag.label { border-color: var(--accent); color: var(--accent); }
+.reasons { margin: 0; padding: 0; list-style: none; display: grid; gap: 10px; }
+.reasons li { display: grid; grid-template-columns: 22px minmax(0,1fr); gap: 8px; }
+.reasons li::before { content: attr(data-n); font-family: var(--font-mono); font-size: 12px; color: var(--inc); padding-top: 2px; }
+
+/* Headline: the highest valid result, with its gates beside it */
+.headline { display: grid; grid-template-columns: minmax(0, 1.25fr) minmax(0, 1fr); border: 1px solid var(--rule-strong); background: var(--surface); }
+.hl-main { padding: 22px 24px; display: grid; gap: 14px; align-content: start; border-right: 1px solid var(--rule); min-width: 0; }
+.hl-eyebrow { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 10px; }
+.hl-eyebrow .tag { font-size: 11px; padding: 2px 7px; }
+.hl-figure { display: flex; flex-wrap: wrap; align-items: flex-end; gap: 6px 16px; }
+.hl-num { font-family: var(--font-display); font-size: clamp(60px, 11vw, 104px); font-weight: 700; line-height: 0.88; letter-spacing: -0.025em; color: var(--ink); }
+.hl-unit { font-family: var(--font-mono); font-size: 12.5px; letter-spacing: 0.08em; text-transform: uppercase; color: var(--muted); line-height: 1.35; padding-bottom: 6px; }
+.hl-context { font-size: 14px; color: var(--muted); }
+.milestone { display: grid; gap: 6px; }
+.ms-track { position: relative; height: 10px; background: var(--rule); }
+.ms-fill { position: absolute; inset: 0 auto 0 0; background: var(--accent); }
+.ms-ghost { position: absolute; right: -6px; top: 50%; width: 12px; height: 12px; margin-top: -6px; border-radius: 50%; border: 2px solid var(--muted); background: var(--surface); }
+.ms-scale { display: flex; justify-content: space-between; font-family: var(--font-mono); font-size: 11px; color: var(--muted); }
+.ms-note { font-size: 12.5px; color: var(--muted); }
+dl.hl-stats { margin: 0; display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); align-content: stretch; }
+dl.hl-stats > div { padding: 16px 20px; display: grid; gap: 6px; align-content: start; border-bottom: 1px solid var(--rule); min-width: 0; }
+dl.hl-stats > div:nth-child(odd) { border-right: 1px solid var(--rule); }
+dl.hl-stats > div:nth-last-child(-n+2) { border-bottom: 0; }
+dl.hl-stats dt { font-family: var(--font-mono); font-size: 11px; letter-spacing: 0.07em; text-transform: uppercase; color: var(--muted); }
+dl.hl-stats dd { margin: 0; font-family: var(--font-display); font-size: 26px; font-weight: 600; line-height: 1.1; }
+.gauge { height: 4px; background: var(--rule); position: relative; }
+.gauge i { position: absolute; inset: 0 auto 0 0; background: var(--pass); }
+.gate-of { font-size: 12px; color: var(--muted); }
+
+/* Verdict ladder: spec §7's evaluation order, with where it stopped */
+.ladder { list-style: none; margin: 0; padding: 0; display: grid; gap: 0; }
+.ladder li { display: grid; grid-template-columns: 34px minmax(0,1fr) auto; gap: 10px; align-items: start; padding: 10px 0; border-top: 1px solid var(--rule); }
+.ladder li:first-child { border-top: 0; padding-top: 0; }
+.ladder .k { font-family: var(--font-mono); font-size: 12px; color: var(--muted); padding-top: 2px; }
+.ladder .out { font-family: var(--font-mono); font-size: 12px; white-space: nowrap; padding-top: 2px; }
+.ladder li.hit { background: var(--inc-soft); margin: 0 -22px; padding-left: 22px; padding-right: 22px; border-top-color: transparent; }
+.ladder li.hit .out { color: var(--inc); font-weight: 600; }
+.ladder li.skip { color: var(--muted); }
+.ladder li.skip .out { color: var(--na); }
+
+/* Sections: label column on wide screens */
+.section { display: grid; grid-template-columns: 200px minmax(0, 1fr); gap: 24px; padding-block: 36px; border-bottom: 1px solid var(--rule); }
+.section > header { display: grid; gap: 6px; align-content: start; position: sticky; top: calc(env(safe-area-inset-top, 0px) + 16px); }
+.section > header p { font-size: 13px; color: var(--muted); }
+.section > .body { min-width: 0; display: grid; gap: 20px; }
+
+/* Status chips: state in form, not only colour */
+.st { display: inline-flex; align-items: center; gap: 6px; font-family: var(--font-mono); font-size: 11.5px; font-weight: 600; letter-spacing: 0.04em; padding: 2px 8px; white-space: nowrap; border: 1px solid transparent; }
+.st::before { font-size: 11px; }
+.st.pass { background: var(--pass-soft); color: var(--pass); border-color: var(--pass); }
+.st.pass::before { content: "\2713"; }
+.st.fail { background: var(--fail); color: var(--surface); }
+.st.fail::before { content: "\2715"; }
+.st.inc { background: transparent; color: var(--inc); border: 1px dashed var(--inc); }
+.st.inc::before { content: "?"; }
+.st.na { color: var(--na); border-color: var(--rule-strong);
+  background: repeating-linear-gradient(135deg, var(--na-soft) 0 4px, transparent 4px 8px); }
+.st.na::before { content: "\2013"; }
+.st.notrun { color: var(--muted); border: 1px solid var(--rule-strong); background: transparent; }
+.st.notrun::before { content: "\25CB"; }
+
+/* Source chip: where a number came from */
+.src { font-family: var(--font-mono); font-size: 11px; color: var(--accent); background: var(--accent-soft); padding: 1px 6px; white-space: nowrap; border: 0; cursor: help; }
+.unmeasured { font-family: var(--font-mono); font-size: 12px; color: var(--muted); border: 1px dashed var(--rule-strong); padding: 1px 6px; white-space: nowrap; }
+
+/* Establishes / does not */
+.claims { display: grid; grid-template-columns: repeat(2, minmax(0,1fr)); gap: 16px; }
+.claims > div { background: var(--surface); border: 1px solid var(--rule); padding: 18px 20px; display: grid; gap: 12px; align-content: start; min-width: 0; }
+.claims ul { margin: 0; padding-left: 18px; display: grid; gap: 8px; }
+.claims .no { border-color: var(--rule-strong); border-style: dashed; }
+
+/* Tables */
+.tablewrap { overflow-x: auto; border: 1px solid var(--rule); background: var(--surface); }
+table { border-collapse: collapse; width: 100%; font-size: 13.5px; }
+th, td { text-align: left; padding: 9px 12px; border-bottom: 1px solid var(--rule); vertical-align: top; }
+th { font-family: var(--font-mono); font-size: 11px; font-weight: 500; letter-spacing: 0.06em; text-transform: uppercase; color: var(--muted); background: var(--bg); white-space: nowrap; }
+tbody tr:last-child td { border-bottom: 0; }
+td.r, th.r { text-align: right; }
+td.num { font-variant-numeric: tabular-nums; white-space: nowrap; }
+tr.invalid td { color: var(--muted); }
+tr.invalid td.step { text-decoration: line-through; text-decoration-color: var(--fail); }
+.over { color: var(--fail); font-weight: 600; }
+.bar { display: grid; grid-template-columns: 52px 72px; gap: 8px; align-items: center; justify-content: end; }
+.bar i { display: block; height: 6px; background: var(--rule); position: relative; }
+.bar i b { position: absolute; inset: 0 auto 0 0; background: var(--accent); }
+.gate-name { font-weight: 500; }
+.gate-req { color: var(--muted); font-size: 12.5px; }
+
+/* Chart */
+.figure { background: var(--surface); border: 1px solid var(--rule); padding: 18px 18px 12px; display: grid; gap: 12px; min-width: 0; }
+.figure figcaption { display: flex; flex-wrap: wrap; justify-content: space-between; gap: 8px 20px; align-items: baseline; }
+.legend { display: flex; flex-wrap: wrap; gap: 6px 16px; font-size: 12.5px; color: var(--muted); }
+.legend span { display: inline-flex; align-items: center; gap: 6px; }
+.chart-scroll { overflow-x: auto; }
+svg.chart { display: block; width: 100%; min-width: 560px; height: auto; font-family: var(--font-mono); }
+.chart .grid line { stroke: var(--plot-grid); stroke-width: 1; }
+.chart .axis text { fill: var(--muted); font-size: 11px; }
+.chart .gate { stroke-width: 1.25; stroke-dasharray: 5 4; }
+.chart .gate.p99 { stroke: var(--fail); }
+.chart .gate.p50 { stroke: var(--inc); }
+.chart .gate-label { font-size: 10.5px; }
+.chart .l99 { stroke: var(--accent); stroke-width: 2; fill: none; }
+.chart .l50 { stroke: var(--muted); stroke-width: 1.5; fill: none; }
+.chart .dash { stroke-dasharray: 3 4; }
+.chart .pt { cursor: pointer; }
+.chart .pt:focus { outline: none; }
+.chart .pt:focus circle, .chart .pt:hover circle { stroke-width: 3; }
+.readout { font-family: var(--font-mono); font-size: 12.5px; color: var(--muted); min-height: 1.6em; }
+.readout b { color: var(--ink); font-weight: 500; }
+
+/* Run ledger */
+.filters { display: flex; flex-wrap: wrap; gap: 6px; }
+.filters button { font: 500 12.5px var(--font-body); padding: 5px 12px; border: 1px solid var(--rule-strong); background: var(--surface); color: var(--ink); cursor: pointer; }
+.filters button[aria-pressed="true"] { background: var(--ink); color: var(--surface); border-color: var(--ink); }
+.runid { display: inline-flex; align-items: center; gap: 6px; }
+.copy { font: 500 11px var(--font-body); border: 1px solid var(--rule-strong); background: transparent; color: var(--muted); padding: 1px 6px; cursor: pointer; }
+.copy:hover { color: var(--ink); border-color: var(--ink); }
+
+/* Reproduction */
+dl.kv { display: grid; grid-template-columns: 160px minmax(0,1fr); gap: 0; margin: 0; background: var(--surface); border: 1px solid var(--rule); }
+dl.kv dt, dl.kv dd { padding: 10px 14px; border-bottom: 1px solid var(--rule); margin: 0; min-width: 0; }
+dl.kv dt { font-family: var(--font-mono); font-size: 11.5px; letter-spacing: 0.05em; text-transform: uppercase; color: var(--muted); }
+dl.kv dt:last-of-type, dl.kv dd:last-of-type { border-bottom: 0; }
+pre.cmd { margin: 0; background: var(--surface); border: 1px solid var(--rule); padding: 14px 16px; overflow-x: auto; font-family: var(--font-mono); font-size: 12.5px; line-height: 1.6; }
+
+footer.foot { padding-top: 28px; font-size: 12.5px; color: var(--muted); display: grid; gap: 6px; }
+
+@media (max-width: 860px) {
+  .section { grid-template-columns: minmax(0,1fr); gap: 14px; padding-block: 28px; }
+  .section > header { position: static; }
+  .verdict, .headline { grid-template-columns: minmax(0,1fr); }
+  .hl-main { border-right: 0; border-bottom: 1px solid var(--rule); }
+  .verdict-main { border-right: 0; border-bottom: 1px solid var(--rule); }
+  .claims { grid-template-columns: minmax(0,1fr); }
+  dl.kv { grid-template-columns: minmax(0,1fr); }
+  dl.kv dt { border-bottom: 0; padding-bottom: 0; }
+}
+@media (prefers-reduced-motion: no-preference) {
+  .chart .pt circle { transition: stroke-width 120ms ease; }
+}
+</style>
+
+<div class="page">
+
+  <header class="masthead">
+    <div class="mast-top">
+      <div style="display:grid;gap:6px">
+        <span class="eyebrow">Open Payments · Stage 1 · Benchmark report</span>
+        <h1>OP-BENCH Results</h1>
+      </div>
+      <div class="idline">
+        <span>as of <b>2026-11-10</b></span>
+        <span>tree <b>13e851a</b></span>
+        <span>rules <b>spec §7</b></span>
+        <span>mix <b>D47</b></span>
+      </div>
+    </div>
+
+    <section class="headline" aria-label="Highest valid result">
+      <div class="hl-main">
+        <div class="hl-eyebrow">
+          <span class="eyebrow">Highest valid result · step 5</span>
+          <span class="st pass">VALID</span>
+          <span class="tag label" title="Laptop result. Only a Linux run from Phase 3 on can be RECORDED.">PREVIEW</span>
+        </div>
+        <div class="hl-figure">
+          <span class="hl-num num">248.32</span>
+          <span class="hl-unit">completed<br>payments/s</span>
+        </div>
+        <p class="hl-context">At 500 req/s offered (491.98 admitted) on one API instance with the D47 mix. Every gate passed. <button class="src" title="20261109T045857Z-e4bff52-s5-47d3 · result.md, DB count">s5-47d3</button></p>
+        <div class="milestone">
+          <div class="ms-track" role="img" aria-label="248.32 of the 500 completed payments per second laptop milestone, 49.7 percent">
+            <span class="ms-fill" style="width:49.66%"></span>
+            <span class="ms-ghost" title="500.03/s at step 6, invalid run"></span>
+          </div>
+          <div class="ms-scale"><span class="num">0</span><span class="num">250</span><span class="num">500 · D51 milestone</span></div>
+          <p class="ms-note">49.7% of the laptop milestone. Step 6 reached 500.03/s (hollow mark), but only in invalid runs, so it doesn't count.</p>
+        </div>
+      </div>
+      <dl class="hl-stats">
+        <div><dt>Platform p50</dt><dd class="num">6.07 ms</dd><div class="gauge"><i style="width:24.3%"></i></div><span class="gate-of">gate ≤ 25 ms</span></div>
+        <div><dt>Platform p99</dt><dd class="num">17.74 ms</dd><div class="gauge"><i style="width:17.7%"></i></div><span class="gate-of">gate ≤ 100 ms</span></div>
+        <div><dt>Unexpected errors</dt><dd class="num">0.000%</dd><div class="gauge"><i style="width:0%"></i></div><span class="gate-of">gate &lt; 0.1%</span></div>
+        <div><dt>Correctness</dt><dd>8 of 8 pass</dd><div class="gauge"><i style="width:100%"></i></div><span class="gate-of">CK1–CK6, CK9, CK10 · CK7, CK8 n/a</span></div>
+        <div><dt>API CPU</dt><dd class="num">117.9%</dd><span class="gate-of">of one core · no gate</span></div>
+        <div><dt>Pool wait · deadlocks</dt><dd class="num">0.0 s · 0</dd><span class="gate-of">no gate</span></div>
+      </dl>
+    </section>
+
+    <section class="verdict" aria-label="Overall verdict">
+      <div class="verdict-main">
+        <span class="eyebrow">Overall verdict</span>
+        <div class="verdict-word">INCONCLUSIVE</div>
+        <div class="verdict-tags">
+          <span class="tag label" title="Laptop result. Only a Linux run from Phase 3 on can be RECORDED.">PREVIEW</span>
+        </div>
+        <p class="muted" style="font-size:13.5px">The OP-BENCH orchestrator isn't built yet. This report applies the suite's verdict rules to the harness's per-run results in <code>benchmarks/runs/</code> and the records they point to.</p>
+      </div>
+      <div style="display:grid;gap:12px;align-content:start">
+        <span class="eyebrow">How the verdict was reached · evaluated in order</span>
+        <ol class="ladder">
+          <li class="skip"><span class="k">1</span><span>Any correctness gate fails → <b>FAIL</b>. CK1–CK6, CK9 and CK10 passed at every counted step.</span><span class="out">not triggered</span></li>
+          <li class="hit"><span class="k">2</span><span>Any run invalid, required scenario skipped, value null, or required gate inconclusive → <b>INCONCLUSIVE</b>. Step 6 is invalid, and 11 of 15 gates are inconclusive.</span><span class="out">stopped here</span></li>
+          <li class="skip"><span class="k">3</span><span>Any performance or reliability gate missed → <b>FAIL</b>.</span><span class="out">not reached</span></li>
+          <li class="skip"><span class="k">4</span><span>Otherwise → <b>PASS</b>.</span><span class="out">not reached</span></li>
+        </ol>
+      </div>
+    </section>
+  </header>
+
+  <!-- Claims -->
+  <section class="section" id="claims">
+    <header><span class="eyebrow">§1</span><h2>What the evidence supports</h2><p>Read this before any number below.</p></header>
+    <div class="body">
+      <div class="claims">
+        <div>
+          <h3>Established, on this laptop</h3>
+          <ul>
+            <li>One API instance holds the platform-overhead gates through <b>500 req/s offered</b>: p50 6.07 ms, p99 17.74 ms at step 5. <button class="src" title="20261109T045857Z-e4bff52-s5-47d3 · result.md">s5-47d3</button></li>
+            <li>No unexpected errors and no correctness failure at any counted step. <button class="src" title="checks.json in the five counted runs">checks.json ×5</button></li>
+            <li>Pool wait was 0.0 s and deadlocks 0 under load at every counted step. <button class="src" title="pgbouncer_pools_client_maxwait_seconds; pg_stat_database_deadlocks">resources.json ×5</button></li>
+            <li>The real API, killed at the money path's three dangerous moments, recovers with no second PSP call. <button class="src" title="dotnet test --filter CrashTests · 6 of 6 · commit 823a100">K1–K3 · 823a100</button></li>
+          </ul>
+        </div>
+        <div class="no">
+          <h3>Not established</h3>
+          <ul>
+            <li><b>No capacity <code>C</code> and no instance count <code>N</code>.</b> Laptop runs are previews; D53 moves both to the first Linux run.</li>
+            <li>Nothing about the <b>5,000 payments/s</b> target. A laptop result can't be scaled to it.</li>
+            <li>The <b>500 payments/s milestone</b> (D51) isn't met: it needs three valid 10-minute runs, and there are none.</li>
+            <li>No bottleneck is named. Step 6's dropped arrivals were a generator limit, and its p99 breach came from a run that was invalid on its count.</li>
+            <li>None of the D56 laptop verification has run, including two API instances behind nginx.</li>
+          </ul>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- Gates -->
+  <section class="section" id="gates">
+    <header><span class="eyebrow">§2</span><h2>Gates</h2><p>Each gate gets its own result. <span class="st na" style="font-size:10.5px">NOT_APPLICABLE</span> is never a pass.</p></header>
+    <div class="body">
+      <div class="tablewrap">
+        <table>
+          <thead><tr><th>Gate</th><th>Result</th><th>Evidence</th><th>Source</th></tr></thead>
+          <tbody>
+            <tr><td><div class="gate-name">Correctness</div><div class="gate-req">All applicable CK1–CK11 pass in every scenario</div></td><td><span class="st inc">INCONCLUSIVE</span></td><td>CK1–CK6, CK9, CK10 pass at all 5 counted steps. CK7, CK8 n/a until Phase 2. CK11 isn't built.</td><td><button class="src" title="benchmarks/runs/*/checks.json">op-checks</button></td></tr>
+            <tr><td><div class="gate-name">Duplicates, missing, partial</div><div class="gate-req">0</div></td><td><span class="st pass">PASS</span></td><td>0 via CK1, CK2, CK9 in counted runs. CK11's client-side count is missing.</td><td><button class="src" title="CK1, CK2, CK9 in checks.json">CK1 CK2 CK9</button></td></tr>
+            <tr><td><div class="gate-name">Throughput</div><div class="gate-req">≥ 500 completed/s in each of 3 runs</div></td><td><span class="st inc">INCONCLUSIVE</span></td><td>0 of 3 valid runs. Best was <span class="num">500.03/s</span>, in a run invalid on its completed count.</td><td><button class="src" title="20261109T082010Z-7323d59-s6-5db4 · DB count">s6-5db4</button></td></tr>
+            <tr><td><div class="gate-name">Platform overhead</div><div class="gate-req">p50 ≤ 25 ms, p99 ≤ 100 ms</div></td><td><span class="st inc">INCONCLUSIVE</span></td><td>Held through step 5. At 1,000 req/s offered p99 was <span class="over num">173.47 ms</span> in an invalid run, so it can't count as a FAIL either.</td><td><button class="src" title="op_platform_overhead_seconds; k6 http_req_duration{scenario:mix} − 200 ms">overhead hist.</button></td></tr>
+            <tr><td><div class="gate-name">Error rate</div><div class="gate-req">&lt; 0.1%, excluding 402, 409, 429, 503</div></td><td><span class="st pass">PASS</span></td><td><span class="num">0.000%</span> at every counted step.</td><td><button class="src" title="k6-summary.json + API error responses">k6 + api</button></td></tr>
+            <tr><td><div class="gate-name">Bounded retries</div><div class="gate-req">No transaction &gt; 2 retries; app retries agree with PG deadlocks</div></td><td><span class="st inc">INCONCLUSIVE</span></td><td>Deadlocks 0. Retry counts by SQLSTATE aren't in the run report.</td><td><span class="unmeasured">op_tx_retries_total · not reported</span></td></tr>
+            <tr><td><div class="gate-name">Forced deadlock</div><div class="gate-req">TX1 and C34 pass, deadlocks &gt; 0 seen</div></td><td><span class="st inc">INCONCLUSIVE</span></td><td>TX1 isn't built. A fixture test raises a real deadlock, but it isn't TX1.</td><td><button class="src" title="commit 0f92846">0f92846</button></td></tr>
+            <tr><td><div class="gate-name">Retry exhaustion</div><div class="gate-req">TX2 passes</div></td><td><span class="st inc">INCONCLUSIVE</span></td><td>TX2 isn't built.</td><td><span class="unmeasured">no evidence</span></td></tr>
+            <tr><td><div class="gate-name">Restart durability</div><div class="gate-req">C54 passes, fault verified</div></td><td><span class="st inc">INCONCLUSIVE</span></td><td>C54 isn't built. K1–K3 crash tests are related evidence, not this gate.</td><td><button class="src" title="dotnet test --filter CrashTests · 6 of 6">K1–K3</button></td></tr>
+            <tr><td><div class="gate-name">Recovery</div><div class="gate-req">First success ≤ 30 s; p99 under SLO ≤ 2 min after removal</div></td><td><span class="st inc">INCONCLUSIVE</span></td><td>No fault-driver run yet.</td><td><span class="unmeasured">ack log · none</span></td></tr>
+            <tr><td><div class="gate-name">PSP lifecycle</div><div class="gate-req">Every interrupted payment classed L0–L5</div></td><td><span class="st inc">INCONCLUSIVE</span></td><td>Needs CK11.</td><td><span class="unmeasured">no evidence</span></td></tr>
+            <tr><td><div class="gate-name">Crash recovery</div><div class="gate-req">Resolver reconciles unknown outcomes</div></td><td><span class="st na">NOT_APPLICABLE</span></td><td>The resolver arrives in Stage 2. Expected until then.</td><td><button class="src" title="Spec §7, expected output until Stage 2">spec §7</button></td></tr>
+            <tr><td><div class="gate-name">Diagnostics</div><div class="gate-req"><code>pg_stat_statements</code> and manifest complete</div></td><td><span class="st inc">INCONCLUSIVE</span></td><td>Runs record <code>config.json</code>; the §8.1 manifest isn't written yet.</td><td><span class="unmeasured">manifest.json · none</span></td></tr>
+            <tr><td><div class="gate-name">Soak</div><div class="gate-req">No upward trend in RSS, Gen 2 GC/s, pool wait</div></td><td><span class="st inc">INCONCLUSIVE</span></td><td>Needs a stable rate first (D56).</td><td><span class="unmeasured">not run</span></td></tr>
+            <tr><td><div class="gate-name">Run validity</div><div class="gate-req">No dropped arrivals, generator CPU ≤ 80%, mix within bounds</div></td><td><span class="st fail">FAIL</span></td><td>Steps 0–5 valid. Step 6: k6 dropped <span class="num">68 of 902,428</span> arrivals while adding VUs past its 300 pre-allocated.</td><td><button class="src" title="20261109T050918Z-786d8ef-s6-0bba · report.py">s6-0bba</button></td></tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </section>
+
+  <!-- Ramp -->
+  <section class="section" id="ramp">
+    <header><span class="eyebrow">§3</span><h2>Laptop limit search</h2><p>D47 mix, one API instance, steps run in order from a full reset at 04:28 UTC on 2026-11-09.</p></header>
+    <div class="body">
+      <figure class="figure" style="margin:0">
+        <figcaption>
+          <h3>Platform overhead against offered load</h3>
+          <div class="legend">
+            <span><svg width="22" height="8" aria-hidden="true"><line x1="0" y1="4" x2="22" y2="4" stroke="var(--accent)" stroke-width="2"/></svg>p99</span>
+            <span><svg width="22" height="8" aria-hidden="true"><line x1="0" y1="4" x2="22" y2="4" stroke="var(--muted)" stroke-width="1.5"/></svg>p50</span>
+            <span><svg width="12" height="12" aria-hidden="true"><circle cx="6" cy="6" r="4" fill="var(--accent)"/></svg>valid run</span>
+            <span><svg width="12" height="12" aria-hidden="true"><circle cx="6" cy="6" r="4" fill="var(--surface)" stroke="var(--accent)" stroke-width="1.5"/></svg>invalid run</span>
+          </div>
+        </figcaption>
+        <div class="chart-scroll">
+          <svg class="chart" viewBox="0 0 720 312" role="img" aria-label="Platform overhead p50 and p99 in milliseconds, log scale, against offered requests per second, log scale. p99 stays under 31 ms through 500 req/s, then rises to 58 ms and 173 ms in two invalid runs at 1,000 req/s.">
+            <g class="grid">
+              <line x1="64" y1="256.7" x2="690" y2="256.7"/><line x1="64" y1="215.5" x2="690" y2="215.5"/>
+              <line x1="64" y1="119.7" x2="690" y2="119.7"/><line x1="64" y1="37.3" x2="690" y2="37.3"/>
+              <line x1="92.5" y1="24" x2="92.5" y2="270"/><line x1="282.2" y1="24" x2="282.2" y2="270"/>
+              <line x1="471.8" y1="24" x2="471.8" y2="270"/><line x1="604.4" y1="24" x2="604.4" y2="270"/><line x1="661.5" y1="24" x2="661.5" y2="270"/>
+            </g>
+            <g class="axis">
+              <text x="56" y="260.7" text-anchor="end">5 ms</text><text x="56" y="219.5" text-anchor="end">10</text>
+              <text x="56" y="165" text-anchor="end">25</text><text x="56" y="123.7" text-anchor="end">50</text>
+              <text x="56" y="82.5" text-anchor="end">100</text><text x="56" y="41.3" text-anchor="end">200</text>
+              <text x="92.5" y="290" text-anchor="middle">1</text><text x="282.2" y="290" text-anchor="middle">10</text>
+              <text x="471.8" y="290" text-anchor="middle">100</text><text x="604.4" y="290" text-anchor="middle">500</text>
+              <text x="661.5" y="290" text-anchor="middle">1,000</text>
+              <text x="690" y="307" text-anchor="end">offered req/s (log)</text>
+              <line x1="64" y1="270" x2="690" y2="270" stroke="var(--rule-strong)"/>
+            </g>
+            <!-- Gates -->
+            <line class="gate p99" x1="64" y1="78.5" x2="690" y2="78.5"/>
+            <text class="gate-label" x="70" y="72" fill="var(--fail)">p99 gate 100 ms</text>
+            <line class="gate p50" x1="64" y1="161" x2="690" y2="161"/>
+            <text class="gate-label" x="70" y="154.5" fill="var(--inc)">p50 gate 25 ms</text>
+            <!-- Lines: valid segments solid, into invalid runs dashed -->
+            <polyline class="l99" points="92.5,149.4 282.2,157.6 471.8,201.9 604.4,181.4"/>
+            <polyline class="l99 dash" points="604.4,181.4 652,110.5"/>
+            <polyline class="l99 dash" points="604.4,181.4 671,45.8"/>
+            <polyline class="l50" points="92.5,173.1 282.2,189.8 471.8,238.5 604.4,245.2"/>
+            <polyline class="l50 dash" points="604.4,245.2 652,203.6"/>
+            <polyline class="l50 dash" points="604.4,245.2 671,200.9"/>
+            <!-- Points -->
+            <g id="pts"></g>
+            <text x="671" y="33" text-anchor="middle" fill="var(--muted)" font-size="10.5">fresh DB</text>
+          </svg>
+        </div>
+        <div class="readout" id="readout" aria-live="polite">Hover or focus a point to see its run and source.</div>
+      </figure>
+
+      <div class="tablewrap">
+        <table>
+          <thead><tr><th>Step</th><th class="r">Target</th><th class="r">Admitted</th><th class="r">Completed /s</th><th class="r">p50</th><th class="r">p95</th><th class="r">p99</th><th class="r">API CPU</th><th>Result</th><th>Run</th></tr></thead>
+          <tbody id="stepRows"></tbody>
+        </table>
+      </div>
+      <p class="muted" style="font-size:13px">Latency is platform overhead: k6's <code>http_req_duration{scenario:mix}</code> minus the mock's fixed 200 ms. API CPU is percent of one core. Completed payments are about half of admitted requests by design of the D47 mix. Steps 2 and 4 weren't run in this search.</p>
+    </div>
+  </section>
+
+  <!-- D56 -->
+  <section class="section" id="d56">
+    <header><span class="eyebrow">§4</span><h2>D56 laptop verification</h2><p>Pass conditions fixed by the owner on 2026-11-10, before any run. Nothing here has run.</p></header>
+    <div class="body">
+      <div class="tablewrap">
+        <table>
+          <thead><tr><th>Check</th><th>Run</th><th>Passes if</th><th>Result</th></tr></thead>
+          <tbody>
+            <tr><td class="gate-name">Capacity</td><td>Step 4 once, step 6 three times, each from a reset, two API instances behind nginx</td><td>Valid runs whose gates all pass; sets the stable rate</td><td><span class="st notrun">NOT RUN</span></td></tr>
+            <tr><td class="gate-name">Soak</td><td>60 min at the stable rate</td><td>Gates hold; CK1–CK6 pass; no upward trend in memory, Gen 2 GC, ThreadPool queue, pool wait</td><td><span class="st notrun">BLOCKED</span><div class="gate-req">needs stable rate</div></td></tr>
+            <tr><td class="gate-name">L3, scaled</td><td>3× the stable rate for 10 min</td><td>Excess rejected as 429/503; no restart or OOM; p99 &lt; 100 ms within 2 min after; CK1–CK6 pass</td><td><span class="st notrun">BLOCKED</span><div class="gate-req">needs stable rate</div></td></tr>
+            <tr><td class="gate-name">C1, scaled</td><td>Primary CPU throttled ~5× slower at stable load</td><td>Fast 503 shedding; <code>40P01</code>/<code>40001</code> retries &lt; 1%; no ThreadPool starvation</td><td><span class="st notrun">BLOCKED</span><div class="gate-req">needs stable rate</div></td></tr>
+            <tr><td class="gate-name">C2</td><td>PgBouncer pool shrunk below demand, then restored</td><td>Waits bounded by <code>query_wait_timeout</code>, failed as 503; recovers with no restart</td><td><span class="st notrun">NOT RUN</span></td></tr>
+            <tr><td class="gate-name">C7, partial</td><td>Primary killed under load; higher-replay standby promoted by hand</td><td>RPO 0: every 200/202 payment on the new primary; CK1, CK3 pass</td><td><span class="st notrun">NOT RUN</span></td></tr>
+            <tr><td class="gate-name">Alerts</td><td><code>CommitWarning</code>, <code>AbandonedCommitsStuck</code>, <code>UnresolvedOperationAging</code></td><td>Each seen firing in a running Prometheus</td><td><span class="st notrun">NOT RUN</span></td></tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </section>
+
+  <!-- Run ledger -->
+  <section class="section" id="runs">
+    <header><span class="eyebrow">§5</span><h2>Run ledger</h2><p>Every run from 2026-11-09 and whether this report uses it. Excluded runs stay visible.</p></header>
+    <div class="body">
+      <div class="filters" role="group" aria-label="Filter runs">
+        <button type="button" id="f-all" data-f="all" aria-pressed="true">All <span class="num" data-count="all"></span></button>
+        <button type="button" id="f-counted" data-f="counted" aria-pressed="false">In report <span class="num" data-count="counted"></span></button>
+        <button type="button" id="f-excluded" data-f="excluded" aria-pressed="false">Excluded <span class="num" data-count="excluded"></span></button>
+      </div>
+      <div class="tablewrap">
+        <table>
+          <thead><tr><th>Run ID</th><th>Step</th><th>Status</th><th>Reason</th></tr></thead>
+          <tbody id="ledgerRows"></tbody>
+        </table>
+      </div>
+      <p class="muted" style="font-size:13px">The three late step-6 runs came from another session and are not in BASELINE. Their CK5 failures match the 1,033 <code>UNKNOWN</code> and 939 <code>PSP_PENDING</code> payments they left behind, recorded in Stage 1 progress. The four old-mix runs from 2026-11-06 predate D47 and are kept only for history.</p>
+    </div>
+  </section>
+
+  <!-- Reproduction -->
+  <section class="section" id="repro">
+    <header><span class="eyebrow">§6</span><h2>Reproduce</h2><p>What a rerun needs to match. A result that can't be compared with history isn't evidence.</p></header>
+    <div class="body">
+      <dl class="kv">
+        <dt>Stack</dt><dd>Docker Compose: one API instance, PostgreSQL 18.6 primary with two quorum standbys, PgBouncer 1.26.1, one mock PSP</dd>
+        <dt>Mock PSP</dt><dd>Fixed 200 ms, 0 ms jitter, 3% declines. Added p99 <span class="unmeasured">not measured</span> in these runs</dd>
+        <dt>Mix</dt><dd>D47, <code>TWO_CALL_SHARE=0.2</code>: 40% sale, 10% authorize, 10% capture, 15% status, 10% refund, 10% retry, 5% other</dd>
+        <dt>Generator</dt><dd>k6 <code>ramping-arrival-rate</code>, open model. Peak generator CPU 1.9%</dd>
+        <dt>Harness fixes</dt><dd><code>4540c23</code> error rate · <code>18d0f63</code> E8 share bound · <code>3faaaf6</code> latency without <code>setup()</code> · <code>7dd42a7</code> pre-allocate all VUs</dd>
+        <dt>Validity rules</dt><dd>No dropped arrivals, generator CPU ≤ 80%, mock added p99 ≤ 5 ms, shares within <code>max(2 pp, 3·√(p(1−p)/n))</code></dd>
+      </dl>
+      <pre class="cmd">docker compose -f deploy/compose/compose.yaml up -d --wait
+scripts/migrate.sh
+benchmarks/run.sh 5 --env local --stage phase1 --psp-latency 200</pre>
+    </div>
+  </section>
+
+  <footer class="foot">
+    <span>Sources: <code>benchmarks/BASELINE.md</code>, <code>benchmarks/runs/*/result.md</code>, <code>docs/phase-gates/phase-1.md</code>, <code>docs/gates/stage-1-progress.md</code>, benchmark suite spec §7–§8.</span>
+    <span>Every value on this page is a laptop preview. None of it sizes production.</span>
+  </footer>
+</div>
+
+<script>
+(function () {
+  var steps = [
+    { step: "0", target: 1, adm: 1.09, done: 0.64, p50: 20.41, p95: 28.15, p99: 30.35, cpu: 1.0, valid: true, result: "pass", run: "20261109T043519Z-3faaaf6-s0-14c1", x: 92.5, y99: 149.4, y50: 173.1 },
+    { step: "1", target: 10, adm: 9.98, done: 5.09, p50: 15.40, p95: 23.01, p99: 26.46, cpu: 6.5, valid: true, result: "pass", run: "20261109T044032Z-3faaaf6-s1-005e", x: 282.2, y99: 157.6, y50: 189.8 },
+    { step: "3", target: 100, adm: 99.16, done: 49.81, p50: 6.79, p95: 9.72, p99: 12.57, cpu: 34.3, valid: true, result: "pass", run: "20261109T044543Z-3faaaf6-s3-7dce", x: 471.8, y99: 201.9, y50: 238.5 },
+    { step: "5", target: 500, adm: 491.98, done: 248.32, p50: 6.07, p95: 12.07, p99: 17.74, cpu: 117.9, valid: true, result: "pass", run: "20261109T045857Z-e4bff52-s5-47d3", x: 604.4, y99: 181.4, y50: 245.2 },
+    { step: "6", target: 1000, adm: 988.84, done: 498.33, p50: 12.21, p95: 28.73, p99: 58.43, cpu: 194.3, valid: false, result: "gates pass, invalid", why: "68 dropped arrivals", run: "20261109T050918Z-786d8ef-s6-0bba", x: 652, y99: 110.5, y50: 203.6 },
+    { step: "6 · fresh DB", target: 1000, adm: null, done: 500.03, p50: 12.77, p95: null, p99: 173.47, cpu: 186.9, valid: false, result: "p99 over gate, invalid", why: "completed count invalid: API rebuilt mid-run", run: "20261109T082010Z-7323d59-s6-5db4", x: 671, y99: 45.8, y50: 200.9 }
+  ];
+
+  var ledger = [
+    ["20261109T040109Z-3d728c1-s0-3b3c", "0", "excluded", "Sent no API token; every request 401"],
+    ["20261109T040758Z-4540c23-s0-2958", "0", "excluded", "Ran before the reset: count mismatch (E8)"],
+    ["20261109T042813Z-18d0f63-s0-2291", "0", "excluded", "Counted setup() latency (E8)"],
+    ["20261109T043519Z-3faaaf6-s0-14c1", "0", "counted", "Valid; all gates pass"],
+    ["20261109T044032Z-3faaaf6-s1-005e", "1", "counted", "Valid; all gates pass"],
+    ["20261109T044543Z-3faaaf6-s3-7dce", "3", "counted", "Valid; all gates pass"],
+    ["20261109T045857Z-e4bff52-s5-47d3", "5", "counted", "Valid; all gates pass"],
+    ["20261109T050918Z-786d8ef-s6-0bba", "6", "counted", "Gates pass but invalid: 68 dropped arrivals. Ends the search under E4"],
+    ["20261109T082010Z-7323d59-s6-5db4", "6", "counted", "Invalid on completed count. p99 173.47 ms closed Task 17 under D53"],
+    ["20261109T100730Z-96384d2-s6-1daa", "6", "excluded", "Invalid: 5,607 dropped arrivals. p99 861.57 ms, CK5 FAIL"],
+    ["20261109T110048Z-9874593-s6-0fae", "6", "excluded", "Invalid: 2,319 dropped arrivals. p99 588.03 ms"],
+    ["20261109T112159Z-9874593-s6-7b7b", "6", "excluded", "Invalid: 119,539 dropped arrivals, metric/DB mismatch. Error 0.150%, CK5 FAIL"]
+  ];
+
+  function fmt(v, d) { return v == null ? null : v.toLocaleString("en-US", { minimumFractionDigits: d, maximumFractionDigits: d }); }
+  function ms(v, gate) {
+    if (v == null) return '<span class="unmeasured">n/a</span>';
+    var s = fmt(v, 2) + " ms";
+    return gate != null && v > gate ? '<span class="over">' + s + "</span>" : s;
+  }
+  function esc(s) { return String(s).replace(/[&<>"]/g, function (c) { return { "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]; }); }
+  function shortId(id) { return id.split("-").slice(-2).join("-"); }
+
+  // Step table
+  var tb = document.getElementById("stepRows");
+  tb.innerHTML = steps.map(function (s) {
+    var cpuW = Math.min(100, s.cpu / 200 * 100).toFixed(1);
+    var st = s.valid ? '<span class="st pass">VALID</span>' : '<span class="st fail">INVALID</span>';
+    return '<tr class="' + (s.valid ? "" : "invalid") + '">' +
+      '<td class="step num">' + esc(s.step) + "</td>" +
+      '<td class="r num">' + s.target.toLocaleString("en-US") + "</td>" +
+      '<td class="r num">' + (s.adm == null ? '<span class="unmeasured">n/a</span>' : fmt(s.adm, 2)) + "</td>" +
+      '<td class="r num">' + fmt(s.done, 2) + "</td>" +
+      '<td class="r num">' + ms(s.p50, 25) + "</td>" +
+      '<td class="r num">' + ms(s.p95) + "</td>" +
+      '<td class="r num">' + ms(s.p99, 100) + "</td>" +
+      '<td class="r"><div class="bar"><span class="num">' + fmt(s.cpu, 1) + '%</span><i aria-hidden="true"><b style="width:' + cpuW + '%"></b></i></div></td>' +
+      "<td>" + st + (s.why ? '<div class="gate-req">' + esc(s.why) + "</div>" : "") + "</td>" +
+      '<td><button class="src" title="' + esc(s.run) + ' · result.md">' + shortId(s.run) + "</button></td></tr>";
+  }).join("");
+
+  // Chart points
+  var NS = "http://www.w3.org/2000/svg";
+  var g = document.getElementById("pts");
+  var readout = document.getElementById("readout");
+  steps.forEach(function (s) {
+    [["p99", s.y99, s.p99, "var(--accent)"], ["p50", s.y50, s.p50, "var(--muted)"]].forEach(function (m) {
+      var a = document.createElementNS(NS, "g");
+      a.setAttribute("class", "pt");
+      a.setAttribute("tabindex", "0");
+      var label = "Step " + s.step + ", " + m[0] + " " + fmt(m[2], 2) + " ms, " + (s.valid ? "valid" : "invalid") + " run " + s.run;
+      a.setAttribute("aria-label", label);
+      var c = document.createElementNS(NS, "circle");
+      c.setAttribute("cx", s.x); c.setAttribute("cy", m[1]); c.setAttribute("r", m[0] === "p99" ? 5 : 4);
+      c.setAttribute("fill", s.valid ? m[3] : "var(--surface)");
+      c.setAttribute("stroke", m[3]); c.setAttribute("stroke-width", s.valid ? 0 : 1.75);
+      a.appendChild(c);
+      var t = document.createElementNS(NS, "title"); t.textContent = label; a.appendChild(t);
+      function show() {
+        readout.innerHTML = "<b>Step " + esc(s.step) + "</b> · " + m[0] + " <b>" + fmt(m[2], 2) + " ms</b> · " +
+          (s.valid ? "valid" : "invalid" + (s.why ? " (" + esc(s.why) + ")" : "")) + " · <span class=\"mono\">" + esc(s.run) + "</span>";
+      }
+      a.addEventListener("mouseenter", show); a.addEventListener("focus", show);
+      g.appendChild(a);
+    });
+  });
+
+  // Ledger
+  var lb = document.getElementById("ledgerRows");
+  lb.innerHTML = ledger.map(function (r) {
+    var st = r[2] === "counted" ? '<span class="st pass">IN REPORT</span>' : '<span class="st na">EXCLUDED</span>';
+    return '<tr data-kind="' + r[2] + '"><td><span class="runid"><code>' + esc(r[0]) + '</code><button type="button" class="copy" data-id="' + esc(r[0]) + '">Copy</button></span></td>' +
+      '<td class="num">' + r[1] + "</td><td>" + st + "</td><td>" + esc(r[3]) + "</td></tr>";
+  }).join("");
+  ["all", "counted", "excluded"].forEach(function (k) {
+    var n = k === "all" ? ledger.length : ledger.filter(function (r) { return r[2] === k; }).length;
+    document.querySelector('[data-count="' + k + '"]').textContent = "(" + n + ")";
+  });
+  var buttons = document.querySelectorAll(".filters button");
+  function applyFilter(f) {
+    buttons.forEach(function (b) { b.setAttribute("aria-pressed", String(b.dataset.f === f)); });
+    lb.querySelectorAll("tr").forEach(function (tr) { tr.hidden = f !== "all" && tr.dataset.kind !== f; });
+    try { localStorage.setItem("opbench-ledger-filter", f); } catch (e) {}
+  }
+  buttons.forEach(function (b) { b.addEventListener("click", function () { applyFilter(b.dataset.f); }); });
+  try { var saved = localStorage.getItem("opbench-ledger-filter"); if (saved) applyFilter(saved); } catch (e) {}
+
+  lb.addEventListener("click", function (e) {
+    var btn = e.target.closest(".copy");
+    if (!btn) return;
+    var id = btn.dataset.id;
+    function done(ok) { btn.textContent = ok ? "Copied" : "Select"; setTimeout(function () { btn.textContent = "Copy"; }, 1400); }
+    try {
+      navigator.clipboard.writeText(id).then(function () { done(true); }, function () {
+        var r = document.createRange(); r.selectNodeContents(btn.previousElementSibling);
+        var s = window.getSelection(); s.removeAllRanges(); s.addRange(r); done(false);
+      });
+    } catch (err) { done(false); }
+  });
+})();
+</script>
