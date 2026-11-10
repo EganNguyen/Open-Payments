@@ -12,3 +12,7 @@ TestResults/
 *.user
 benchmarks/runs/
 benchmarks/site/
+
+# PSP sandbox keys and webhook secrets; never committed (Stage 2 Global Constraints)
+deploy/compose/secrets/*
+!deploy/compose/secrets/README.md

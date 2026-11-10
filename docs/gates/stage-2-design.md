@@ -30,11 +30,11 @@ Checked on 2026-11-10 against the repository, not assumed.
 
 | # | Decision | Recommendation | Blocks |
 |---|---|---|---|
-| O1 | **Which PSP sandbox** | **Stripe**, in sandbox (test) mode. It has sale (automatic capture) and manual capture, a signed webhook per endpoint, 3D Secure test methods that are tokens, never card numbers, and documented idempotency. Adyen's test accounts need approval, and its rate limit and lookup were never confirmed | Tasks 32-35, C39, G2 |
+| O1 | ~~Which PSP sandbox~~ **Answered by the owner in chat, 2026-11-10: Stripe**, in sandbox mode. Recommended because it has sale and manual capture, a signed webhook per endpoint, 3D Secure test methods that are tokens, and documented idempotency | Done | Tasks 32-35, C39, G2 |
 | O2 | **One sandbox account or two** | **Two**, as two merchants. One account can't show per-account routing, the per-account breaker (C51) or G2 per account | Tasks 23, 25, 36; C51 |
 | O3 | **The adapter's declared recovery mode** | **Situational, under a new [D60](../decisions.md#d60):** replay with the same key when we hold no PSP reference, lookup by the PSP's own ID when we do, and cancel to prove an abandoned action. Stripe's Search can lag up to an hour and isn't for read-after-write, so it is never used | Task 27, C44, C45 |
 | O4 | **Approve D59-D63 as written** (below) | Approve | The whole build |
-| O5 | **Who provides the Stripe sandbox keys and webhook secrets** | The owner creates two sandboxes and puts their keys in the local secret store (`deploy/compose/secrets/`, git-ignored). No agent creates accounts or types secrets ([Global Constraints](../superpowers/plans/2026-11-10-stage-2-psp-and-recovery.md#global-constraints)) | Tasks 32-36 |
+| O5 | **The owner creates the Stripe sandboxes and keys** | The owner creates two sandboxes and puts each key and webhook secret in `deploy/compose/secrets/stripe-a.env` and `stripe-b.env`, as [its README](../../deploy/compose/secrets/README.md) shows. The folder is git-ignored. No agent creates accounts or types secrets | Tasks 32-36 |
 | O6 | **Timer values decided here** (table below) | Approve | Tasks 27-30 |
 | O7 | **G2 in writing:** who asks Stripe for the live per-account limit, and whether a written answer is required before Stage 4 or before live money | Ask before Stage 4; Stage 2 records the sandbox limit and the published live default only | Task 36 |
 | O8 | ~~The key-expiry method, once V7 has run~~ **Answered 2026-11-10:** no measurement at the design gate ([D64](../decisions.md#d64)); the method is [decided by analysis](#key-expiry-decided-by-analysis) | Approve the method when signing | Task 30 |
