@@ -19,6 +19,10 @@ public sealed record ReconcilerOptions
 
     public TimeSpan EventRetention { get; init; } = TimeSpan.FromDays(7);
 
+    public int ExpiryBatch { get; init; } = 500;
+
+    public double ExpiryMaxDeletesPerSecond { get; init; } = 500;
+
     public static ReconcilerOptions FromConfiguration(IConfiguration configuration)
     {
         var options = new ReconcilerOptions

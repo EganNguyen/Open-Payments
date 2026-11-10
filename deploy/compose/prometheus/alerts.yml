@@ -40,6 +40,16 @@ groups:
           severity: ticket
         annotations:
           summary: "An UNKNOWN {{ $labels.kind }} is past the 2 h escalation age limit; it should be in REVIEW (D45)."
+  - name: open-payments-expiry
+    rules:
+      # D19/D64: resolved keys may lag retention by at most one hour; parked events never expire.
+      - alert: KeyExpiryFallingBehind
+        expr: op_expiry_backlog_oldest_age_seconds{kind="key"} > 90000
+        for: 10m
+        labels:
+          severity: ticket
+        annotations:
+          summary: "Keys resolved more than 24 h ago are still present; expiry is behind (D19, D64)."
   - name: open-payments-psp
     rules:
       - alert: PspBreakerOpen

@@ -61,3 +61,27 @@ op_unresolved:
     - amount_minor:
         usage: GAUGE
         description: Money they hold, in minor units of the currency.
+
+# D19/D64: how much is waiting for expiry, and how old the oldest expirable row is. A resolved
+# key older than retention plus an hour means ExpiryWorker is not keeping up.
+op_expiry_backlog:
+  query: |
+    select 'key' as kind, count(*)::float8 as count,
+           coalesce(extract(epoch from now() - min(resolved_at)), 0)::float8 as oldest_age_seconds
+    from idempotency_keys
+    where resolved_at is not null
+    union all
+    select 'event' as kind, count(*)::float8,
+           coalesce(extract(epoch from now() - min(processed_at)), 0)::float8
+    from psp_events
+    where processed_at is not null
+  metrics:
+    - kind:
+        usage: LABEL
+        description: key or event.
+    - count:
+        usage: GAUGE
+        description: Rows eligible for expiry now.
+    - oldest_age_seconds:
+        usage: GAUGE
+        description: Age of the oldest eligible row.

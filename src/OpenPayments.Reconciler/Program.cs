@@ -28,6 +28,7 @@ builder.Services.AddSingleton<IPspAdapterFactory>(services =>
 builder.Services.AddSingleton(ReconcilerOptions.FromConfiguration(builder.Configuration));
 builder.Services.AddHostedService<TimerWorker>();
 builder.Services.AddHostedService<EscalationWorker>();
+builder.Services.AddHostedService<ExpiryWorker>();
 builder.Services.AddHostedService<ParkedEventWorker>();
 builder.Services.AddHostedService<RecoveryWorker>();
 builder.Build().Run();
