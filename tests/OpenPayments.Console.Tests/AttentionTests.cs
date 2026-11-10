@@ -42,7 +42,7 @@ public sealed partial class AttentionTests(ConsoleDb db)
         // time stays, because it says how fresh that answer is.
         Assert.Contains("<h1>Nothing needs attention.</h1>", html, StringComparison.Ordinal);
         Assert.Contains("Checked <time", html, StringComparison.Ordinal);
-        Assert.Contains("12:00:00 UTC", html, StringComparison.Ordinal);
+        Assert.Contains(factory.Clock.GetUtcNow().UtcDateTime.ToString("HH:mm:ss", System.Globalization.CultureInfo.InvariantCulture) + " UTC", html, StringComparison.Ordinal);
         Assert.DoesNotContain("<h1>Needs attention</h1>", html, StringComparison.Ordinal);
         Assert.DoesNotContain("Refresh", html, StringComparison.Ordinal);
         Assert.DoesNotContain("class=\"checked\"", html, StringComparison.Ordinal);

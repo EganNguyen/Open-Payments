@@ -38,7 +38,9 @@ public class ConsoleFactory : WebApplicationFactory<Program>
     /// <summary>Extra configuration, applied after the defaults. Set before the first client.</summary>
     public Dictionary<string, string?> Settings { get; } = new(StringComparer.Ordinal);
 
-    public FakeTime Clock { get; } = new(DateTimeOffset.Parse("2026-11-09T12:00:00Z", CultureInfo.InvariantCulture));
+    // Starts at the real time: tests seed rows with the database's now(), and a fixed date put
+    // them outside the pages' date ranges once the calendar passed it. Tests still move it.
+    public FakeTime Clock { get; } = new(DateTimeOffset.UtcNow);
 
     protected override void ConfigureWebHost(IWebHostBuilder builder)
     {
