@@ -267,6 +267,9 @@ public sealed class MockAttemptStore
         return null;
     }
 
+    public IReadOnlyList<MockAttempt> ForAccount(string account) =>
+        [.. _attempts.Values.Where(a => string.Equals(a.Account, account, StringComparison.Ordinal))];
+
     public MockAttempt? FindByKey(string key) =>
         _attempts.TryGetValue(key, out var attempt) ? attempt : null;
 

@@ -32,6 +32,18 @@ public sealed class MockConfig
 
     public double CallbackRate { get; set; }
 
+    public double CallbackDuplicateRate { get; set; }
+
+    public double CallbackRedeliverUntilS { get; set; } = 259200;
+
+    public bool SupportsSale { get; set; } = true;
+
+    public bool ConsistentLookup { get; set; } = true;
+
+    public string ActionProof { get; set; } = "none";
+
+    public double AuthorizationWindowS { get; set; } = 7 * 86400;
+
     public int CallbackDelayMs { get; set; }
 
     public string? CallbackUrl { get; set; }
@@ -107,6 +119,36 @@ public sealed class MockConfig
             CallbackRate = Math.Clamp(callbackRate, 0, 1);
         }
 
+        if (update.CallbackDuplicateRate is { } duplicateRate)
+        {
+            CallbackDuplicateRate = Math.Clamp(duplicateRate, 0, 1);
+        }
+
+        if (update.CallbackRedeliverUntilS is { } redeliver)
+        {
+            CallbackRedeliverUntilS = Math.Max(0, redeliver);
+        }
+
+        if (update.SupportsSale is { } supportsSale)
+        {
+            SupportsSale = supportsSale;
+        }
+
+        if (update.ConsistentLookup is { } consistentLookup)
+        {
+            ConsistentLookup = consistentLookup;
+        }
+
+        if (update.ActionProof is { Length: > 0 } actionProof)
+        {
+            ActionProof = actionProof;
+        }
+
+        if (update.AuthorizationWindowS is { } authorizationWindow)
+        {
+            AuthorizationWindowS = Math.Max(0, authorizationWindow);
+        }
+
         if (update.CallbackDelayMs is { } callbackDelayMs)
         {
             CallbackDelayMs = Math.Max(0, callbackDelayMs);
@@ -152,6 +194,18 @@ public sealed class MockConfigUpdate
 
     public double? CallbackRate { get; set; }
 
+    public double? CallbackDuplicateRate { get; set; }
+
+    public double? CallbackRedeliverUntilS { get; set; }
+
+    public bool? SupportsSale { get; set; }
+
+    public bool? ConsistentLookup { get; set; }
+
+    public string? ActionProof { get; set; }
+
+    public double? AuthorizationWindowS { get; set; }
+
     public int? CallbackDelayMs { get; set; }
 
     public string? CallbackUrl { get; set; }
@@ -191,6 +245,10 @@ public sealed class MockAccountUpdate
     public double? KeyRetentionS { get; set; }
 
     public bool? Revoked { get; set; }
+
+    public string? CallbackUrl { get; set; }
+
+    public string? SigningSecret { get; set; }
 }
 
 public sealed class MockAccountState
@@ -204,6 +262,10 @@ public sealed class MockAccountState
     public double? KeyRetentionS { get; set; }
 
     public bool Revoked { get; set; }
+
+    public string? CallbackUrl { get; set; }
+
+    public string? SigningSecret { get; set; }
 
     public void Apply(MockAccountUpdate update)
     {
@@ -220,6 +282,16 @@ public sealed class MockAccountState
         if (update.Revoked is { } revoked)
         {
             Revoked = revoked;
+        }
+
+        if (update.CallbackUrl is { } callbackUrl)
+        {
+            CallbackUrl = callbackUrl.Length == 0 ? null : callbackUrl;
+        }
+
+        if (update.SigningSecret is { } signingSecret)
+        {
+            SigningSecret = signingSecret.Length == 0 ? null : signingSecret;
         }
     }
 

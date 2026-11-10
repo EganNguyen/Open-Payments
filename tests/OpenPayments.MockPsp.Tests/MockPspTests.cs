@@ -290,6 +290,154 @@ public sealed class MockPspTests
         Assert.Equal(0, app.EffectCount());
     }
 
+    [Fact]
+    public async Task Callback_is_signed_with_account_secret_and_verifies()
+    {
+        await using var callbacks = new CallbackListener(failFirst: false);
+        await using var app = await MockPspApp.StartAsync(new { callback_rate = 1.0, callback_delay_ms = 0 });
+        await app.ConfigureAccountAsync("account-a", new
+        {
+            callback_url = callbacks.Url,
+            signing_secret = "whsec_test_a",
+        });
+
+        await app.PostAsync("/authorize", Amount(100), idempotencyKey: "signed-key");
+        await TestWait.UntilAsync(() => callbacks.Bodies.Count == 1);
+
+        var body = callbacks.Bodies.Single();
+        var header = callbacks.Signatures.Single();
+        Assert.NotNull(header);
+        var parts = header!.Split(',');
+        var timestamp = parts[0]["t=".Length..];
+        var signature = parts[1]["v1=".Length..];
+        var expected = Convert.ToHexString(
+            System.Security.Cryptography.HMACSHA256.HashData(
+                System.Text.Encoding.UTF8.GetBytes("whsec_test_a"),
+                System.Text.Encoding.UTF8.GetBytes(timestamp + "." + body))).ToLowerInvariant();
+        Assert.Equal(expected, signature);
+    }
+
+    [Fact]
+    public async Task Redelivered_callback_keeps_its_event_id()
+    {
+        await using var callbacks = new CallbackListener(failFirst: true);
+        await using var app = await MockPspApp.StartAsync(new { callback_rate = 1.0, callback_delay_ms = 0 });
+        await app.ConfigureAccountAsync("account-a", new { callback_url = callbacks.Url });
+        await app.ConfigureAccountAsync("account-b", new { callback_url = callbacks.Url });
+
+        await app.PostAsync("/authorize", Amount(100), idempotencyKey: "event-id-key");
+        await TestWait.UntilAsync(() => callbacks.Bodies.Count == 2);
+
+        var ids = callbacks.Bodies
+            .Select(body => JsonNode.Parse(body)!["event_id"]!.GetValue<string>())
+            .Distinct()
+            .ToList();
+        Assert.Single(ids);
+    }
+
+    [Fact]
+    public async Task Supports_sale_false_refuses_sale()
+    {
+        await using var app = await MockPspApp.StartAsync(new { supports_sale = false });
+
+        var sale = await app.PostAsync("/sale", Amount(100), idempotencyKey: "no-sale");
+        Assert.Equal(HttpStatusCode.BadRequest, sale.Status);
+        Assert.Equal("sale_not_supported", sale.Body!["error"]!.GetValue<string>());
+    }
+
+    [Fact]
+    public async Task Lookup_by_psp_reference_is_consistent_when_configured()
+    {
+        await using var app = await MockPspApp.StartAsync();
+        var created = await app.PostAsync("/authorize", Amount(100), idempotencyKey: "lookup-key");
+        var reference = created.String("psp_reference")!;
+
+        using var request = new HttpRequestMessage(HttpMethod.Get, "/lookup/" + reference);
+        request.Headers.Add("X-Mock-Account", "account-a");
+        using var response = await app.Client.SendAsync(request);
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        var body = JsonNode.Parse(await response.Content.ReadAsStringAsync())!;
+        Assert.Equal("approved", body["status"]!.GetValue<string>());
+    }
+
+    [Fact]
+    public async Task Cancel_for_proof_blocks_late_landing_and_confirms()
+    {
+        await using var app = await MockPspApp.StartAsync(
+            new { late_landing_rate = 1.0, lookup_lag_s = 0.3, callback_rate = 0.0 });
+
+        await app.PostAsync("/authorize", Amount(100), idempotencyKey: "cancel-proof-key");
+
+        using var cancel = new HttpRequestMessage(
+            HttpMethod.Post, "/cancel-for-proof/cancel-proof-key");
+        cancel.Headers.Add("X-Mock-Account", "account-a");
+        using var response = await app.Client.SendAsync(cancel);
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+
+        await Task.Delay(600);
+        Assert.Equal(0, app.EffectCount());
+    }
+
+    [Fact]
+    public async Task Duplicate_rate_delivers_the_same_event_twice()
+    {
+        await using var callbacks = new CallbackListener(failFirst: false);
+        await using var app = await MockPspApp.StartAsync(
+            new { callback_rate = 1.0, callback_duplicate_rate = 1.0, callback_delay_ms = 0 });
+        await app.ConfigureAccountAsync("account-a", new { callback_url = callbacks.Url });
+
+        await app.PostAsync("/authorize", Amount(100), idempotencyKey: "dup-key");
+        await TestWait.UntilAsync(() => callbacks.Bodies.Count >= 2);
+
+        var ids = callbacks.Bodies
+            .Select(body => JsonNode.Parse(body)!["event_id"]!.GetValue<string>())
+            .Distinct()
+            .ToList();
+        Assert.Single(ids);
+    }
+
+    [Fact]
+    public async Task Callbacks_go_to_each_accounts_own_url()
+    {
+        await using var first = new CallbackListener(failFirst: false);
+        await using var second = new CallbackListener(failFirst: false);
+        await using var app = await MockPspApp.StartAsync(new { callback_rate = 1.0, callback_delay_ms = 0 });
+        await app.ConfigureAccountAsync("account-a", new { callback_url = first.Url });
+        await app.ConfigureAccountAsync("account-b", new { callback_url = second.Url });
+
+        await app.PostAsync("/authorize", Amount(100), account: "account-a", idempotencyKey: "a-key");
+        await app.PostAsync("/authorize", Amount(100), account: "account-b", idempotencyKey: "b-key");
+
+        await TestWait.UntilAsync(() => first.Count == 1 && second.Count == 1);
+        Assert.Contains("a-key", first.Bodies.Single(), StringComparison.Ordinal);
+        Assert.Contains("b-key", second.Bodies.Single(), StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task Settlement_csv_contains_requested_defects_and_is_stable_for_same_date()
+    {
+        await using var app = await MockPspApp.StartAsync(new { callback_rate = 0.0 });
+        await app.PostAsync("/authorize", Amount(100), idempotencyKey: "settle-1");
+        await app.PostAsync("/authorize", Amount(200), idempotencyKey: "settle-2");
+
+        var date = DateTime.UtcNow.ToString("yyyy-MM-dd", System.Globalization.CultureInfo.InvariantCulture);
+        async Task<string> FetchAsync()
+        {
+            using var request = new HttpRequestMessage(
+                HttpMethod.Get,
+                $"/admin/settlement/account-a?date={date}&defects=duplicate,unmatched,amount,missing");
+            using var response = await app.Client.SendAsync(request);
+            Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+            return await response.Content.ReadAsStringAsync();
+        }
+
+        var csv = await FetchAsync();
+        Assert.True(csv.Contains("psp_unknown_unmatched", StringComparison.Ordinal), csv);
+        var lines = csv.Split('\n', StringSplitOptions.RemoveEmptyEntries);
+        Assert.True(lines.Length >= 4, csv);
+        Assert.Equal(csv, await FetchAsync());
+    }
+
     private static object Amount(long amountMinor) =>
         new { amount_minor = amountMinor, currency = "USD" };
 
@@ -488,6 +636,8 @@ public sealed class MockPspTests
 
         public ConcurrentQueue<string> Bodies { get; } = new();
 
+        public ConcurrentQueue<string?> Signatures { get; } = new();
+
         public async ValueTask DisposeAsync()
         {
             _listener.Stop();
@@ -527,6 +677,7 @@ public sealed class MockPspTests
                     context.Request.ContentEncoding);
                 var body = await reader.ReadToEndAsync();
                 Bodies.Enqueue(body);
+                Signatures.Enqueue(context.Request.Headers["Mock-Signature"]);
                 var count = Interlocked.Increment(ref _count);
                 context.Response.StatusCode = _failFirst && count == 1 ? 500 : 200;
                 context.Response.Close();

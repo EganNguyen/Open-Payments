@@ -54,6 +54,19 @@ app.MapPost("/refund", (
         OperationBody? body) =>
     MockPspHandlers.HandleOperationAsync(context, store, callbacks, "refund", body));
 
+app.MapGet("/lookup/{pspReference}", (
+        HttpContext context,
+        MockAttemptStore store,
+        string pspReference) =>
+    MockPspHandlers.LookupAsync(context, store, pspReference));
+
+app.MapPost("/cancel-for-proof/{key}", (
+        HttpContext context,
+        MockAttemptStore store,
+        CallbackSender callbacks,
+        string key) =>
+    MockPspHandlers.CancelByReferenceAsync(context, store, callbacks, key));
+
 app.MapGet("/inquire/{key}", (
         HttpContext context,
         MockAttemptStore store,
@@ -86,6 +99,24 @@ app.MapPut("/admin/accounts/{account}", (
 {
     store.Account(account).Apply(update);
     return Results.Json(new { updated = true }, MockJson.Options);
+});
+
+app.MapGet("/admin/settlement/{account}", (
+    HttpContext context,
+    MockAttemptStore store,
+    string account) =>
+{
+    var date = context.Request.Query["date"].FirstOrDefault();
+    var defects = context.Request.Query["defects"].FirstOrDefault();
+    var businessDate = DateOnly.TryParseExact(
+        date, "yyyy-MM-dd", CultureInfo.InvariantCulture, DateTimeStyles.None, out var parsed)
+        ? parsed
+        : DateOnly.FromDateTime(DateTime.UtcNow);
+    var requested = (defects ?? string.Empty)
+        .Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
+        .ToHashSet(StringComparer.OrdinalIgnoreCase);
+    var csv = MockSettlement.Csv(store.ForAccount(account), businessDate, requested);
+    return Results.Text(csv, "text/csv");
 });
 
 app.MapGet("/admin/stats", (MockAttemptStore store) =>
@@ -126,6 +157,11 @@ public static class MockPspHandlers
         if (string.IsNullOrWhiteSpace(key))
         {
             return Problem(StatusCodes.Status400BadRequest, "missing_idempotency_key");
+        }
+
+        if (op == "sale" && !store.Config.SupportsSale)
+        {
+            return Problem(StatusCodes.Status400BadRequest, "sale_not_supported");
         }
 
         if (store.IsRevoked(account))
@@ -180,6 +216,7 @@ public static class MockPspHandlers
         {
             await MaybeSendCallbackAsync(
                 callbacks,
+                store,
                 config,
                 attempt,
                 "resolved",
@@ -246,6 +283,52 @@ public static class MockPspHandlers
         return Results.Json(payload, MockJson.Options);
     }
 
+    public static IResult LookupAsync(HttpContext context, MockAttemptStore store, string pspReference)
+    {
+        var account = context.Request.Headers["X-Mock-Account"].FirstOrDefault();
+        if (string.IsNullOrWhiteSpace(account))
+        {
+            return Problem(StatusCodes.Status400BadRequest, "missing_account");
+        }
+
+        if (store.IsRevoked(account))
+        {
+            store.RecordRevoked();
+            return Problem(StatusCodes.Status401Unauthorized, "account_revoked");
+        }
+
+        if (!store.TryRateLimit(account))
+        {
+            return Busy(context);
+        }
+
+        var attempt = store.FindByReference(pspReference);
+        if (attempt is null)
+        {
+            return Results.Json(
+                new Dictionary<string, object?> { ["status"] = "not_found" }, MockJson.Options);
+        }
+
+        var payload = new Dictionary<string, object?>
+        {
+            ["status"] = attempt.Outcome,
+            ["psp_reference"] = attempt.PspReference,
+            ["amount_minor"] = attempt.AmountMinor,
+            ["currency"] = attempt.Currency,
+        };
+        if (attempt.FailureCode is not null)
+        {
+            payload["failure_code"] = attempt.FailureCode;
+        }
+
+        if (attempt.Action is not null)
+        {
+            payload["action"] = attempt.Action;
+        }
+
+        return Results.Json(payload, MockJson.Options);
+    }
+
     public static async Task<IResult> CancelByReferenceAsync(
         HttpContext context,
         MockAttemptStore store,
@@ -284,6 +367,7 @@ public static class MockPspHandlers
                 {
                     await MaybeSendCallbackAsync(
                         callbacks,
+                        store,
                         store.Config,
                         attempt,
                         "cancelled",
@@ -388,13 +472,16 @@ public static class MockPspHandlers
 
     private static async Task MaybeSendCallbackAsync(
         CallbackSender callbacks,
+        MockAttemptStore store,
         MockConfig config,
         MockAttempt attempt,
         string status,
         CancellationToken cancellationToken,
         bool force = false)
     {
-        if (string.IsNullOrWhiteSpace(config.CallbackUrl) || (!force && config.CallbackRate <= 0))
+        var accountState = store.Account(attempt.Account);
+        var url = accountState.CallbackUrl ?? config.CallbackUrl;
+        if (string.IsNullOrWhiteSpace(url) || (!force && config.CallbackRate <= 0))
         {
             return;
         }
@@ -404,17 +491,27 @@ public static class MockPspHandlers
             await Task.Delay(config.CallbackDelayMs, cancellationToken);
         }
 
+        var eventId = "evt_" + Convert.ToHexString(
+            System.Security.Cryptography.SHA256.HashData(
+                Encoding.UTF8.GetBytes($"{attempt.Account}:{attempt.Key}:{status}")))[..24].ToLowerInvariant();
         var payload = new Dictionary<string, object?>
         {
-            ["key"] = attempt.Key,
-            ["op"] = attempt.Op,
-            ["status"] = status,
+            ["event_id"] = eventId,
+            ["type"] = attempt.Op + "." + status,
+            ["reference"] = attempt.Key,
             ["psp_reference"] = attempt.PspReference,
             ["amount_minor"] = attempt.AmountMinor,
             ["currency"] = attempt.Currency,
             ["at"] = DateTimeOffset.UtcNow.ToString("O", CultureInfo.InvariantCulture),
         };
-        await callbacks.SendAsync(config.CallbackUrl, payload, cancellationToken);
+        var secret = accountState.SigningSecret ?? "mock_signing_secret";
+        var deadline = TimeSpan.FromSeconds(config.CallbackRedeliverUntilS);
+        await callbacks.SendAsync(url, secret, payload, deadline, cancellationToken);
+        if (config.CallbackDuplicateRate > 0
+            && Outcomes.Hit(attempt.Key, config.Seed, "callback_duplicate", config.CallbackDuplicateRate))
+        {
+            await callbacks.SendAsync(url, secret, payload, deadline, cancellationToken);
+        }
     }
 
     private static IResult Problem(int statusCode, string code) =>
@@ -448,17 +545,30 @@ public sealed class CallbackSender
 
     public async Task<bool> SendAsync(
         string url,
+        string signingSecret,
         IReadOnlyDictionary<string, object?> payload,
+        TimeSpan redeliverUntil,
         CancellationToken cancellationToken)
     {
         var client = _httpClientFactory.CreateClient("callbacks");
         client.Timeout = TimeSpan.FromSeconds(2);
         var json = JsonSerializer.Serialize(payload, MockJson.Options);
-        for (var attempt = 0; attempt < 3; attempt++)
+        var timestamp = DateTimeOffset.UtcNow.ToUnixTimeSeconds();
+        var signed = timestamp.ToString(CultureInfo.InvariantCulture) + "." + json;
+        using var hmac = new System.Security.Cryptography.HMACSHA256(
+            Encoding.UTF8.GetBytes(signingSecret));
+        var signature = Convert.ToHexString(
+            hmac.ComputeHash(Encoding.UTF8.GetBytes(signed))).ToLowerInvariant();
+        var deadline = DateTimeOffset.UtcNow + (redeliverUntil <= TimeSpan.Zero
+            ? TimeSpan.FromMilliseconds(300)
+            : redeliverUntil);
+        var attempt = 0;
+        while (DateTimeOffset.UtcNow < deadline)
         {
             try
             {
                 using var content = new StringContent(json, Encoding.UTF8, "application/json");
+                content.Headers.Add("Mock-Signature", $"t={timestamp},v1={signature}");
                 using var response = await client.PostAsync(url, content, cancellationToken);
                 if (response.IsSuccessStatusCode)
                 {
@@ -472,10 +582,14 @@ public sealed class CallbackSender
             {
             }
 
-            if (attempt < 2)
+            attempt++;
+            var delay = TimeSpan.FromMilliseconds(Math.Min(500, 50 * attempt));
+            if (DateTimeOffset.UtcNow + delay >= deadline)
             {
-                await Task.Delay(TimeSpan.FromMilliseconds(50 * (attempt + 1)), cancellationToken);
+                break;
             }
+
+            await Task.Delay(delay, cancellationToken);
         }
 
         return false;
