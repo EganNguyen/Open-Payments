@@ -203,3 +203,43 @@ def test_render_injects_data_without_closing_the_script(tmp_path):
 def test_render_refuses_a_template_without_the_slot():
     with pytest.raises(ValueError):
         bp.render("<html></html>", {})
+
+
+# --- result cards ----------------------------------------------------------
+
+def _k6(runs_dir: Path, run_id: str, sent: int, dropped: int) -> None:
+    (runs_dir / run_id / "k6-summary.json").write_text(json.dumps(
+        {"metrics": {"iterations": {"count": sent}, "dropped_iterations": {"count": dropped}}}))
+
+
+def test_result_cards_show_duration_rate_arrivals_and_the_longer_run_at_the_same_rate(tmp_path):
+    make_run(tmp_path, "a-s5", result_md())
+    _k6(tmp_path, "a-s5", 301251, 0)
+    long = result_md(step=100, p99=298.14, gates=False, valid=False, invalid="generator dropped 2038 arrivals")
+    make_run(tmp_path, "b-s100", long.replace("500 req/s, 600 s", "500 req/s, 3600 s"))
+    _k6(tmp_path, "b-s100", 1799211, 2038)
+    cfg = config([{"id": "a-s5"}, {"id": "b-s100", "exclude": "invalid"}])
+    cfg["results"] = [{"title": "10-minute smoke test", "run": "a-s5",
+                       "compare": {"run": "b-s100", "label": "Same rate for 60 minutes"}}]
+    card = bp.build(cfg, tmp_path, "abc1234", "2026-11-10")["results"][0]
+    assert (card["completed_whole"], card["target"], card["duration_s"], card["arrivals"]) == (248, 500.0, 600, 301251)
+    assert card["gates_passed"] and card["valid"]
+    assert card["compare"]["duration_s"] == 3600 and card["compare"]["arrivals"] == 1799211
+    assert card["compare"]["gates_passed"] is False and card["compare"]["p99"] == 298.14
+
+
+def test_a_card_for_an_invalid_run_is_marked_invalid_and_carries_the_ruling(tmp_path):
+    make_run(tmp_path, "s-s102", result_md(step=102, target=250, completed=125.43, valid=False, invalid="generator dropped 22 arrivals"))
+    _k6(tmp_path, "s-s102", 900604, 22)
+    cfg = config([{"id": "s-s102"}])
+    cfg["results"] = [{"title": "60-minute soak test", "run": "s-s102", "ruling": "owner ruling"}]
+    card = bp.build(cfg, tmp_path, "abc1234", "2026-11-10")["results"][0]
+    assert card["valid"] is False and card["ruling"] == "owner ruling"
+    assert (card["arrivals"], card["dropped"]) == (900604, 22)
+
+
+def test_a_card_naming_a_missing_run_stops_the_build(tmp_path):
+    cfg = config([{"id": "gone"}])
+    cfg["results"] = [{"title": "x", "run": "gone"}]
+    with pytest.raises(SystemExit):
+        bp.build(cfg, tmp_path, "abc1234", "2026-11-10")

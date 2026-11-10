@@ -86,6 +86,16 @@ def parse_result_md(text: str) -> Dict[str, Any]:
     }
 
 
+def read_arrivals(path: Path) -> Dict[str, Optional[int]]:
+    """Arrivals k6 sent (its completed iterations) and arrivals it dropped, from k6-summary.json."""
+    if not path.exists():
+        return {"arrivals": None, "dropped": None}
+    metrics = json.loads(path.read_text()).get("metrics", {})
+    sent = metrics.get("iterations", {}).get("count")
+    dropped = metrics.get("dropped_iterations", {}).get("count", 0)
+    return {"arrivals": int(sent) if sent is not None else None, "dropped": int(dropped)}
+
+
 def whole_payments(rate: Optional[float]) -> Optional[int]:
     """Completed payments/s as whole payments, rounded down so the page never overstates."""
     return None if rate is None else math.floor(rate + 1e-9)
@@ -100,6 +110,7 @@ def load_runs(cfg: Dict[str, Any], runs_dir: Path) -> List[Dict[str, Any]]:
         path = runs_dir / run_id / "result.md"
         if path.exists():
             run = parse_result_md(path.read_text())
+            run.update(read_arrivals(runs_dir / run_id / "k6-summary.json"))
             status = "excluded" if entry.get("exclude") else "included"
         else:
             run = parse_result_md("")
@@ -127,6 +138,10 @@ def headline(runs: List[Dict[str, Any]], cfg: Dict[str, Any]) -> Optional[Dict[s
     if not candidates:
         return None
     best = max(candidates, key=lambda r: (r["completed"], r["target"] or 0))
+    return _headline_fields(best, cfg)
+
+
+def _headline_fields(best: Dict[str, Any], cfg: Dict[str, Any]) -> Dict[str, Any]:
     applicable = {k: v for k, v in best["checks"].items() if v != "n/a"}
     milestone = cfg["milestone_completed_per_second"]
     return {
@@ -141,6 +156,34 @@ def headline(runs: List[Dict[str, Any]], cfg: Dict[str, Any]) -> Optional[Dict[s
         "checks_passing": [k for k, v in best["checks"].items() if v == "pass"],
         "checks_na": [k for k, v in best["checks"].items() if v == "n/a"],
     }
+
+
+def results(runs: List[Dict[str, Any]], cfg: Dict[str, Any]) -> List[Dict[str, Any]]:
+    """The first view's result cards, named in report-runs.json "results". Each card's numbers
+    come from its run; "compare" adds the same rate held for longer, whatever its outcome."""
+    by_id = {r["run_id"]: r for r in runs}
+    cards = []
+    for entry in cfg.get("results", []):
+        run = by_id.get(entry["run"])
+        if run is None or run["status"] == "missing":
+            raise SystemExit(f"result card run {entry['run']} has no result.md")
+        card = _headline_fields(run, cfg)
+        card.update({k: entry.get(k) for k in ("title", "note", "ruling")})
+        card.update({"duration_s": run["duration_s"], "arrivals": run.get("arrivals"),
+                     "dropped": run.get("dropped"), "valid": run["valid"] is True,
+                     "gates_passed": run["gates_passed"] is True, "p95": run["p95"]})
+        if "compare" in entry:
+            other = by_id.get(entry["compare"]["run"])
+            if other is None or other["status"] == "missing":
+                raise SystemExit(f"compare run {entry['compare']['run']} has no result.md")
+            card["compare"] = {
+                "label": entry["compare"].get("label"), "run_id": other["run_id"], "short_id": other["short_id"],
+                "target": other["target"], "duration_s": other["duration_s"], "arrivals": other.get("arrivals"),
+                "completed_exact": other["completed"], "p99": other["p99"], "gates_passed": other["gates_passed"] is True,
+                "valid": other["valid"] is True, "gate_reasons": other["gate_reasons"], "note": entry["compare"].get("note"),
+            }
+        cards.append(card)
+    return cards
 
 
 # --- gates -----------------------------------------------------------------
@@ -291,6 +334,7 @@ def build(cfg: Dict[str, Any], runs_dir: Path, head: str, today: str) -> Dict[st
         "label": "PREVIEW",
         "thresholds": cfg["thresholds"],
         "headline": headline(runs, cfg),
+        "results": results(runs, cfg),
         "gates": gates,
         "verdict": explain_verdict(gates),
         "runs": runs,

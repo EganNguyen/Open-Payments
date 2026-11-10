@@ -9,6 +9,23 @@
     "error_rate_pct": 0.1
   },
   "correctness_requires": "CK7 and CK8 start in Phase 2, and CK11 isn't built.",
+  "results": [
+    {
+      "title": "10-minute smoke test",
+      "run": "20261109T045857Z-e4bff52-s5-47d3",
+      "compare": {
+        "run": "20261110T063020Z-74490ef-s100-4375",
+        "label": "Same rate for 60 minutes",
+        "note": "`COMMIT`s stalled on WAL fsync on the laptop's shared virtual disk while the primary's checkpoint ran. D57 config, before D58."
+      }
+    },
+    {
+      "title": "60-minute soak test",
+      "run": "20261110T074536Z-2f1ca8a-s102-6ab6",
+      "ruling": "owner ruling",
+      "note": "k6 dropped 22 arrivals with too few VUs (fixed in `3f56a33`), so the run is formally invalid; the owner ruled the payment system passed and the generator failed, and defers the rerun to Stage 2."
+    }
+  ],
   "runs": [
     {
       "id": "20261109T040109Z-3d728c1-s0-3b3c",

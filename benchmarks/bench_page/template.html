@@ -69,6 +69,18 @@ code, .mono { font-family: var(--font-mono); font-size: 0.86em; }
 .reasons li::before { content: attr(data-n); font-family: var(--font-mono); font-size: 12px; color: var(--inc); padding-top: 2px; }
 
 /* Headline: the highest valid result, with its gates beside it */
+/* Result cards: the 10-minute smoke test and the 60-minute soak test */
+.results { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 16px; }
+.rcard { border: 1px solid var(--rule-strong); background: var(--surface); display: grid; align-content: start; min-width: 0; }
+.rc-main { padding: 22px 24px; display: grid; gap: 14px; border-bottom: 1px solid var(--rule); min-width: 0; }
+.rc-facts { margin: 0; display: flex; flex-wrap: wrap; gap: 10px 22px; }
+.rc-facts > div { display: grid; gap: 2px; }
+.rc-facts dt { font-family: var(--font-mono); font-size: 11px; letter-spacing: 0.07em; text-transform: uppercase; color: var(--muted); }
+.rc-facts dd { margin: 0; font-family: var(--font-display); font-size: 18px; font-weight: 600; }
+.rcard dl.hl-stats > div { padding: 14px 20px; }
+.rcard dl.hl-stats dd { font-size: 22px; }
+.rc-compare, .rc-note { padding: 16px 24px; border-top: 1px solid var(--rule); display: grid; gap: 8px; font-size: 13.5px; color: var(--muted); }
+.rc-compare .rc-line { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 12px; color: var(--ink); }
 .headline { display: grid; grid-template-columns: minmax(0, 1.25fr) minmax(0, 1fr); border: 1px solid var(--rule-strong); background: var(--surface); }
 .hl-main { padding: 22px 24px; display: grid; gap: 14px; align-content: start; border-right: 1px solid var(--rule); min-width: 0; }
 .hl-eyebrow { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 10px; }
@@ -194,7 +206,7 @@ footer.foot { padding-top: 28px; font-size: 12.5px; color: var(--muted); display
 @media (max-width: 860px) {
   .section { grid-template-columns: minmax(0,1fr); gap: 14px; padding-block: 28px; }
   .section > header { position: static; }
-  .verdict, .headline { grid-template-columns: minmax(0,1fr); }
+  .verdict, .headline, .results { grid-template-columns: minmax(0,1fr); }
   .hl-main { border-right: 0; border-bottom: 1px solid var(--rule); }
   .verdict-main { border-right: 0; border-bottom: 1px solid var(--rule); }
   .claims { grid-template-columns: minmax(0,1fr); }
@@ -360,16 +372,63 @@ benchmarks/run.sh &lt;step&gt; --env local --stage phase1 --psp-latency 200</pre
   // Masthead
   $("idline").innerHTML = "<span>as of <b>" + esc(D.as_of) + "</b></span><span>tree <b>" + esc(D.tree) + "</b></span><span>rules <b>spec §7</b></span><span>mix <b>D47</b></span>";
 
+  // Result cards (report-runs.json "results"); the single headline below is the fallback
+  function mins(sec) { return sec == null ? "—" : Math.round(sec / 60) + " min"; }
+  function statsOf(H) {
+    function gauge(v, gate) { return v == null ? "" : '<div class="gauge"><i style="width:' + Math.min(100, v / gate * 100).toFixed(1) + '%"></i></div>'; }
+    return '<dl class="hl-stats">' +
+      "<div><dt>Platform p50</dt><dd class=\"num\">" + (H.p50 == null ? "—" : fix(H.p50, 2) + " ms") + "</dd>" + gauge(H.p50, T.p50_ms) + '<span class="gate-of">gate ≤ ' + T.p50_ms + " ms</span></div>" +
+      "<div><dt>Platform p99</dt><dd class=\"num\">" + (H.p99 == null ? "—" : fix(H.p99, 2) + " ms") + "</dd>" + gauge(H.p99, T.p99_ms) + '<span class="gate-of">gate ≤ ' + T.p99_ms + " ms</span></div>" +
+      "<div><dt>Unexpected errors</dt><dd class=\"num\">" + (H.error_pct == null ? "—" : fix(H.error_pct, 3) + "%") + "</dd>" + gauge(H.error_pct, T.error_rate_pct) + '<span class="gate-of">gate &lt; ' + T.error_rate_pct + "%</span></div>" +
+      "<div><dt>Correctness</dt><dd>" + H.checks_passed + " of " + H.checks_applicable + " pass</dd>" + gauge(H.checks_passed, H.checks_applicable || 1) + '<span class="gate-of">' + esc(ckRanges(H.checks_passing)) + (H.checks_na.length ? " · " + esc(ckRanges(H.checks_na)) + " n/a" : "") + "</span></div>" +
+      "</dl>";
+  }
+  var R = D.results || [];
+  if (R.length) {
+    var box = $("headline");
+    box.className = "results";
+    box.setAttribute("aria-label", "Benchmark results");
+    box.innerHTML = R.map(function (C, i) {
+      var passed = C.gates_passed ? '<span class="st pass">Passed</span>' : '<span class="st fail">Failed</span>';
+      var html = '<article class="rcard"><div class="rc-main">' +
+        '<div class="hl-eyebrow"><span class="eyebrow">' + (i + 1) + " · " + esc(C.title) + "</span>" + passed +
+          (C.ruling ? '<span class="tag">' + esc(C.ruling) + "</span>" : "") + '<span class="tag label">' + esc(D.label) + "</span></div>" +
+        '<div class="hl-figure"><span class="hl-num num" title="recorded ' + fix(C.completed_exact, 2) + '">' + whole(C.completed_exact) + '</span><span class="hl-unit">completed payments/s<br>sustained ' + mins(C.duration_s) + "</span></div>" +
+        '<dl class="rc-facts">' +
+          "<div><dt>Offered</dt><dd class=\"num\">" + whole(C.target) + " req/s</dd></div>" +
+          "<div><dt>Admitted</dt><dd class=\"num\">" + (C.admitted == null ? "—" : whole(C.admitted) + " req/s") + "</dd></div>" +
+          "<div><dt>Arrivals</dt><dd class=\"num\">" + (C.arrivals == null ? "—" : whole(C.arrivals)) + " in " + mins(C.duration_s) + "</dd></div>" +
+          "<div><dt>Step</dt><dd class=\"num\">" + esc(C.step) + "</dd></div>" +
+        "</dl>" +
+        '<p class="hl-context">D47 mix, mock PSP fixed at 200 ms. ' + src(C.short_id, C.run_id + " · result.md") + "</p>" +
+        "</div>" + statsOf(C);
+      if (C.compare) {
+        var K = C.compare;
+        html += '<div class="rc-compare"><span class="eyebrow">' + esc(K.label || "Same rate, longer") + "</span>" +
+          '<div class="rc-line"><span class="num">' + whole(K.target) + " req/s for " + mins(K.duration_s) + " · " + (K.arrivals == null ? "—" : whole(K.arrivals)) + " arrivals</span>" +
+          (K.gates_passed && K.valid ? '<span class="st pass">Passed</span>' : '<span class="st fail">Failed</span>') +
+          '<span class="num">p99 ' + fix(K.p99, 2) + " ms, gate ≤ " + T.p99_ms + " ms</span>" + src(K.short_id, K.run_id + " · result.md") + "</div>" +
+          (K.note ? "<p>" + rich(K.note) + "</p>" : "") + "</div>";
+      }
+      if (C.note) {
+        html += '<div class="rc-note"><p>' + rich(C.note) + "</p></div>";
+      }
+      return html + "</article>";
+    }).join("");
+  }
+
   // Headline
   var H = D.headline;
-  if (!H) {
+  if (R.length) {
+    // shown as result cards above
+  } else if (!H) {
     $("headline").innerHTML = '<div class="hl-main"><span class="eyebrow">Highest valid result</span><p class="hl-context">No run in this report is both valid and passing its gates yet.</p></div>';
   } else {
     var pct = Math.min(100, H.completed_exact / H.milestone * 100);
     function gauge(v, gate) { return v == null ? "" : '<div class="gauge"><i style="width:' + Math.min(100, v / gate * 100).toFixed(1) + '%"></i></div>'; }
     $("headline").innerHTML =
       '<div class="hl-main">' +
-        '<div class="hl-eyebrow"><span class="eyebrow">Highest valid result · step ' + esc(H.step) + '</span><span class="st pass">VALID</span><span class="tag label">' + esc(D.label) + "</span></div>" +
+        '<div class="hl-eyebrow"><span class="eyebrow">Highest valid result · step ' + esc(H.step) + '</span><span class="st pass">Passed</span><span class="tag label">' + esc(D.label) + "</span></div>" +
         '<div class="hl-figure"><span class="hl-num num" title="recorded ' + fix(H.completed_exact, 2) + '">' + whole(H.completed_exact) + '</span><span class="hl-unit">completed<br>payments/s</span></div>' +
         '<p class="hl-context">At ' + whole(H.target) + " req/s offered (" + (H.admitted == null ? "admitted not measured" : whole(H.admitted) + " admitted") + "), D47 mix. Every gate passed. " + src(H.short_id, H.run_id + " · result.md") + "</p>" +
         '<div class="milestone"><div class="ms-track" role="img" aria-label="' + whole(H.completed_exact) + " of the " + H.milestone + ' completed payments per second laptop milestone"><span class="ms-fill" style="width:' + pct.toFixed(2) + '%"></span></div>' +
