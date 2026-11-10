@@ -29,3 +29,31 @@ groups:
           severity: ticket
         annotations:
           summary: "{{ $labels.kind }} operations have been {{ $labels.state }} for over 60 s; their outcome isn't established."
+  - name: open-payments-psp
+    rules:
+      - alert: PspBreakerOpen
+        expr: op_psp_breaker_state > 0
+        for: 1m
+        labels:
+          severity: page
+        annotations:
+          summary: "The PSP breaker for {{ $labels.psp }} / {{ $labels.account }} is open; calls fail fast (C13, C51)."
+      - alert: PspAccountCredentialRejected
+        expr: increase(op_psp_rejected_total{reason="psp_credential_rejected"}[5m]) > 0
+        labels:
+          severity: page
+        annotations:
+          summary: "A PSP account's credential was rejected; attempts fail with a stable code (C51)."
+      - alert: PspTlsCertExpiring
+        expr: op_psp_tls_cert_expiry_seconds < 604800
+        for: 1h
+        labels:
+          severity: ticket
+        annotations:
+          summary: "The PSP's TLS certificate expires within 7 days (C16)."
+      - alert: PspDnsFailures
+        expr: increase(op_psp_rejected_total{reason="dns_failure"}[5m]) > 0
+        labels:
+          severity: ticket
+        annotations:
+          summary: "PSP name resolution is failing (C16)."

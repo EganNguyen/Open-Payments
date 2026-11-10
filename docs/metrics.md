@@ -110,3 +110,13 @@ The local stack loads three rules from `deploy/compose/prometheus/alerts.yml`. T
 | `UnresolvedOperationAging` | `op_unresolved_oldest_age_seconds` over 60 s, for 1 min | ticket | An operation's outcome isn't established past CK5's threshold; see the [runbook](runbooks/unknown-outcomes.md) |
 
 Check `http://127.0.0.1:9090/api/v1/targets` shows the `api` targets up: `:8081`, and `:8082` only when [two API instances](architecture/local-deployment.md#topology) run.
+
+## PSP resilience series (Stage 2)
+
+| Metric | Type | Labels | Meaning |
+|---|---|---|---|
+| `op_psp_rejected_total` | counter | `reason` | PSP calls refused locally: `rate_limited`, `breaker_open`, `psp_429`, `psp_credential_rejected` |
+| `op_psp_breaker_state` | gauge | `psp`, `account` | 1 while a breaker is open; per account and per PSP (`account=""` for the PSP-wide one) |
+| `op_psp_tls_cert_expiry_seconds` | gauge | `psp` | Seconds until the PSP's TLS certificate expires; the probe is wired with the real adapter in Task 32 |
+
+Alerts `PspBreakerOpen`, `PspAccountCredentialRejected`, `PspTlsCertExpiring` and `PspDnsFailures` are in `deploy/compose/prometheus/alerts.yml`.

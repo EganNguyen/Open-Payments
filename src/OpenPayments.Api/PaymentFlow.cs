@@ -415,6 +415,18 @@ public sealed class PaymentFlow(
             using var deadline = new CancellationTokenSource(PspDeadline);
             result = await adapter.CaptureAsync(attempt.Id, view.Amount, deadline.Token);
         }
+        catch (PspRejectedException rejected) when (rejected.Reason == "psp_credential_rejected")
+        {
+            // C51: the PSP rejected the credential before it acted, so this is a known failure.
+            var declined = await store.ApplyAsync(
+                paymentId,
+                new PaymentCommand.CaptureAnswer(
+                    attempt.Id, false, null, rejected.Reason, false, DateTimeOffset.UtcNow),
+                null,
+                CancellationToken.None);
+            return await FromAppliedAsync(
+                declined, merchant, key, 402, 0, timedOut: false, countCompleted: false, keyResolved: true);
+        }
 #pragma warning disable CA1031 // M8, D27: once the request may have reached the PSP, every failure is inconclusive.
         catch (Exception)
 #pragma warning restore CA1031
@@ -525,6 +537,17 @@ public sealed class PaymentFlow(
             using var pspWait = telemetry.MeasurePspWait();
             using var deadline = new CancellationTokenSource(PspDeadline);
             result = await adapter.VoidAsync(attempt.Id, authorized.Value, deadline.Token);
+        }
+        catch (PspRejectedException rejected) when (rejected.Reason == "psp_credential_rejected")
+        {
+            var declined = await store.ApplyAsync(
+                paymentId,
+                new PaymentCommand.VoidAnswer(
+                    attempt.Id, false, false, rejected.Reason, DateTimeOffset.UtcNow),
+                null,
+                CancellationToken.None);
+            return await FromAppliedAsync(
+                declined, merchant, key, 402, 0, timedOut: false, countCompleted: false, keyResolved: true);
         }
 #pragma warning disable CA1031 // M8, D27: once the request may have reached the PSP, every failure is inconclusive.
         catch (Exception)
@@ -638,6 +661,16 @@ public sealed class PaymentFlow(
             using var pspWait = telemetry.MeasurePspWait();
             using var deadline = new CancellationTokenSource(PspDeadline);
             result = await adapter.RefundAsync(refundId, amount, deadline.Token);
+        }
+        catch (PspRejectedException rejected) when (rejected.Reason == "psp_credential_rejected")
+        {
+            var declined = await store.ApplyAsync(
+                paymentId,
+                new PaymentCommand.RefundRelease(
+                    refundId, ProvenNotCharged: true, rejected.Reason, DateTimeOffset.UtcNow),
+                null,
+                CancellationToken.None);
+            return await FromRefundAppliedAsync(declined, merchant, key, 402, refundId, keyResolved: true);
         }
 #pragma warning disable CA1031 // M8, D27: once the request may have reached the PSP, every failure is inconclusive.
         catch (Exception)
@@ -820,6 +853,20 @@ public sealed class PaymentFlow(
             result = operation == AttemptOperation.Sale
                 ? await adapter.SaleAsync(attempt.Id, view.Amount, method, deadline.Token)
                 : await adapter.AuthorizeAsync(attempt.Id, view.Amount, method, deadline.Token);
+        }
+        catch (PspRejectedException rejected) when (rejected.Reason == "psp_credential_rejected")
+        {
+            pspWatch.Stop();
+            var declined = await store.ApplyAsync(
+                view.Id,
+                new PaymentCommand.PspAnswer(
+                    attempt.Id, operation, PspAnswerOutcome.Declined, null,
+                    rejected.Reason, null, DateTimeOffset.UtcNow),
+                null,
+                CancellationToken.None);
+            return await FromAppliedAsync(
+                declined, merchant, key, 402, pspWatch.ElapsedMilliseconds, false,
+                countCompleted: false, resolveKey, keyResolved: resolveKey);
         }
 #pragma warning disable CA1031 // M8, D27: once the request may have reached the PSP, every failure is inconclusive.
         catch (Exception)

@@ -9,6 +9,7 @@ using Npgsql;
 using OpenPayments.Api;
 using OpenPayments.Domain;
 using OpenPayments.Psp;
+using OpenPayments.Psp.Resilience;
 using OpenPayments.Transitions;
 using Testcontainers.PostgreSql;
 using Xunit;
@@ -87,7 +88,9 @@ public sealed class AcceptanceFixture : IAsyncLifetime
                 services.AddSingleton(_ => new TxRunner(
                     AppConnectionString, loggerFactory: Queries));
                 services.RemoveAll<IPspAdapterFactory>();
-                services.AddSingleton<IPspAdapterFactory>(Psp);
+                services.AddSingleton<AccountGate>();
+                services.AddSingleton<IPspAdapterFactory>(sp => new ResilientPspAdapterFactory(
+                    Psp, sp.GetRequiredService<AccountGate>()));
                 services.RemoveAll<IFraudCheck>();
                 services.AddSingleton<IFraudCheck>(Fraud);
             });
@@ -440,6 +443,8 @@ public sealed class TestPsp : IPspAdapterFactory, IPspAdapter
     private bool _timeout;
     private bool _supportsSale = true;
     private Exception? _throwOnce;
+    private bool _unauthorized;
+    private bool _rateLimitOnce;
 
     public IReadOnlyList<PspCall> Calls
     {
@@ -470,6 +475,8 @@ public sealed class TestPsp : IPspAdapterFactory, IPspAdapter
             _timeout = false;
             _supportsSale = true;
             _throwOnce = null;
+            _unauthorized = false;
+            _rateLimitOnce = false;
         }
     }
 
@@ -499,6 +506,20 @@ public sealed class TestPsp : IPspAdapterFactory, IPspAdapter
         set => _supportsSale = value;
     }
 
+    /// <summary>C51: the next authorize answers 401, before any effect.</summary>
+    public bool Unauthorized
+    {
+        get => _unauthorized;
+        set => _unauthorized = value;
+    }
+
+    /// <summary>C12: the next authorize answers 429 once, then succeeds.</summary>
+    public bool RateLimitOnce
+    {
+        get => _rateLimitOnce;
+        set => _rateLimitOnce = value;
+    }
+
     public async Task<PspResult> AuthorizeAsync(
         AttemptId attempt, Money amount, PaymentMethodRef method, CancellationToken ct)
     {
@@ -506,6 +527,17 @@ public sealed class TestPsp : IPspAdapterFactory, IPspAdapter
         if (_timeout)
         {
             throw new PspTimeoutException("scripted timeout");
+        }
+
+        if (_unauthorized)
+        {
+            throw new PspUnauthorizedException();
+        }
+
+        if (_rateLimitOnce)
+        {
+            _rateLimitOnce = false;
+            throw new PspRateLimitException(TimeSpan.Zero);
         }
 
         return TakeResult();

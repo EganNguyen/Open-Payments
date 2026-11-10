@@ -19,10 +19,12 @@ public sealed class AccountGate(TimeProvider? clock = null)
     private readonly ConcurrentDictionary<Guid, Breaker> _accountBreakers = new();
     private readonly ConcurrentDictionary<string, Breaker> _pspBreakers = new(StringComparer.Ordinal);
     private readonly ConcurrentDictionary<string, long> _rejected = new(StringComparer.Ordinal);
+    private readonly ConcurrentDictionary<Guid, string> _accountPsp = new();
     private readonly TimeProvider _clock = clock ?? TimeProvider.System;
 
     public IDisposable Acquire(Guid account, string psp, Lane lane, int accountLimitPerSecond, decimal recoveryShare)
     {
+        _accountPsp[account] = psp;
         if (AccountOpen(account) || PspOpen(psp))
         {
             Rejected("breaker_open");
@@ -57,7 +59,9 @@ public sealed class AccountGate(TimeProvider? clock = null)
     public void CredentialRejected(Guid account, string psp)
     {
         // C51: only this account's breaker opens; the PSP's and other accounts keep working.
+        _accountPsp[account] = psp;
         Account(account).OpenNow();
+        Rejected("psp_credential_rejected");
     }
 
     public void Rejected(string reason) =>
@@ -68,6 +72,14 @@ public sealed class AccountGate(TimeProvider? clock = null)
     public bool AccountOpen(Guid account) => Account(account).IsOpen;
 
     public bool PspOpen(string psp) => Psp(psp).IsOpen;
+
+    public IReadOnlyList<(Guid Account, string Psp, bool Open)> Breakers() =>
+        [.. _accountPsp.Select(pair => (pair.Key, pair.Value, Account(pair.Key).IsOpen))];
+
+    public IReadOnlyList<(string Psp, bool Open)> PspBreakers() =>
+        [.. _pspBreakers.Select(pair => (pair.Key, pair.Value.IsOpen))];
+
+    public IReadOnlyDictionary<string, long> RejectedCounts => _rejected;
 
     private Breaker Account(Guid account) =>
         _accountBreakers.GetOrAdd(account, _ => new Breaker(threshold: 5, openFor: TimeSpan.FromSeconds(30), _clock));

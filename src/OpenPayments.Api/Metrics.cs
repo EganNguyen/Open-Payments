@@ -2,6 +2,7 @@ using System.Collections.Concurrent;
 using System.Diagnostics;
 using System.Globalization;
 using System.Text;
+using OpenPayments.Psp.Resilience;
 using OpenPayments.Transitions;
 
 namespace OpenPayments.Api;
@@ -34,6 +35,9 @@ public sealed class PaymentMetrics(TxRunner runner)
     private DateTime _started = DateTime.UtcNow;
     private int _startGen2 = GC.CollectionCount(2);
     private long _startAllocated = GC.GetTotalAllocatedBytes();
+
+    /// <summary>Set by the API at startup so the PSP gate's series are on /metrics.</summary>
+    public AccountGate? PspGate { get; set; }
 
     public long CompletedPayments => Interlocked.Read(ref _completed);
 
@@ -148,7 +152,31 @@ public sealed class PaymentMetrics(TxRunner runner)
             "Managed allocation rate since start.",
             (long)Math.Round((GC.GetTotalAllocatedBytes() - _startAllocated) / elapsed));
 
-        return text.ToString();
+                if (PspGate is not null)
+        {
+            foreach (var (reason, count) in PspGate.RejectedCounts)
+            {
+                AppendLabeledCounter(
+                    text, "op_psp_rejected_total", "PSP calls refused locally, by reason.", "reason",
+                    [new KeyValuePair<string, long>(reason, count)]);
+            }
+
+            foreach (var (account, psp, open) in PspGate.Breakers())
+            {
+                text.Append("op_psp_breaker_state{psp=\"").Append(Escape(psp))
+                    .Append("\",account=\"").Append(account).Append("\"} ")
+                    .Append(open ? '1' : '0').Append('\n');
+            }
+
+            foreach (var (psp, open) in PspGate.PspBreakers())
+            {
+                text.Append("op_psp_breaker_state{psp=\"").Append(Escape(psp))
+                    .Append("\",account=\"\"} ")
+                    .Append(open ? '1' : '0').Append('\n');
+            }
+        }
+
+return text.ToString();
     }
 
     private static void AppendCounter(StringBuilder text, string name, string help, long value)

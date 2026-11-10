@@ -56,6 +56,7 @@ if (app.Environment.IsDevelopment())
 }
 
 var requestMetrics = app.Services.GetRequiredService<PaymentMetrics>();
+requestMetrics.PspGate = app.Services.GetRequiredService<AccountGate>();
 var requestTelemetry = app.Services.GetRequiredService<RequestTelemetry>();
 app.Use(async (context, next) =>
 {
