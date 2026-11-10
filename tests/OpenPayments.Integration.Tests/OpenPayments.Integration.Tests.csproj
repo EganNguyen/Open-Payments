@@ -14,5 +14,8 @@
   </ItemGroup>
   <ItemGroup>
     <ProjectReference Include="../../src/OpenPayments.Transitions/OpenPayments.Transitions.csproj" />
+    <!-- Built, not referenced: the crash tests run the API and the mock PSP as real processes. -->
+    <ProjectReference Include="../../src/OpenPayments.Api/OpenPayments.Api.csproj" ReferenceOutputAssembly="false" />
+    <ProjectReference Include="../../tools/OpenPayments.MockPsp/OpenPayments.MockPsp.csproj" ReferenceOutputAssembly="false" />
   </ItemGroup>
 </Project>

@@ -122,6 +122,20 @@ Whole suite after the third re-check fixes: 432 tests (Domain 70, analyzers 1, m
 
 Whole suite at the first fixes: 385 tests (Domain 70, analyzers 1, mock PSP 20, checks 24, console 124, integration 40, console browser 34, acceptance 72), 0 warnings.
 
+### After the gate: recovery evidence (2026-11-10)
+
+From an outside review of Stage 1's recovery: no new recovery machinery, but evidence that what exists holds under real crashes, and visibility for unresolved outcomes. Built by Opus under the owner's exception.
+
+| Item | Commit | Command | Result |
+|---|---|---|---|
+| Unresolved outcomes visible | `46bebea` | `dotnet test --filter UnresolvedMetricsTests`; `promtool check rules`; postgres-exporter on the stack | PASS, test first: the test failed before the query existed. postgres-exporter serves `op_unresolved_count`, `_oldest_age_seconds` and `_amount_minor` by kind, state, currency and PSP. `UnresolvedOperationAging` fires past CK5's 60 s. [The runbook](../runbooks/unknown-outcomes.md) covers what to do. On the stack it showed 1,033 `UNKNOWN` and 939 `PSP_PENDING` payments, left by another session's step 6 runs after 11:22 UTC on 2026-11-09 |
+| Crash tests K1-K3 | this commit | `dotnet test --filter CrashTests`, 6 runs | PASS 6 of 6. The real API and mock PSP run as processes against the C43 database, with a pausable synchronous standby. **K1:** the API is killed after the PSP charged, before anything was recorded. The attempt survives `PENDING`, the PSP answers `approved` for its stored ID, no ledger entry exists, and a same-key retry gives 409, then 202, with no second PSP call. **K2:** the API is killed while transaction B's commit waits on the standby. The commit lands, the payment is `CAPTURED`, the ledger balances, the key stays unresolved, and a same-key retry renders `CAPTURED` with no PSP call. **K3:** after a restart, a same-key retry of an `UNKNOWN` payment answers 202 `UNKNOWN` at once, with no PSP call. These tests verify existing behavior, so they passed once a harness bug, a wrong field name, was fixed |
+| Console test date bomb | this commit | `dotnet test tests/OpenPayments.Console.Tests` | FIXED: the console tests' clock was fixed at 2026-11-09 12:00 UTC while rows took the database's `now()`, so three tests failed from 2026-11-10. The clock now starts at the real time; one attention test derives its expected time from it |
+
+Not covered: a crash between the two calls of a two-call auto-capture, which Stage 1 can't reach because the mock supports sale (L8).
+
+Whole suite: 457 tests (Domain 70, analyzers 1, mock PSP 23, checks 24, console 166, integration 45, console browser 46, acceptance 82), 0 warnings.
+
 ### Build brief (design session, 2026-11-09)
 
 For the builder. Follow the [build gate](../delivery-workflow.md#build-gate): test first, one commit per item, one progress line per item in the correction table format above, labelled `B1` and `B2`. Nothing here changes `docs/decisions.md`, the API contract or a gate's value.
