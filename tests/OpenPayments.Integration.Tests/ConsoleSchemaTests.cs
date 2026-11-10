@@ -106,7 +106,7 @@ public sealed class ConsoleSchemaTests(DbFixture db)
             }
         }
 
-        // Exactly what 0001_initial.sql grants.
+        // Exactly what 0001_initial.sql grants, plus 0004's DELETE on psp_events (Task 19).
         Assert.Equal(
             [
                 "accounts:SELECT",
@@ -116,7 +116,7 @@ public sealed class ConsoleSchemaTests(DbFixture db)
                 "outbox:INSERT,SELECT,UPDATE",
                 "payment_attempts:INSERT,SELECT,UPDATE",
                 "payments:INSERT,SELECT,UPDATE",
-                "psp_events:INSERT,SELECT,UPDATE",
+                "psp_events:DELETE,INSERT,SELECT,UPDATE",
                 "refunds:INSERT,SELECT,UPDATE",
                 "settlement_lines:INSERT,SELECT,UPDATE",
             ],
