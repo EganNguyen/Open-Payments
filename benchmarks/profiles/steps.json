@@ -70,5 +70,17 @@
     "rate": 20000,
     "duration_seconds": 900,
     "purpose": "Offered load rising to twice step 10 (L6)"
+  },
+  {
+    "step": 100,
+    "rate": 500,
+    "duration_seconds": 3600,
+    "purpose": "D56 laptop soak: 60 minutes at the stable step 5 rate"
+  },
+  {
+    "step": 101,
+    "rate": 1500,
+    "duration_seconds": 600,
+    "purpose": "D56 laptop L3: three times the stable rate for 10 minutes"
   }
 ]
