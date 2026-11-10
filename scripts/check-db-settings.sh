@@ -33,6 +33,12 @@ check "quorum standbys" "$DB_ADMIN_URL" \
   "select count(*) from pg_stat_replication where sync_state = 'quorum' and application_name in ('standby1','standby2')" "2"
 check "deadlock_timeout" "$DB_ADMIN_URL" "show deadlock_timeout" "100ms"
 check "log_lock_waits" "$DB_ADMIN_URL" "show log_lock_waits" "on"
+# D57: settings come only from the reviewed config files. An ALTER SYSTEM value lives in
+# postgresql.auto.conf, outside the repo, and once turned autovacuum off unnoticed.
+check "ALTER SYSTEM overrides" "$DB_ADMIN_URL" \
+  "select coalesce(string_agg(name, ',' order by name), 'none') from pg_settings where sourcefile like '%postgresql.auto.conf'" "none"
+check "autovacuum" "$DB_ADMIN_URL" "show autovacuum" "on"
+check "wal_compression" "$DB_ADMIN_URL" "show wal_compression" "lz4"
 check "transaction_timeout" "$DB_ADMIN_URL" \
   "select case when current_setting('transaction_timeout', true) in ('', '0') then 'unset' else current_setting('transaction_timeout') end" \
   "unset"
