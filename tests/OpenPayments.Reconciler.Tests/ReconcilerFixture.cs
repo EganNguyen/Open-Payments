@@ -78,6 +78,19 @@ public sealed class ReconcilerFixture : IAsyncLifetime
         return (merchant, account, payment, attempt);
     }
 
+    public async Task<(Guid Payment, Guid Refund)> SeedUnknownRefundAsync(Guid merchant, Guid account)
+    {
+        var payment = Guid.NewGuid();
+        var refund = Guid.NewGuid();
+        await ExecAdminAsync(
+            "insert into payments (id, merchant_id, state, amount_minor, currency, captured_minor, expires_at) values ('"
+            + payment + "', '" + merchant + "', 'CAPTURED', 1000, 'USD', 1000, now() + interval '1 day'); "
+            + "insert into refunds (id, payment_id, merchant_id, amount_minor, state, psp, psp_account_id, created_at) values ('"
+            + refund + "', '" + payment + "', '" + merchant + "', 1000, 'UNKNOWN', 'mock', '" + account
+            + "', now() - interval '1 minute');");
+        return (payment, refund);
+    }
+
     public async Task InsertCallbackEventAsync(
         Guid account, Guid attempt, string eventId, DateTimeOffset receivedAt)
     {

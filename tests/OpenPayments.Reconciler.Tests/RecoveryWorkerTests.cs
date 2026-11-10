@@ -77,6 +77,53 @@ public sealed class RecoveryWorkerTests(ReconcilerFixture db)
     }
 
     [Fact]
+    public async Task Refund_recovery_applies_the_refund_answer_once()
+    {
+        await db.ResetAsync();
+        var (merchant, account, _, _) = await db.SeedPendingAsync();
+        var (payment, refund) = await db.SeedUnknownRefundAsync(merchant, account);
+        var psp = new FakePsp(RecoveryMode.AuthoritativeLookup, new PspResult.Approved("psp_refund"));
+        await using var runner = new TxRunner(db.AppConnectionString);
+        using var worker = Worker(psp, runner);
+
+        var summary = await worker.RunOnceAsync(DateTimeOffset.UtcNow, CancellationToken.None);
+
+        Assert.Equal(1, summary.Recovered);
+        Assert.Contains("refund", psp.Calls);
+        Assert.Equal("SUCCEEDED", await db.TextAsync($"select state from refunds where id = '{refund}'"));
+        Assert.Equal("REFUNDED", await db.TextAsync($"select state from payments where id = '{payment}'"));
+    }
+
+    [Fact]
+    public async Task C47_an_empty_recovery_lane_leaves_the_item_for_the_next_lease()
+    {
+        await db.ResetAsync();
+        var (merchant, account, payment, attempt) = await db.SeedPendingAsync();
+        await db.ExecAdminAsync($"""
+            update payment_attempts set state = 'UNKNOWN', created_at = now() - interval '1 minute'
+             where attempt_id = '{attempt}';
+            update payments set state = 'UNKNOWN' where id = '{payment}';
+            """);
+        var psp = new FakePsp(RecoveryMode.Replay, new PspResult.Approved("psp_lane"));
+        var gate = new AccountGate();
+        // The first acquire fixes this account's recovery bucket at 10% of 10 = 1 token a second;
+        // draining it leaves the worker with nothing in the same second.
+        gate.Acquire(account, "mock", Lane.Recovery, 10, 0.10m).Dispose();
+
+        await using var runner = new TxRunner(db.AppConnectionString);
+        using var worker = new RecoveryWorker(
+            new PaymentStore(runner), new RecoveryStore(runner), psp, gate,
+            Options.Create(new ReconcilerOptions()), NullLogger<RecoveryWorker>.Instance);
+
+        var summary = await worker.RunOnceAsync(DateTimeOffset.UtcNow, CancellationToken.None);
+
+        Assert.Equal(0, summary.Recovered);
+        Assert.Equal(1, summary.Skipped);
+        Assert.Empty(psp.Calls);
+        Assert.Equal("UNKNOWN", await db.TextAsync($"select state from payments where id = '{payment}'"));
+    }
+
+    [Fact]
     public async Task C26_a_claim_leases_an_item_so_a_second_worker_does_not_take_it()
     {
         await db.ResetAsync();
@@ -135,8 +182,11 @@ public sealed class RecoveryWorkerTests(ReconcilerFixture db)
             return Task.FromResult<PspInquiry>(new PspInquiry.Answered(result));
         }
 
-        public Task<PspInquiry> RecoverRefundAsync(RefundId refund, CancellationToken ct) =>
-            Task.FromResult<PspInquiry>(new PspInquiry.Answered(result));
+        public Task<PspInquiry> RecoverRefundAsync(RefundId refund, CancellationToken ct)
+        {
+            Calls.Add("refund");
+            return Task.FromResult<PspInquiry>(new PspInquiry.Answered(result));
+        }
 
         public Task<PspInquiry> LookupByReferenceAsync(string pspReference, CancellationToken ct)
         {
