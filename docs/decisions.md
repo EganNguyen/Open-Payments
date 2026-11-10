@@ -468,6 +468,21 @@ All values are starting points until measured. Other docs state the resulting ru
 - **Why:** Providers report MFA differently. Keycloak 26.0 can't put `otp` in `amr`, but it reliably reports a step-up level in `acr`.
 - **Consequence:** each deployment configures the claim its provider sends. An empty `RequiredAcr` keeps the `amr`-only rule.
 
+### D56
+
+**Stage 1's local verification uses laptop-scaled criteria, recorded as previews.** Status: `Committed`, owner decision 2026-11-10.
+
+- **Decision:** to get the strongest Stage 1 evidence a laptop can give, these run on the local stack, with these pass conditions fixed before any run:
+  - **Capacity:** step 4 once and step 6 three times, each from a reset, with two API instances behind a local nginx, which is step 6's purpose. The stable rate is the highest step with valid runs whose gates all pass.
+  - **Soak:** 60 minutes at the stable rate. It passes if the gates hold, CK1-CK6 pass, and memory, Gen 2 GC, ThreadPool queue and pool wait show no upward trend.
+  - **L3, scaled:** offered load at 3 times the stable rate for 10 minutes. It passes if the excess is rejected with 429 or 503, there's no restart and no out-of-memory error, platform p99 is back under 100 ms within 2 minutes of the burst ending, and CK1-CK6 pass.
+  - **C1, scaled:** the primary's CPU throttled to slow it about 5 times, under the stable load. It passes if requests are shed fast as 503s, there's no retry storm (`40P01`/`40001` retries under 1% of requests) and no ThreadPool starvation, and CK1-CK6 pass after.
+  - **C2:** PgBouncer's pool shrunk below demand under load, then restored. It passes if waits stay bounded by `query_wait_timeout` and fail as 503s, and service recovers with no restart.
+  - **C7, partial:** the primary killed under load, and the standby with the higher replay position promoted by hand. It passes on RPO 0 only: every payment the API answered 200 or 202 is present on the new primary, and CK1 and CK3 pass. Failover time isn't judged, because Stage 1 has no automated failover.
+  - **Alerts:** each of the three rules is seen firing in a running Prometheus.
+- **Why:** The owner asked for the highest defensible Stage 1 score from laptop evidence, without claiming production readiness or distributed validation. The verification table's criteria are written for 5,000 payments/s and real infrastructure.
+- **Consequence:** every result is a preview. None of these replaces L3, L5, C1, C2 or C7 on Linux, and C10 and C11 aren't run.
+
 ## Assumptions and limits
 
 - **Numbers are targets, not measurements.** SLOs, thresholds, pool sizes and the 60% CPU target are replaced by measured values from L1 and O3.
