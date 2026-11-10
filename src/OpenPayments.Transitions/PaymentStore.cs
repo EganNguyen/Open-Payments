@@ -181,6 +181,9 @@ public sealed class PaymentStore
     /// <summary>Test-only failpoint used to simulate an unknown transaction A commit.</summary>
     public Action? BeforeBegin { get; set; }
 
+    /// <summary>Test-only failpoint used for L8's first read after an authorization.</summary>
+    public Action? BeforeRead { get; set; }
+
     /// <summary>Test-only failpoint after the snapshot is read and before the conditional update.</summary>
     public Action? BeforePaymentUpdate { get; set; }
 
@@ -1177,8 +1180,11 @@ public sealed class PaymentStore
     public async Task<PaymentView?> GetPaymentAsync(
         MerchantId merchant,
         PaymentId paymentId,
-        CancellationToken cancellationToken) =>
-        await LoadPaymentAsync(paymentId, merchant, cancellationToken);
+        CancellationToken cancellationToken)
+    {
+        BeforeRead?.Invoke();
+        return await LoadPaymentAsync(paymentId, merchant, cancellationToken);
+    }
 
     public async Task<MerchantPspAccount?> GetPspAccountAsync(
         MerchantId merchant,

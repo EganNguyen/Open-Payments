@@ -1022,33 +1022,31 @@ public sealed class PaymentFlow(
         string key,
         CancellationToken cancellationToken)
     {
-        var captured = await CaptureAsync(
-            paymentId,
-            new CaptureRequest(amount.Minor),
-            merchant,
-            "\u0001capture:" + key,
-            RequestHash("POST", "/internal/capture", ReadOnlySpan<byte>.Empty),
-            cancellationToken,
-            countCompleted: true,
-            enterLimiter: false);
+        ApiAnswer captured;
+        try
+        {
+            captured = await CaptureAsync(
+                paymentId,
+                new CaptureRequest(amount.Minor),
+                merchant,
+                "\u0001capture:" + key,
+                RequestHash("POST", "/internal/capture", ReadOnlySpan<byte>.Empty),
+                cancellationToken,
+                countCompleted: true,
+                enterLimiter: false);
+        }
+#pragma warning disable CA1031 // L8, M9, D28: the authorization was already sent.
+        catch (Exception)
+#pragma warning restore CA1031
+        {
+            return await PendingAfterAuthorizationAsync(paymentId, merchant);
+        }
+
         if (captured.StatusCode == 503)
         {
             // M9, D28: the authorization was already sent, so a capture that couldn't start isn't
             // "nothing happened". Answer 202 with the state; a same-key replay retries the capture.
-            try
-            {
-                if (await store.GetPaymentAsync(merchant, paymentId, CancellationToken.None) is { } current)
-                {
-                    return await PendingAsync(current, null, merchant);
-                }
-            }
-#pragma warning disable CA1031 // N3: the database may still be down; the answer stays 202.
-            catch (Exception)
-#pragma warning restore CA1031
-            {
-            }
-
-            return UnknownFallback(paymentId, null);
+            return await PendingAfterAuthorizationAsync(paymentId, merchant);
         }
 
         if (captured.StatusCode is 200 or 402)
@@ -1057,6 +1055,26 @@ public sealed class PaymentFlow(
         }
 
         return captured;
+    }
+
+    /// <summary>L8: after the authorization was sent, a failed first read or capture start is a
+    /// 202 with the state, never a 5xx or 409.</summary>
+    private async Task<ApiAnswer> PendingAfterAuthorizationAsync(PaymentId paymentId, MerchantId merchant)
+    {
+        try
+        {
+            if (await store.GetPaymentAsync(merchant, paymentId, CancellationToken.None) is { } current)
+            {
+                return await PendingAsync(current, null, merchant);
+            }
+        }
+#pragma warning disable CA1031 // N3: the database may still be down; the answer stays 202.
+        catch (Exception)
+#pragma warning restore CA1031
+        {
+        }
+
+        return UnknownFallback(paymentId, null);
     }
 
     /// <summary>Stores the create key's answer on the two-call path. It runs after a PSP call, so a
