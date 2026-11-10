@@ -214,7 +214,7 @@ footer.foot { padding-top: 28px; font-size: 12.5px; color: var(--muted); display
 <body>
 <script type="application/json" id="report-data">{
  "as_of": "2026-11-10",
- "tree": "2940311",
+ "tree": "87416f8",
  "label": "PREVIEW",
  "thresholds": {
   "p50_ms": 25,
@@ -261,14 +261,16 @@ footer.foot { padding-top: 28px; font-size: 12.5px; color: var(--muted); display
    "requirement": "All applicable CK checks pass in every run",
    "kind": "correctness",
    "status": "INCONCLUSIVE",
-   "evidence": "CK1, CK2, CK3, CK4, CK5, CK6, CK9, CK10 pass in all 5 runs. CK7, CK8 n/a. CK7 and CK8 start in Phase 2, and CK11 isn't built.",
+   "evidence": "CK1, CK2, CK3, CK4, CK5, CK6, CK9, CK10 pass in all 7 runs. CK7, CK8 n/a. CK7 and CK8 start in Phase 2, and CK11 isn't built.",
    "source": "op-checks · checks in result.md",
    "runs": [
     "20261109T043519Z-3faaaf6-s0-14c1",
     "20261109T044032Z-3faaaf6-s1-005e",
     "20261109T044543Z-3faaaf6-s3-7dce",
     "20261109T045857Z-e4bff52-s5-47d3",
-    "20261109T050918Z-786d8ef-s6-0bba"
+    "20261109T050918Z-786d8ef-s6-0bba",
+    "20261110T033617Z-13e851a-s4-0a10",
+    "20261110T074536Z-2f1ca8a-s102-6ab6"
    ]
   },
   {
@@ -277,14 +279,16 @@ footer.foot { padding-top: 28px; font-size: 12.5px; color: var(--muted); display
    "requirement": "0, from CK1, CK2 and CK9",
    "kind": "correctness",
    "status": "PASS",
-   "evidence": "CK1, CK2 and CK9 pass in all 5 runs.",
+   "evidence": "CK1, CK2 and CK9 pass in all 7 runs.",
    "source": "CK1 CK2 CK9",
    "runs": [
     "20261109T043519Z-3faaaf6-s0-14c1",
     "20261109T044032Z-3faaaf6-s1-005e",
     "20261109T044543Z-3faaaf6-s3-7dce",
     "20261109T045857Z-e4bff52-s5-47d3",
-    "20261109T050918Z-786d8ef-s6-0bba"
+    "20261109T050918Z-786d8ef-s6-0bba",
+    "20261110T033617Z-13e851a-s4-0a10",
+    "20261110T074536Z-2f1ca8a-s102-6ab6"
    ]
   },
   {
@@ -316,7 +320,7 @@ footer.foot { padding-top: 28px; font-size: 12.5px; color: var(--muted); display
    "requirement": "< 0.1%, excluding 402, 409, 429, 503",
    "kind": "performance",
    "status": "PASS",
-   "evidence": "Highest: 0.000% (step 0) across 4 valid runs.",
+   "evidence": "Highest: 0.000% (step 0) across 5 valid runs.",
    "source": "k6 + API",
    "runs": [
     "20261109T043519Z-3faaaf6-s0-14c1"
@@ -405,11 +409,11 @@ footer.foot { padding-top: 28px; font-size: 12.5px; color: var(--muted); display
   {
    "id": "soak",
    "name": "Soak",
-   "requirement": "No upward trend in RSS, Gen 2 GC/s, pool wait",
+   "requirement": "60 min at a stable rate: gates hold, CK1–CK6 pass, no upward trend in RSS, Gen 2 GC/s, ThreadPool queue, pool wait",
    "kind": "reliability",
-   "status": "INCONCLUSIVE",
-   "evidence": "Needs a stable rate first (D56).",
-   "source": "not run",
+   "status": "PASS",
+   "evidence": "At 250 req/s (125 completed payments/s) for 60 min (900,604 arrivals, 453,183 payments), on the D57 config and D58 build: p99 28.60 ms, 5-minute p99 19–33 ms including the 30-minute checkpoint, 0 errors, CK1–CK6, CK9, CK10 pass. RSS flat at 172–179 MB after warm-up; Gen 2 GC, ThreadPool queue and pool wait 0 throughout. The run is invalid only because k6 dropped 22 of ~900,000 arrivals with 0.8 s of VU headroom (fixed in `3f56a33`); the owner ruled the generator failed and the payment system passed, and defers the rerun to Stage 2. At 500 req/s both 60-min soaks failed p99 (589.57 ms, 298.14 ms) on WAL commit stalls on the shared virtual disk.",
+   "source": "s102-6ab6 · Prometheus · owner ruling",
    "runs": []
   },
   {
@@ -418,10 +422,11 @@ footer.foot { padding-top: 28px; font-size: 12.5px; color: var(--muted); display
    "requirement": "No dropped arrivals, generator CPU ≤ 80%, mix within bounds",
    "kind": "validity",
    "status": "FAIL",
-   "evidence": "Step 6 (s6-0bba): generator dropped 68 arrivals.",
+   "evidence": "Step 6 (s6-0bba): generator dropped 68 arrivals. Step 102 (s102-6ab6): generator dropped 22 arrivals.",
    "source": "report.py",
    "runs": [
-    "20261109T050918Z-786d8ef-s6-0bba"
+    "20261109T050918Z-786d8ef-s6-0bba",
+    "20261110T074536Z-2f1ca8a-s102-6ab6"
    ]
   }
  ],
@@ -440,7 +445,6 @@ footer.foot { padding-top: 28px; font-size: 12.5px; color: var(--muted); display
    "psp_lifecycle",
    "crash_recovery",
    "diagnostics",
-   "soak",
    "run_validity"
   ]
  },
@@ -936,6 +940,305 @@ footer.foot { padding-top: 28px; font-size: 12.5px; color: var(--muted); display
    "note": null,
    "completed_whole": 6,
    "result_path": "benchmarks/runs/20261109T112159Z-9874593-s6-7b7b/result.md"
+  },
+  {
+   "step": 4,
+   "target": 250.0,
+   "duration_s": 600,
+   "started_at": "2026-11-10T03:36:17Z",
+   "commit": "13e851a",
+   "admitted": 246.02,
+   "completed": 124.8,
+   "p50": 7.16,
+   "p95": 13.22,
+   "p99": 28.91,
+   "error_pct": 0.0,
+   "api_cpu_pct": 86.63,
+   "pool_wait_s": 0.0,
+   "deadlocks": 0.0,
+   "gates_passed": true,
+   "valid": true,
+   "invalid_because": [],
+   "gate_reasons": [],
+   "checks": {
+    "CK1": "pass",
+    "CK2": "pass",
+    "CK3": "pass",
+    "CK4": "pass",
+    "CK5": "pass",
+    "CK6": "pass",
+    "CK7": "n/a",
+    "CK8": "n/a",
+    "CK9": "pass",
+    "CK10": "pass"
+   },
+   "run_id": "20261110T033617Z-13e851a-s4-0a10",
+   "short_id": "s4-0a10",
+   "status": "included",
+   "exclude_reason": null,
+   "note": "D56 capacity: step 4 from a reset, two API instances behind nginx",
+   "completed_whole": 124,
+   "result_path": "benchmarks/runs/20261110T033617Z-13e851a-s4-0a10/result.md"
+  },
+  {
+   "step": 6,
+   "target": 1000.0,
+   "duration_s": 900,
+   "started_at": "2026-11-10T03:46:47Z",
+   "commit": "13e851a",
+   "admitted": 972.63,
+   "completed": 492.57,
+   "p50": 36.65,
+   "p95": 774.1,
+   "p99": 1083.76,
+   "error_pct": 0.0,
+   "api_cpu_pct": 236.82,
+   "pool_wait_s": 0.0,
+   "deadlocks": 0.0,
+   "gates_passed": false,
+   "valid": false,
+   "invalid_because": [
+    "generator dropped 14037 arrivals"
+   ],
+   "gate_reasons": [
+    "p99 1083.76 ms is over 100 ms",
+    "p50 36.65 ms is over 25 ms"
+   ],
+   "checks": {
+    "CK1": "pass",
+    "CK2": "pass",
+    "CK3": "pass",
+    "CK4": "pass",
+    "CK5": "pass",
+    "CK6": "pass",
+    "CK7": "n/a",
+    "CK8": "n/a",
+    "CK9": "pass",
+    "CK10": "pass"
+   },
+   "run_id": "20261110T034647Z-13e851a-s6-7887",
+   "short_id": "s6-7887",
+   "status": "excluded",
+   "exclude_reason": "Invalid: k6 dropped 14,037 arrivals; failed p99 (two API instances). In BASELINE",
+   "note": null,
+   "completed_whole": 492,
+   "result_path": "benchmarks/runs/20261110T034647Z-13e851a-s6-7887/result.md"
+  },
+  {
+   "step": 6,
+   "target": 1000.0,
+   "duration_s": 900,
+   "started_at": "2026-11-10T04:02:32Z",
+   "commit": "13e851a",
+   "admitted": 943.39,
+   "completed": 477.09,
+   "p50": 64.25,
+   "p95": 918.87,
+   "p99": 1771.44,
+   "error_pct": 0.0,
+   "api_cpu_pct": 231.32,
+   "pool_wait_s": 1.0,
+   "deadlocks": 0.0,
+   "gates_passed": false,
+   "valid": false,
+   "invalid_because": [
+    "generator dropped 40889 arrivals"
+   ],
+   "gate_reasons": [
+    "p99 1771.44 ms is over 100 ms",
+    "p50 64.25 ms is over 25 ms"
+   ],
+   "checks": {
+    "CK1": "pass",
+    "CK2": "pass",
+    "CK3": "pass",
+    "CK4": "pass",
+    "CK5": "pass",
+    "CK6": "pass",
+    "CK7": "n/a",
+    "CK8": "n/a",
+    "CK9": "pass",
+    "CK10": "pass"
+   },
+   "run_id": "20261110T040232Z-13e851a-s6-1e11",
+   "short_id": "s6-1e11",
+   "status": "excluded",
+   "exclude_reason": "Invalid: k6 dropped 40,889 arrivals; failed p99 (two API instances). In BASELINE",
+   "note": null,
+   "completed_whole": 477,
+   "result_path": "benchmarks/runs/20261110T040232Z-13e851a-s6-1e11/result.md"
+  },
+  {
+   "step": 6,
+   "target": 1000.0,
+   "duration_s": 900,
+   "started_at": "2026-11-10T04:18:15Z",
+   "commit": "13e851a",
+   "admitted": 959.44,
+   "completed": 485.46,
+   "p50": 33.08,
+   "p95": 772.24,
+   "p99": 1467.8,
+   "error_pct": 0.0,
+   "api_cpu_pct": 237.75,
+   "pool_wait_s": 0.0,
+   "deadlocks": 0.0,
+   "gates_passed": false,
+   "valid": false,
+   "invalid_because": [
+    "generator dropped 26761 arrivals"
+   ],
+   "gate_reasons": [
+    "p99 1467.80 ms is over 100 ms",
+    "p50 33.08 ms is over 25 ms",
+    "CK5 failed"
+   ],
+   "checks": {
+    "CK1": "pass",
+    "CK2": "pass",
+    "CK3": "pass",
+    "CK4": "pass",
+    "CK5": "FAIL",
+    "CK6": "pass",
+    "CK7": "n/a",
+    "CK8": "n/a",
+    "CK9": "pass",
+    "CK10": "pass"
+   },
+   "run_id": "20261110T041814Z-13e851a-s6-7017",
+   "short_id": "s6-7017",
+   "status": "excluded",
+   "exclude_reason": "Invalid: k6 dropped 26,761 arrivals; failed p99 and CK5 under overload (no resolver until Stage 2). In BASELINE",
+   "note": null,
+   "completed_whole": 485,
+   "result_path": "benchmarks/runs/20261110T041814Z-13e851a-s6-7017/result.md"
+  },
+  {
+   "step": 100,
+   "target": 500.0,
+   "duration_s": 3600,
+   "started_at": "2026-11-10T04:34:57Z",
+   "commit": "28e4bc5",
+   "admitted": 495.88,
+   "completed": 249.62,
+   "p50": 9.09,
+   "p95": 76.56,
+   "p99": 589.57,
+   "error_pct": 0.0,
+   "api_cpu_pct": 138.57,
+   "pool_wait_s": 0.0,
+   "deadlocks": 0.0,
+   "gates_passed": false,
+   "valid": false,
+   "invalid_because": [
+    "generator dropped 9866 arrivals"
+   ],
+   "gate_reasons": [
+    "p99 589.57 ms is over 100 ms"
+   ],
+   "checks": {
+    "CK1": "pass",
+    "CK2": "pass",
+    "CK3": "pass",
+    "CK4": "pass",
+    "CK5": "pass",
+    "CK6": "pass",
+    "CK7": "n/a",
+    "CK8": "n/a",
+    "CK9": "pass",
+    "CK10": "pass"
+   },
+   "run_id": "20261110T043457Z-28e4bc5-s100-1e77",
+   "short_id": "s100-1e77",
+   "status": "excluded",
+   "exclude_reason": "Invalid: k6 dropped 9,866 arrivals; 500 req/s soak failed p99 589.57 ms (ALTER SYSTEM drift). In BASELINE",
+   "note": null,
+   "completed_whole": 249,
+   "result_path": "benchmarks/runs/20261110T043457Z-28e4bc5-s100-1e77/result.md"
+  },
+  {
+   "step": 100,
+   "target": 500.0,
+   "duration_s": 3600,
+   "started_at": "2026-11-10T06:30:20Z",
+   "commit": "74490ef",
+   "admitted": 498.05,
+   "completed": 250.66,
+   "p50": 10.94,
+   "p95": 55.97,
+   "p99": 298.14,
+   "error_pct": 0.0,
+   "api_cpu_pct": 152.54,
+   "pool_wait_s": 0.0,
+   "deadlocks": 0.0,
+   "gates_passed": false,
+   "valid": false,
+   "invalid_because": [
+    "generator dropped 2038 arrivals"
+   ],
+   "gate_reasons": [
+    "p99 298.14 ms is over 100 ms"
+   ],
+   "checks": {
+    "CK1": "pass",
+    "CK2": "pass",
+    "CK3": "pass",
+    "CK4": "pass",
+    "CK5": "pass",
+    "CK6": "pass",
+    "CK7": "n/a",
+    "CK8": "n/a",
+    "CK9": "pass",
+    "CK10": "pass"
+   },
+   "run_id": "20261110T063020Z-74490ef-s100-4375",
+   "short_id": "s100-4375",
+   "status": "excluded",
+   "exclude_reason": "Invalid: k6 dropped 2,038 arrivals; 500 req/s soak failed p99 298.14 ms (WAL commit stalls). In BASELINE",
+   "note": null,
+   "completed_whole": 250,
+   "result_path": "benchmarks/runs/20261110T063020Z-74490ef-s100-4375/result.md"
+  },
+  {
+   "step": 102,
+   "target": 250.0,
+   "duration_s": 3600,
+   "started_at": "2026-11-10T07:45:36Z",
+   "commit": "2f1ca8a",
+   "admitted": 249.33,
+   "completed": 125.43,
+   "p50": 7.7,
+   "p95": 14.91,
+   "p99": 28.6,
+   "error_pct": 0.0,
+   "api_cpu_pct": 88.41,
+   "pool_wait_s": 0.0,
+   "deadlocks": 0.0,
+   "gates_passed": true,
+   "valid": false,
+   "invalid_because": [
+    "generator dropped 22 arrivals"
+   ],
+   "gate_reasons": [],
+   "checks": {
+    "CK1": "pass",
+    "CK2": "pass",
+    "CK3": "pass",
+    "CK4": "pass",
+    "CK5": "pass",
+    "CK6": "pass",
+    "CK7": "n/a",
+    "CK8": "n/a",
+    "CK9": "pass",
+    "CK10": "pass"
+   },
+   "run_id": "20261110T074536Z-2f1ca8a-s102-6ab6",
+   "short_id": "s102-6ab6",
+   "status": "included",
+   "exclude_reason": null,
+   "note": "60-minute soak at 250 req/s: 900,604 arrivals, 453,183 payments (API and DB counts match). Every gate passed; k6 dropped 22 arrivals (undersized generator, fixed in 3f56a33). Owner ruling: payment system PASS, generator FAIL",
+   "completed_whole": 125,
+   "result_path": "benchmarks/runs/20261110T074536Z-2f1ca8a-s102-6ab6/result.md"
   }
  ],
  "d56": [
@@ -943,46 +1246,50 @@ footer.foot { padding-top: 28px; font-size: 12.5px; color: var(--muted); display
    "check": "Capacity",
    "run": "Step 4 once, step 6 three times, each from a reset, two API instances behind nginx",
    "passes_if": "Valid runs whose gates all pass; sets the stable rate",
-   "result": "NOT RUN"
+   "result": "FAIL",
+   "note": "Step 4 passed, valid. Step 6 failed p99 all 3 times (1,084–1,771 ms), invalid on dropped arrivals; two instances did worse than one. Stable rate stays step 5 (500 req/s), from 11-09."
   },
   {
    "check": "Soak",
    "run": "60 min at the stable rate",
    "passes_if": "Gates hold; CK1–CK6 pass; no upward trend in memory, Gen 2 GC, ThreadPool queue, pool wait",
-   "result": "BLOCKED",
-   "note": "needs stable rate"
+   "result": "PASS",
+   "note": "At 250 req/s, by owner ruling (generator dropped 22 arrivals; system gates all passed). At 500 req/s: FAIL twice, p99 589.57 ms and 298.14 ms."
   },
   {
    "check": "L3, scaled",
    "run": "3× the stable rate for 10 min",
    "passes_if": "Excess rejected as 429/503; no restart or OOM; p99 < 100 ms within 2 min after; CK1–CK6 pass",
-   "result": "BLOCKED",
-   "note": "needs stable rate"
+   "result": "FAIL",
+   "note": "Run once at 3× step 5 before D57/D58: excess shed as 503 (~400/s), no errors, but p99 stayed 430–660 ms after the burst and CK5 failed. Rerun in Stage 2."
   },
   {
    "check": "C1, scaled",
    "run": "Primary CPU throttled ~5× slower at stable load",
    "passes_if": "Fast 503 shedding; `40P01`/`40001` retries < 1%; no ThreadPool starvation",
-   "result": "BLOCKED",
-   "note": "needs stable rate"
+   "result": "NOT RUN",
+   "note": "Deferred to Stage 2."
   },
   {
    "check": "C2",
    "run": "PgBouncer pool shrunk below demand, then restored",
    "passes_if": "Waits bounded by `query_wait_timeout`, failed as 503; recovers with no restart",
-   "result": "NOT RUN"
+   "result": "NOT RUN",
+   "note": "Deferred to Stage 2."
   },
   {
    "check": "C7, partial",
    "run": "Primary killed under load; higher-replay standby promoted by hand",
    "passes_if": "RPO 0: every 200/202 payment on the new primary; CK1, CK3 pass",
-   "result": "NOT RUN"
+   "result": "NOT RUN",
+   "note": "Deferred to Stage 2."
   },
   {
    "check": "Alerts",
    "run": "`CommitWarning`, `AbandonedCommitsStuck`, `UnresolvedOperationAging`",
    "passes_if": "Each seen firing in a running Prometheus",
-   "result": "NOT RUN"
+   "result": "NOT RUN",
+   "note": "`UnresolvedOperationAging` seen firing on 2026-11-10; the two commit alerts deferred to Stage 2."
   }
  ],
  "not_established": [
