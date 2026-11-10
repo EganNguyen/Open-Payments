@@ -2,7 +2,7 @@
 
 The independent review of Stage 1, as [Delivery workflow](../delivery-workflow.md#review-gate) defines it. The reviewer didn't design or build this stage, and fixed nothing.
 
-Status: **No critical, high or medium finding open; awaiting the owner's written acceptance** · First review: `6cc5f8c`..`b4d99a8` · Re-checks: `0d8ead1`..`c20d53f`, `ee17892`..`b40950e`, `9be976e`..`1f0d095`, then `49e4a3f`..`55f9fe8` · Reviewer: Opus, fresh session · Date: 2026-11-09
+Status: **Closed 2026-11-10: no critical, high or medium finding open; the owner accepted L4, L6, L7 and L8** · First review: `6cc5f8c`..`b4d99a8` · Re-checks: `0d8ead1`..`c20d53f`, `ee17892`..`b40950e`, `9be976e`..`1f0d095`, then `49e4a3f`..`55f9fe8` · Reviewer: Opus, fresh session · Date: 2026-11-09
 
 ## Verdict
 
@@ -329,4 +329,6 @@ The gate closes when no critical or high finding is open and the owner has accep
 
 | Accepted by | Date | Findings accepted |
 |---|---|---|
-| | | |
+| EganNguyen, in chat, recorded by Claude | 2026-11-10 | L4 (pager routing waits for Stage 5), L6 (the recorded build deviations), L7 and L8. L7 and L8 are carried into Stage 2's design gate, which must settle L7 before callbacks and the reconciler exist, and fix L8 before the first adapter without sale |
+
+**Stage 1 is closed.** No critical, high or medium finding is open, and the owner has accepted the four low items above.

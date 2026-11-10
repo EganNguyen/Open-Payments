@@ -2,7 +2,7 @@
 
 The build gate's evidence log: one line per task, with the commit, the command that was run, and the result. Tasks 7-16 are complete under [D46](../decisions.md#d46). Task 17's laptop limit search has valid runs through step 5; step 6 is invalid from a generator limit and needs a rerun before Task 17 closes under [D53](../decisions.md#d53). Task 18 is built. No escalation is open. Escalation answers live in [Stage 1 escalations](stage-1-escalations.md), and run results in [BASELINE](../../benchmarks/BASELINE.md); this log only points to them.
 
-Status: In progress · Last updated: 2026-11-09
+Status: **Closed** 2026-11-10: the [review gate](stage-1-review.md) has no critical, high or medium finding open, and the owner accepted L4, L6, L7 and L8 · Last updated: 2026-11-10
 
 | Task | Commit | Test command | Result |
 |---|---|---|---|
