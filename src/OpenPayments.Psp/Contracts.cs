@@ -117,6 +117,9 @@ public sealed class PspRateLimitException(TimeSpan retryAfter, string message = 
     public TimeSpan RetryAfter { get; } = retryAfter;
 }
 
+/// <summary>Name resolution failed, so nothing was sent (C16).</summary>
+public sealed class PspDnsException(string message, Exception? inner = null) : Exception(message, inner);
+
 /// <summary>The PSP rejected this account's credential (401/403), before it acted.</summary>
 public sealed class PspUnauthorizedException(string message = "The PSP rejected the credential.")
     : Exception(message);

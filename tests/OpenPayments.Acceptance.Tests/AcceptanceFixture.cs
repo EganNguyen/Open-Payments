@@ -445,6 +445,7 @@ public sealed class TestPsp : IPspAdapterFactory, IPspAdapter
     private Exception? _throwOnce;
     private bool _unauthorized;
     private bool _rateLimitOnce;
+    private bool _unavailable;
 
     public IReadOnlyList<PspCall> Calls
     {
@@ -477,6 +478,7 @@ public sealed class TestPsp : IPspAdapterFactory, IPspAdapter
             _throwOnce = null;
             _unauthorized = false;
             _rateLimitOnce = false;
+            _unavailable = false;
         }
     }
 
@@ -520,6 +522,13 @@ public sealed class TestPsp : IPspAdapterFactory, IPspAdapter
         set => _rateLimitOnce = value;
     }
 
+    /// <summary>C13: every authorize fails with a PSP outage.</summary>
+    public bool Unavailable
+    {
+        get => _unavailable;
+        set => _unavailable = value;
+    }
+
     public async Task<PspResult> AuthorizeAsync(
         AttemptId attempt, Money amount, PaymentMethodRef method, CancellationToken ct)
     {
@@ -527,6 +536,11 @@ public sealed class TestPsp : IPspAdapterFactory, IPspAdapter
         if (_timeout)
         {
             throw new PspTimeoutException("scripted timeout");
+        }
+
+        if (_unavailable)
+        {
+            throw new PspUnavailableException("scripted outage");
         }
 
         if (_unauthorized)

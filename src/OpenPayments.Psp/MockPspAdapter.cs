@@ -198,6 +198,12 @@ public sealed class MockPspAdapter : IPspAdapter
         }
         catch (HttpRequestException exception)
         {
+            // C16: a name-resolution failure happened before anything was sent.
+            if (exception.HttpRequestError == HttpRequestError.NameResolutionError)
+            {
+                throw new PspDnsException("The PSP's name did not resolve.", exception);
+            }
+
             // D27: the request may have reached the PSP, so the outcome is unknown, never failed.
             throw new PspUnavailableException("The PSP connection failed.", exception);
         }

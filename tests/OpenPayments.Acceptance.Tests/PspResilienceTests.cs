@@ -32,6 +32,29 @@ public sealed class PspResilienceTests(AcceptanceFixture db)
     }
 
     [Fact]
+    public async Task C13_psp_outage_opens_the_breaker_and_fails_fast_with_retry_after()
+    {
+        await db.ResetAsync();
+        db.Psp.Unavailable = true;
+        using var client = Authorized();
+
+        HttpResponseMessage? last = null;
+        for (var i = 0; i < 6; i++)
+        {
+            last?.Dispose();
+            last = await PostAsync(client, "c13-" + i);
+        }
+
+        using (last)
+        {
+            Assert.Equal(HttpStatusCode.ServiceUnavailable, last!.StatusCode);
+            Assert.NotNull(last.Headers.RetryAfter);
+        }
+
+        Assert.Equal(5, db.Psp.Calls.Count(call => call.Operation == "authorize"));
+    }
+
+    [Fact]
     public async Task C51_revoked_credential_fails_that_merchant_fast_with_stable_code_and_no_unknown()
     {
         await db.ResetAsync();

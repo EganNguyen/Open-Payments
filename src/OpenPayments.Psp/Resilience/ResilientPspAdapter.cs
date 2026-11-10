@@ -62,6 +62,12 @@ public sealed class ResilientPspAdapter(
             gate.CredentialRejected(account.Id, account.Psp);
             throw new PspRejectedException("psp_credential_rejected");
         }
+        catch (PspDnsException)
+        {
+            gate.Rejected("dns_failure");
+            gate.Failure(account.Id, account.Psp);
+            throw;
+        }
         catch (PspUnavailableException)
         {
             gate.Failure(account.Id, account.Psp);

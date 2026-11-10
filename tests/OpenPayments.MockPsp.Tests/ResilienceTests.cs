@@ -81,6 +81,44 @@ public sealed class ResilienceTests
         Assert.Equal(1, gate.RejectedCount("psp_credential_rejected"));
     }
 
+    [Fact]
+    public async Task C16_dns_failure_is_classified_before_anything_is_sent()
+    {
+        using var handler = new DnsFailureHandler();
+        using var client = new HttpClient(handler) { BaseAddress = new Uri("http://psp.invalid") };
+        var adapter = new MockPspAdapter(
+            client, new PspAccount(Guid.NewGuid(), new MerchantId(Guid.NewGuid()), "mock", "test", "ref"));
+
+        var error = await Assert.ThrowsAsync<PspDnsException>(() => adapter.AuthorizeAsync(
+            AttemptId.New(), new Money(100, CurrencyCode.Usd), new PaymentMethodRef("card", "tok"), default));
+        Assert.IsType<HttpRequestException>(error.InnerException);
+    }
+
+    [Fact]
+    public void C16_alert_rules_for_dns_and_tls_are_present()
+    {
+        var root = new DirectoryInfo(AppContext.BaseDirectory);
+        while (root is not null && !File.Exists(Path.Combine(root.FullName, "OpenPayments.slnx")))
+        {
+            root = root.Parent;
+        }
+
+        Assert.NotNull(root);
+        var rules = File.ReadAllText(
+            Path.Combine(root!.FullName, "deploy", "compose", "prometheus", "alerts.yml"));
+        Assert.Contains("alert: PspDnsFailures", rules, StringComparison.Ordinal);
+        Assert.Contains("alert: PspTlsCertExpiring", rules, StringComparison.Ordinal);
+        Assert.Contains("op_psp_tls_cert_expiry_seconds", rules, StringComparison.Ordinal);
+    }
+
+    private sealed class DnsFailureHandler : HttpMessageHandler
+    {
+        protected override Task<HttpResponseMessage> SendAsync(
+            HttpRequestMessage request, CancellationToken cancellationToken) =>
+            throw new HttpRequestException(
+                HttpRequestError.NameResolutionError, "name resolution failed");
+    }
+
     private static PspCapabilities Capabilities(TimeSpan replayWindow) => new(
         SupportsSale: true,
         Unanswered: RecoveryMode.AuthoritativeLookup,

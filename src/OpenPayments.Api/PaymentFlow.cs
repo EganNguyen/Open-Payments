@@ -427,6 +427,12 @@ public sealed class PaymentFlow(
             return await FromAppliedAsync(
                 declined, merchant, key, 402, 0, timedOut: false, countCompleted: false, keyResolved: true);
         }
+        catch (PspRejectedException)
+        {
+            // C13/C51: the local gate refused before the PSP saw the request, so 503 with a
+            // Retry-After is safe; the attempt stays for recovery.
+            return ApiAnswer.Problem(503, "The PSP is unavailable.", "psp_unavailable", retryAfter: 1);
+        }
 #pragma warning disable CA1031 // M8, D27: once the request may have reached the PSP, every failure is inconclusive.
         catch (Exception)
 #pragma warning restore CA1031
@@ -548,6 +554,12 @@ public sealed class PaymentFlow(
                 CancellationToken.None);
             return await FromAppliedAsync(
                 declined, merchant, key, 402, 0, timedOut: false, countCompleted: false, keyResolved: true);
+        }
+        catch (PspRejectedException)
+        {
+            // C13/C51: the local gate refused before the PSP saw the request, so 503 with a
+            // Retry-After is safe; the attempt stays for recovery.
+            return ApiAnswer.Problem(503, "The PSP is unavailable.", "psp_unavailable", retryAfter: 1);
         }
 #pragma warning disable CA1031 // M8, D27: once the request may have reached the PSP, every failure is inconclusive.
         catch (Exception)
@@ -671,6 +683,12 @@ public sealed class PaymentFlow(
                 null,
                 CancellationToken.None);
             return await FromRefundAppliedAsync(declined, merchant, key, 402, refundId, keyResolved: true);
+        }
+        catch (PspRejectedException)
+        {
+            // C13/C51: the local gate refused before the PSP saw the request, so 503 with a
+            // Retry-After is safe; the attempt stays for recovery.
+            return ApiAnswer.Problem(503, "The PSP is unavailable.", "psp_unavailable", retryAfter: 1);
         }
 #pragma warning disable CA1031 // M8, D27: once the request may have reached the PSP, every failure is inconclusive.
         catch (Exception)
@@ -867,6 +885,12 @@ public sealed class PaymentFlow(
             return await FromAppliedAsync(
                 declined, merchant, key, 402, pspWatch.ElapsedMilliseconds, false,
                 countCompleted: false, resolveKey, keyResolved: resolveKey);
+        }
+        catch (PspRejectedException)
+        {
+            // C13/C51: the local gate refused before the PSP saw the request, so 503 with a
+            // Retry-After is safe; the attempt stays for recovery.
+            return ApiAnswer.Problem(503, "The PSP is unavailable.", "psp_unavailable", retryAfter: 1);
         }
 #pragma warning disable CA1031 // M8, D27: once the request may have reached the PSP, every failure is inconclusive.
         catch (Exception)
