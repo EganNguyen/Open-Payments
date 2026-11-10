@@ -67,6 +67,31 @@ code, .mono { font-family: var(--font-mono); font-size: 0.86em; }
 .reasons li { display: grid; grid-template-columns: 22px minmax(0,1fr); gap: 8px; }
 .reasons li::before { content: attr(data-n); font-family: var(--font-mono); font-size: 12px; color: var(--inc); padding-top: 2px; }
 
+/* Headline: the highest valid result, with its gates beside it */
+.headline { display: grid; grid-template-columns: minmax(0, 1.25fr) minmax(0, 1fr); border: 1px solid var(--rule-strong); background: var(--surface); }
+.hl-main { padding: 22px 24px; display: grid; gap: 14px; align-content: start; border-right: 1px solid var(--rule); min-width: 0; }
+.hl-eyebrow { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 10px; }
+.hl-eyebrow .tag { font-size: 11px; padding: 2px 7px; }
+.hl-figure { display: flex; flex-wrap: wrap; align-items: flex-end; gap: 6px 16px; }
+.hl-num { font-family: var(--font-display); font-size: clamp(60px, 11vw, 104px); font-weight: 700; line-height: 0.88; letter-spacing: -0.025em; color: var(--ink); }
+.hl-unit { font-family: var(--font-mono); font-size: 12.5px; letter-spacing: 0.08em; text-transform: uppercase; color: var(--muted); line-height: 1.35; padding-bottom: 6px; }
+.hl-context { font-size: 14px; color: var(--muted); }
+.milestone { display: grid; gap: 6px; }
+.ms-track { position: relative; height: 10px; background: var(--rule); }
+.ms-fill { position: absolute; inset: 0 auto 0 0; background: var(--accent); }
+.ms-ghost { position: absolute; right: -6px; top: 50%; width: 12px; height: 12px; margin-top: -6px; border-radius: 50%; border: 2px solid var(--muted); background: var(--surface); }
+.ms-scale { display: flex; justify-content: space-between; font-family: var(--font-mono); font-size: 11px; color: var(--muted); }
+.ms-note { font-size: 12.5px; color: var(--muted); }
+dl.hl-stats { margin: 0; display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); align-content: stretch; }
+dl.hl-stats > div { padding: 16px 20px; display: grid; gap: 6px; align-content: start; border-bottom: 1px solid var(--rule); min-width: 0; }
+dl.hl-stats > div:nth-child(odd) { border-right: 1px solid var(--rule); }
+dl.hl-stats > div:nth-last-child(-n+2) { border-bottom: 0; }
+dl.hl-stats dt { font-family: var(--font-mono); font-size: 11px; letter-spacing: 0.07em; text-transform: uppercase; color: var(--muted); }
+dl.hl-stats dd { margin: 0; font-family: var(--font-display); font-size: 26px; font-weight: 600; line-height: 1.1; }
+.gauge { height: 4px; background: var(--rule); position: relative; }
+.gauge i { position: absolute; inset: 0 auto 0 0; background: var(--pass); }
+.gate-of { font-size: 12px; color: var(--muted); }
+
 /* Verdict ladder: spec §7's evaluation order, with where it stopped */
 .ladder { list-style: none; margin: 0; padding: 0; display: grid; gap: 0; }
 .ladder li { display: grid; grid-template-columns: 34px minmax(0,1fr) auto; gap: 10px; align-items: start; padding: 10px 0; border-top: 1px solid var(--rule); }
@@ -168,7 +193,8 @@ footer.foot { padding-top: 28px; font-size: 12.5px; color: var(--muted); display
 @media (max-width: 860px) {
   .section { grid-template-columns: minmax(0,1fr); gap: 14px; padding-block: 28px; }
   .section > header { position: static; }
-  .verdict { grid-template-columns: minmax(0,1fr); }
+  .verdict, .headline { grid-template-columns: minmax(0,1fr); }
+  .hl-main { border-right: 0; border-bottom: 1px solid var(--rule); }
   .verdict-main { border-right: 0; border-bottom: 1px solid var(--rule); }
   .claims { grid-template-columns: minmax(0,1fr); }
   dl.kv { grid-template-columns: minmax(0,1fr); }
@@ -197,14 +223,43 @@ footer.foot { padding-top: 28px; font-size: 12.5px; color: var(--muted); display
       </div>
     </div>
 
+    <section class="headline" aria-label="Highest valid result">
+      <div class="hl-main">
+        <div class="hl-eyebrow">
+          <span class="eyebrow">Highest valid result · step 5</span>
+          <span class="st pass">VALID</span>
+          <span class="tag label" title="Laptop result. Only a Linux run from Phase 3 on can be RECORDED.">PREVIEW</span>
+        </div>
+        <div class="hl-figure">
+          <span class="hl-num num">248.32</span>
+          <span class="hl-unit">completed<br>payments/s</span>
+        </div>
+        <p class="hl-context">At 500 req/s offered (491.98 admitted) on one API instance with the D47 mix. Every gate passed. <button class="src" title="20261109T045857Z-e4bff52-s5-47d3 · result.md, DB count">s5-47d3</button></p>
+        <div class="milestone">
+          <div class="ms-track" role="img" aria-label="248.32 of the 500 completed payments per second laptop milestone, 49.7 percent">
+            <span class="ms-fill" style="width:49.66%"></span>
+            <span class="ms-ghost" title="500.03/s at step 6, invalid run"></span>
+          </div>
+          <div class="ms-scale"><span class="num">0</span><span class="num">250</span><span class="num">500 · D51 milestone</span></div>
+          <p class="ms-note">49.7% of the laptop milestone. Step 6 reached 500.03/s (hollow mark), but only in invalid runs, so it doesn't count.</p>
+        </div>
+      </div>
+      <dl class="hl-stats">
+        <div><dt>Platform p50</dt><dd class="num">6.07 ms</dd><div class="gauge"><i style="width:24.3%"></i></div><span class="gate-of">gate ≤ 25 ms</span></div>
+        <div><dt>Platform p99</dt><dd class="num">17.74 ms</dd><div class="gauge"><i style="width:17.7%"></i></div><span class="gate-of">gate ≤ 100 ms</span></div>
+        <div><dt>Unexpected errors</dt><dd class="num">0.000%</dd><div class="gauge"><i style="width:0%"></i></div><span class="gate-of">gate &lt; 0.1%</span></div>
+        <div><dt>Correctness</dt><dd>8 of 8 pass</dd><div class="gauge"><i style="width:100%"></i></div><span class="gate-of">CK1–CK6, CK9, CK10 · CK7, CK8 n/a</span></div>
+        <div><dt>API CPU</dt><dd class="num">117.9%</dd><span class="gate-of">of one core · no gate</span></div>
+        <div><dt>Pool wait · deadlocks</dt><dd class="num">0.0 s · 0</dd><span class="gate-of">no gate</span></div>
+      </dl>
+    </section>
+
     <section class="verdict" aria-label="Overall verdict">
       <div class="verdict-main">
         <span class="eyebrow">Overall verdict</span>
         <div class="verdict-word">INCONCLUSIVE</div>
         <div class="verdict-tags">
           <span class="tag label" title="Laptop result. Only a Linux run from Phase 3 on can be RECORDED.">PREVIEW</span>
-          <span class="tag">0 correctness failures in counted runs</span>
-          <span class="tag">steps 0–5 valid</span>
         </div>
         <p class="muted" style="font-size:13.5px">The OP-BENCH orchestrator isn't built yet. This report applies the suite's verdict rules to the harness's per-run results in <code>benchmarks/runs/</code> and the records they point to.</p>
       </div>
