@@ -2,9 +2,9 @@
 
 How to build Open Payments and benchmark it, from an empty repository to a recorded result.
 
-Status: Draft · Last updated: 2026-11-09
+Status: Draft · Last updated: 2026-11-10
 
-Stage 1 (Tasks 1-18) is built; its evidence is in [Stage 1 progress](gates/stage-1-progress.md). Later stages are described as the [plan](superpowers/plans/2026-11-05-open-payments-implementation-and-benchmark.md) intends, and their commands don't work until their tasks are done. All numbers are targets or estimates until measured.
+Stage 1 (Tasks 1-18) is built and its [review gate](gates/stage-1-review.md) closed on 2026-11-10; its evidence is in [Stage 1 progress](gates/stage-1-progress.md). The [D56](decisions.md#d56) laptop verification is tracked in the [Phase 1 exit record](phase-gates/phase-1.md#d56-laptop-verification). Later stages are described as the [plan](superpowers/plans/2026-11-05-open-payments-implementation-and-benchmark.md) intends, and their commands don't work until their tasks are done. All numbers are targets or estimates until measured.
 
 ## How the documents fit together
 

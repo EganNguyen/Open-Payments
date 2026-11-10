@@ -2,7 +2,7 @@
 
 How Open Payments runs on the owner's MacBook, and why. The commands are in the [benchmark guide](../benchmarks/benchmark-guide.md), and the evidence is in the [MacBook summary](../benchmarks/spike/macbook-2026-11-05/summary.md). Production is in [Production deployment](prd-deployment.md).
 
-Status: Database tier measured on both stacks · Platform runs on the Docker stack only · Last updated: 2026-11-09
+Status: Database tier measured on both stacks · Platform runs on the Docker stack only · Last updated: 2026-11-10
 
 ## Hardware
 
@@ -41,6 +41,12 @@ flowchart LR
 All ports bind to `127.0.0.1`. Passwords are local-only development values. Data lives in `~/.local/share/open-payments-native`.
 
 The topology above is the database tier. The Docker stack adds the API on `:8080`, the mock PSP on `:18080`, and, through `console.yaml`, the console and a pinned Keycloak.
+
+For ramp step 6 under [D56](../decisions.md#d56), `two-api.yaml` runs a second API instance behind a pinned nginx, which takes `:8080` and balances by least connections. Each instance is also published on its own port, `:8081` and `:8082`, and Prometheus scrapes both, so its numbers come from one process each, not through the balancer. With one instance, `:8082` shows as down in Prometheus, and that is expected.
+
+```bash
+docker compose -f deploy/compose/compose.yaml -f deploy/compose/two-api.yaml up -d --wait
+```
 
 ## Resource allocation
 
@@ -96,3 +102,5 @@ These protect financial correctness, and no benchmark result may change them:
 | `deploy/compose/postgres/primary.conf` | Settings the design requires, shared by both stacks |
 | `deploy/compose/postgres/primary.macbook.conf` | Sizes for this machine, shared by both stacks |
 | `deploy/compose/compose.yaml` | The Docker stack, with extra poolers and a generator under `--profile spike` |
+| `deploy/compose/two-api.yaml` | Overlay: a second API instance and nginx on `:8080` ([D56](../decisions.md#d56)) |
+| `deploy/compose/lb/nginx.conf` | The balancer's settings, with keep-alive to both instances |

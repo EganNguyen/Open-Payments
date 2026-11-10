@@ -7,81 +7,57 @@
   "panels": [
     {
       "id": 1,
-      "title": "Admitted requests/s",
-      "type": "timeseries",
-      "description": "Admitted request rate from the API.",
-      "datasource": {
-        "type": "prometheus",
-        "uid": "prometheus"
-      },
+      "type": "row",
+      "title": "1 \u00b7 Traffic & SLO",
+      "description": "Is the platform moving money at the expected rate, and is it inside the latency SLO?",
+      "collapsed": false,
+      "panels": [],
       "gridPos": {
-        "h": 7,
-        "w": 8,
+        "h": 1,
+        "w": 24,
         "x": 0,
         "y": 0
-      },
-      "targets": [
-        {
-          "expr": "rate(op_requests_admitted_total[1m])",
-          "legendFormat": "admitted",
-          "refId": "A",
-          "datasource": {
-            "type": "prometheus",
-            "uid": "prometheus"
-          }
-        }
-      ],
-      "fieldConfig": {
-        "defaults": {
-          "unit": "reqps",
-          "custom": {
-            "drawStyle": "line",
-            "lineWidth": 2,
-            "fillOpacity": 8,
-            "showPoints": "never"
-          }
-        },
-        "overrides": []
-      },
-      "options": {
-        "legend": {
-          "displayMode": "list",
-          "placement": "bottom",
-          "calcs": [
-            "lastNotNull",
-            "max"
-          ]
-        },
-        "tooltip": {
-          "mode": "multi",
-          "sort": "desc"
-        }
       }
     },
     {
       "id": 2,
-      "title": "Rejected requests/s by reason",
       "type": "timeseries",
-      "description": "Load shed and refusals, split by reason.",
+      "title": "Admitted / rejected requests per second",
+      "description": "Admitted counts every request the edge let in (in-flight limiter and rate limiter). Rejected counts requests refused before any work, by reason. Under D47 the mix is 40% sale, 10% authorize, 10% capture, 15% status, 10% refund, 10% retry, 5% other.",
+      "gridPos": {
+        "h": 7,
+        "w": 8,
+        "x": 0,
+        "y": 1
+      },
       "datasource": {
         "type": "prometheus",
         "uid": "prometheus"
       },
-      "gridPos": {
-        "h": 7,
-        "w": 8,
-        "x": 8,
-        "y": 0
-      },
       "targets": [
         {
-          "expr": "sum by (reason) (rate(op_requests_rejected_total[1m]))",
-          "legendFormat": "{{reason}}",
-          "refId": "A",
           "datasource": {
             "type": "prometheus",
             "uid": "prometheus"
-          }
+          },
+          "editorMode": "code",
+          "expr": "sum(rate(op_requests_admitted_total[1m]))",
+          "legendFormat": "admitted",
+          "range": true,
+          "instant": false,
+          "refId": "A"
+        },
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "editorMode": "code",
+          "expr": "sum(rate(op_requests_rejected_total[1m]))",
+          "legendFormat": "rejected (all reasons)",
+          "range": true,
+          "instant": false,
+          "refId": "B"
         }
       ],
       "fieldConfig": {
@@ -91,13 +67,24 @@
             "drawStyle": "line",
             "lineWidth": 2,
             "fillOpacity": 8,
-            "showPoints": "never"
+            "showPoints": "never",
+            "spanNulls": false,
+            "axisPlacement": "auto",
+            "scaleDistribution": {
+              "type": "linear"
+            },
+            "lineInterpolation": "linear",
+            "axisSoftMin": 0
+          },
+          "color": {
+            "mode": "palette-classic"
           }
         },
         "overrides": []
       },
       "options": {
         "legend": {
+          "showLegend": true,
           "displayMode": "list",
           "placement": "bottom",
           "calcs": [
@@ -113,44 +100,63 @@
     },
     {
       "id": 3,
-      "title": "Completed payments/s by outcome",
       "type": "timeseries",
-      "description": "Incremented only after the final commit.",
+      "title": "Rejected requests/s by reason",
+      "description": "Rejections split by reason: auth (401/403), not_found (404), invalid_state (409/422), rate_limit (429), busy (503). busy currently absorbs inflight_cap, pool_wait and lock_timeout. A rising rate_limit or busy means the platform is shedding load.",
+      "gridPos": {
+        "h": 7,
+        "w": 8,
+        "x": 8,
+        "y": 1
+      },
       "datasource": {
         "type": "prometheus",
         "uid": "prometheus"
       },
-      "gridPos": {
-        "h": 7,
-        "w": 8,
-        "x": 16,
-        "y": 0
-      },
       "targets": [
         {
-          "expr": "sum by (outcome) (rate(op_payments_completed_total[1m]))",
-          "legendFormat": "{{outcome}}",
-          "refId": "A",
           "datasource": {
             "type": "prometheus",
             "uid": "prometheus"
-          }
+          },
+          "editorMode": "code",
+          "expr": "sum by (reason) (rate(op_requests_rejected_total[1m]))",
+          "legendFormat": "{{reason}}",
+          "range": true,
+          "instant": false,
+          "refId": "A"
         }
       ],
       "fieldConfig": {
         "defaults": {
-          "unit": "ops",
+          "unit": "reqps",
           "custom": {
-            "drawStyle": "line",
-            "lineWidth": 2,
-            "fillOpacity": 8,
-            "showPoints": "never"
-          }
+            "drawStyle": "bars",
+            "lineWidth": 1,
+            "fillOpacity": 60,
+            "showPoints": "never",
+            "spanNulls": false,
+            "axisPlacement": "auto",
+            "scaleDistribution": {
+              "type": "linear"
+            },
+            "lineInterpolation": "linear",
+            "stacking": {
+              "mode": "normal",
+              "group": "A"
+            },
+            "axisSoftMin": 0
+          },
+          "color": {
+            "mode": "palette-classic"
+          },
+          "noValue": "no rejections in range"
         },
         "overrides": []
       },
       "options": {
         "legend": {
+          "showLegend": true,
           "displayMode": "list",
           "placement": "bottom",
           "calcs": [
@@ -166,62 +172,59 @@
     },
     {
       "id": 4,
-      "title": "Platform overhead p50/p95/p99",
       "type": "timeseries",
-      "description": "Total request time minus PSP wait. Target p99 <= 100 ms, p50 <= 25 ms.",
+      "title": "Completed payments/s by outcome",
+      "description": "Payments that reached a final, committed answer, by outcome. Per D47 a capture does not count as a second completed payment; 'captured' also includes one-call sales. 'declined' is a committed answer from the PSP, not a platform fault.",
+      "gridPos": {
+        "h": 7,
+        "w": 8,
+        "x": 16,
+        "y": 1
+      },
       "datasource": {
         "type": "prometheus",
         "uid": "prometheus"
       },
-      "gridPos": {
-        "h": 8,
-        "w": 12,
-        "x": 0,
-        "y": 7
-      },
       "targets": [
         {
-          "expr": "histogram_quantile(0.50, sum(rate(op_platform_overhead_seconds_bucket[5m])) by (le))",
-          "legendFormat": "p50",
-          "refId": "A",
           "datasource": {
             "type": "prometheus",
             "uid": "prometheus"
-          }
-        },
-        {
-          "expr": "histogram_quantile(0.95, sum(rate(op_platform_overhead_seconds_bucket[5m])) by (le))",
-          "legendFormat": "p95",
-          "refId": "B",
-          "datasource": {
-            "type": "prometheus",
-            "uid": "prometheus"
-          }
-        },
-        {
-          "expr": "histogram_quantile(0.99, sum(rate(op_platform_overhead_seconds_bucket[5m])) by (le))",
-          "legendFormat": "p99",
-          "refId": "C",
-          "datasource": {
-            "type": "prometheus",
-            "uid": "prometheus"
-          }
+          },
+          "editorMode": "code",
+          "expr": "sum by (outcome) (rate(op_payments_completed_total[1m]))",
+          "legendFormat": "{{outcome}}",
+          "range": true,
+          "instant": false,
+          "refId": "A"
         }
       ],
       "fieldConfig": {
         "defaults": {
-          "unit": "s",
+          "unit": "ops",
           "custom": {
             "drawStyle": "line",
             "lineWidth": 2,
             "fillOpacity": 8,
-            "showPoints": "never"
-          }
+            "showPoints": "never",
+            "spanNulls": false,
+            "axisPlacement": "auto",
+            "scaleDistribution": {
+              "type": "linear"
+            },
+            "lineInterpolation": "linear",
+            "axisSoftMin": 0
+          },
+          "color": {
+            "mode": "palette-classic"
+          },
+          "noValue": "no completed payments in range"
         },
         "overrides": []
       },
       "options": {
         "legend": {
+          "showLegend": true,
           "displayMode": "list",
           "placement": "bottom",
           "calcs": [
@@ -237,46 +240,167 @@
     },
     {
       "id": 5,
-      "title": "PSP wait p50/p95/p99",
-      "type": "timeseries",
-      "description": "Time spent waiting on the mock or real PSP.",
+      "type": "stat",
+      "title": "Requests inside the 100 ms SLO",
+      "description": "Share of requests whose platform overhead is at or under the 100 ms p99 target, over the last 5 minutes. The SLO in docs/architecture.md is p99 <= 100 ms and p50 <= 25 ms, excluding PSP time. Below 99% the SLO is being missed.",
+      "gridPos": {
+        "h": 7,
+        "w": 6,
+        "x": 0,
+        "y": 8
+      },
       "datasource": {
         "type": "prometheus",
         "uid": "prometheus"
       },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "editorMode": "code",
+          "expr": "100 * sum(rate(op_platform_overhead_seconds_bucket{le=\"0.1\"}[5m])) / sum(rate(op_platform_overhead_seconds_count[5m]))",
+          "legendFormat": "within 100 ms",
+          "range": true,
+          "instant": false,
+          "refId": "A"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percent",
+          "mappings": [],
+          "color": {
+            "mode": "thresholds"
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "red",
+                "value": null
+              },
+              {
+                "color": "orange",
+                "value": 95
+              },
+              {
+                "color": "green",
+                "value": 99
+              }
+            ]
+          },
+          "decimals": 1
+        },
+        "overrides": []
+      },
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "colorMode": "value",
+        "graphMode": "area",
+        "justifyMode": "auto",
+        "textMode": "auto",
+        "wideLayout": true,
+        "showPercentChange": false,
+        "orientation": "auto"
+      }
+    },
+    {
+      "id": 6,
+      "type": "row",
+      "title": "2 \u00b7 Latency",
+      "description": "Where the time goes: the platform's own overhead versus the PSP's. The SLO applies to platform overhead only.",
+      "collapsed": false,
+      "panels": [],
+      "gridPos": {
+        "h": 1,
+        "w": 24,
+        "x": 0,
+        "y": 15
+      }
+    },
+    {
+      "id": 7,
+      "type": "timeseries",
+      "title": "Platform overhead p50/p95/p99",
+      "description": "Total request time minus PSP wait, so these are the milliseconds the platform owns. Dashed lines are the targets from docs/architecture.md: p50 <= 25 ms, p99 <= 100 ms. A healthy p50 with a p99 above 100 ms is a tail problem, not a capacity problem.",
       "gridPos": {
         "h": 8,
         "w": 12,
-        "x": 12,
-        "y": 7
+        "x": 0,
+        "y": 16
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
       },
       "targets": [
         {
-          "expr": "histogram_quantile(0.50, sum(rate(op_psp_wait_seconds_bucket[5m])) by (le))",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "editorMode": "code",
+          "expr": "histogram_quantile(0.50, sum(rate(op_platform_overhead_seconds_bucket[5m])) by (le))",
           "legendFormat": "p50",
-          "refId": "A",
+          "range": true,
+          "instant": false,
+          "refId": "A"
+        },
+        {
           "datasource": {
             "type": "prometheus",
             "uid": "prometheus"
-          }
-        },
-        {
-          "expr": "histogram_quantile(0.95, sum(rate(op_psp_wait_seconds_bucket[5m])) by (le))",
+          },
+          "editorMode": "code",
+          "expr": "histogram_quantile(0.95, sum(rate(op_platform_overhead_seconds_bucket[5m])) by (le))",
           "legendFormat": "p95",
-          "refId": "B",
-          "datasource": {
-            "type": "prometheus",
-            "uid": "prometheus"
-          }
+          "range": true,
+          "instant": false,
+          "refId": "B"
         },
         {
-          "expr": "histogram_quantile(0.99, sum(rate(op_psp_wait_seconds_bucket[5m])) by (le))",
-          "legendFormat": "p99",
-          "refId": "C",
           "datasource": {
             "type": "prometheus",
             "uid": "prometheus"
-          }
+          },
+          "editorMode": "code",
+          "expr": "histogram_quantile(0.99, sum(rate(op_platform_overhead_seconds_bucket[5m])) by (le))",
+          "legendFormat": "p99",
+          "range": true,
+          "instant": false,
+          "refId": "C"
+        },
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "editorMode": "code",
+          "expr": "vector(0.025)",
+          "legendFormat": "target p50 25 ms",
+          "range": true,
+          "instant": false,
+          "refId": "D"
+        },
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "editorMode": "code",
+          "expr": "vector(0.1)",
+          "legendFormat": "SLO p99 100 ms",
+          "range": true,
+          "instant": false,
+          "refId": "E"
         }
       ],
       "fieldConfig": {
@@ -286,119 +410,91 @@
             "drawStyle": "line",
             "lineWidth": 2,
             "fillOpacity": 8,
-            "showPoints": "never"
+            "showPoints": "never",
+            "spanNulls": false,
+            "axisPlacement": "auto",
+            "scaleDistribution": {
+              "type": "linear"
+            },
+            "lineInterpolation": "linear",
+            "axisSoftMin": 0
+          },
+          "color": {
+            "mode": "palette-classic"
           }
         },
-        "overrides": []
+        "overrides": [
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "target p50 25 ms"
+            },
+            "properties": [
+              {
+                "id": "custom.lineStyle",
+                "value": {
+                  "fill": "dash",
+                  "dash": [
+                    8,
+                    6
+                  ]
+                }
+              },
+              {
+                "id": "custom.lineWidth",
+                "value": 1
+              },
+              {
+                "id": "custom.fillOpacity",
+                "value": 0
+              },
+              {
+                "id": "color",
+                "value": {
+                  "mode": "fixed",
+                  "fixedColor": "#FADE2A"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "SLO p99 100 ms"
+            },
+            "properties": [
+              {
+                "id": "custom.lineStyle",
+                "value": {
+                  "fill": "dash",
+                  "dash": [
+                    8,
+                    6
+                  ]
+                }
+              },
+              {
+                "id": "custom.lineWidth",
+                "value": 1
+              },
+              {
+                "id": "custom.fillOpacity",
+                "value": 0
+              },
+              {
+                "id": "color",
+                "value": {
+                  "mode": "fixed",
+                  "fixedColor": "#F2495C"
+                }
+              }
+            ]
+          }
+        ]
       },
       "options": {
         "legend": {
-          "displayMode": "list",
-          "placement": "bottom",
-          "calcs": [
-            "lastNotNull",
-            "max"
-          ]
-        },
-        "tooltip": {
-          "mode": "multi",
-          "sort": "desc"
-        }
-      }
-    },
-    {
-      "id": 6,
-      "title": "In-flight requests",
-      "type": "timeseries",
-      "description": "Per-instance in-flight cap; start at 500 with no queue.",
-      "datasource": {
-        "type": "prometheus",
-        "uid": "prometheus"
-      },
-      "gridPos": {
-        "h": 7,
-        "w": 6,
-        "x": 0,
-        "y": 15
-      },
-      "targets": [
-        {
-          "expr": "op_inflight",
-          "legendFormat": "in-flight",
-          "refId": "A",
-          "datasource": {
-            "type": "prometheus",
-            "uid": "prometheus"
-          }
-        }
-      ],
-      "fieldConfig": {
-        "defaults": {
-          "unit": "short",
-          "custom": {
-            "drawStyle": "line",
-            "lineWidth": 2,
-            "fillOpacity": 8,
-            "showPoints": "never"
-          }
-        },
-        "overrides": []
-      },
-      "options": {
-        "legend": {
-          "displayMode": "list",
-          "placement": "bottom",
-          "calcs": [
-            "lastNotNull",
-            "max"
-          ]
-        },
-        "tooltip": {
-          "mode": "multi",
-          "sort": "desc"
-        }
-      }
-    },
-    {
-      "id": 7,
-      "title": "Payments by state",
-      "type": "timeseries",
-      "description": "Current payment count by state.",
-      "datasource": {
-        "type": "prometheus",
-        "uid": "prometheus"
-      },
-      "gridPos": {
-        "h": 7,
-        "w": 10,
-        "x": 6,
-        "y": 15
-      },
-      "targets": [
-        {
-          "expr": "op_payments_by_state",
-          "legendFormat": "{{state}}",
-          "refId": "A",
-          "datasource": {
-            "type": "prometheus",
-            "uid": "prometheus"
-          }
-        }
-      ],
-      "fieldConfig": {
-        "defaults": {
-          "unit": "short",
-          "custom": {
-            "drawStyle": "line",
-            "lineWidth": 2,
-            "fillOpacity": 8,
-            "showPoints": "never"
-          }
-        },
-        "overrides": []
-      },
-      "options": {
-        "legend": {
+          "showLegend": true,
           "displayMode": "list",
           "placement": "bottom",
           "calcs": [
@@ -414,28 +510,55 @@
     },
     {
       "id": 8,
-      "title": "Outbox oldest age",
       "type": "timeseries",
-      "description": "Alert above 30 s.",
+      "title": "PSP wait p50/p95/p99",
+      "description": "Time spent inside the PSP adapter call. The PSP is outside the SLO, but a rising p99 here explains a rising end-to-end time and points at the dependency, not the platform. The local mock answers in a fixed 200 ms.",
+      "gridPos": {
+        "h": 8,
+        "w": 6,
+        "x": 12,
+        "y": 16
+      },
       "datasource": {
         "type": "prometheus",
         "uid": "prometheus"
       },
-      "gridPos": {
-        "h": 7,
-        "w": 8,
-        "x": 16,
-        "y": 15
-      },
       "targets": [
         {
-          "expr": "op_outbox_oldest_age_seconds",
-          "legendFormat": "oldest unpublished",
-          "refId": "A",
           "datasource": {
             "type": "prometheus",
             "uid": "prometheus"
-          }
+          },
+          "editorMode": "code",
+          "expr": "histogram_quantile(0.50, sum(rate(op_psp_wait_seconds_bucket[5m])) by (le))",
+          "legendFormat": "p50",
+          "range": true,
+          "instant": false,
+          "refId": "A"
+        },
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "editorMode": "code",
+          "expr": "histogram_quantile(0.95, sum(rate(op_psp_wait_seconds_bucket[5m])) by (le))",
+          "legendFormat": "p95",
+          "range": true,
+          "instant": false,
+          "refId": "B"
+        },
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "editorMode": "code",
+          "expr": "histogram_quantile(0.99, sum(rate(op_psp_wait_seconds_bucket[5m])) by (le))",
+          "legendFormat": "p99",
+          "range": true,
+          "instant": false,
+          "refId": "C"
         }
       ],
       "fieldConfig": {
@@ -445,13 +568,24 @@
             "drawStyle": "line",
             "lineWidth": 2,
             "fillOpacity": 8,
-            "showPoints": "never"
+            "showPoints": "never",
+            "spanNulls": false,
+            "axisPlacement": "auto",
+            "scaleDistribution": {
+              "type": "linear"
+            },
+            "lineInterpolation": "linear",
+            "axisSoftMin": 0
+          },
+          "color": {
+            "mode": "palette-classic"
           }
         },
         "overrides": []
       },
       "options": {
         "legend": {
+          "showLegend": true,
           "displayMode": "list",
           "placement": "bottom",
           "calcs": [
@@ -467,44 +601,75 @@
     },
     {
       "id": 9,
-      "title": "Transaction retries/s by SQLSTATE",
       "type": "timeseries",
-      "description": "Only 40001 and 40P01 are retried, at most twice.",
+      "title": "In-flight requests",
+      "description": "Requests currently inside the edge. The cap is INFLIGHT_CAP (500 by default); once it is reached the limiter admits nothing and rejections with reason busy take over. A flat line at the cap means the platform is saturated, not slow.",
+      "gridPos": {
+        "h": 8,
+        "w": 6,
+        "x": 18,
+        "y": 16
+      },
       "datasource": {
         "type": "prometheus",
         "uid": "prometheus"
       },
-      "gridPos": {
-        "h": 7,
-        "w": 8,
-        "x": 0,
-        "y": 22
-      },
       "targets": [
         {
-          "expr": "sum by (sqlstate) (rate(op_tx_retries_total[5m]))",
-          "legendFormat": "{{sqlstate}}",
-          "refId": "A",
           "datasource": {
             "type": "prometheus",
             "uid": "prometheus"
-          }
+          },
+          "editorMode": "code",
+          "expr": "sum(op_inflight)",
+          "legendFormat": "in-flight",
+          "range": true,
+          "instant": false,
+          "refId": "A"
         }
       ],
       "fieldConfig": {
         "defaults": {
-          "unit": "ops",
+          "unit": "short",
           "custom": {
             "drawStyle": "line",
             "lineWidth": 2,
             "fillOpacity": 8,
-            "showPoints": "never"
+            "showPoints": "never",
+            "spanNulls": false,
+            "axisPlacement": "auto",
+            "scaleDistribution": {
+              "type": "linear"
+            },
+            "lineInterpolation": "linear",
+            "axisSoftMin": 0
+          },
+          "color": {
+            "mode": "thresholds"
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "orange",
+                "value": 400
+              },
+              {
+                "color": "red",
+                "value": 500
+              }
+            ]
           }
         },
         "overrides": []
       },
       "options": {
         "legend": {
+          "showLegend": true,
           "displayMode": "list",
           "placement": "bottom",
           "calcs": [
@@ -520,97 +685,72 @@
     },
     {
       "id": 10,
-      "title": "Conditional update zero rows/s",
-      "type": "timeseries",
-      "description": "A zero-row update re-reads; it never overwrites.",
-      "datasource": {
-        "type": "prometheus",
-        "uid": "prometheus"
-      },
+      "type": "row",
+      "title": "3 \u00b7 Saturation & runtime",
+      "description": "Is the API running out of threads, CPU, memory or allocation headroom before it shows up as latency?",
+      "collapsed": false,
+      "panels": [],
       "gridPos": {
-        "h": 7,
-        "w": 8,
-        "x": 8,
-        "y": 22
-      },
-      "targets": [
-        {
-          "expr": "rate(op_conditional_update_zero_rows_total[5m])",
-          "legendFormat": "zero rows",
-          "refId": "A",
-          "datasource": {
-            "type": "prometheus",
-            "uid": "prometheus"
-          }
-        }
-      ],
-      "fieldConfig": {
-        "defaults": {
-          "unit": "ops",
-          "custom": {
-            "drawStyle": "line",
-            "lineWidth": 2,
-            "fillOpacity": 8,
-            "showPoints": "never"
-          }
-        },
-        "overrides": []
-      },
-      "options": {
-        "legend": {
-          "displayMode": "list",
-          "placement": "bottom",
-          "calcs": [
-            "lastNotNull",
-            "max"
-          ]
-        },
-        "tooltip": {
-          "mode": "multi",
-          "sort": "desc"
-        }
+        "h": 1,
+        "w": 24,
+        "x": 0,
+        "y": 24
       }
     },
     {
       "id": 11,
-      "title": "Database deadlocks/s",
       "type": "timeseries",
-      "description": "Counted by PostgreSQL, not by the application.",
+      "title": "ThreadPool queue depth",
+      "description": "Pending ThreadPool work items. A queue that stays above zero is the earliest sign that requests are waiting for a thread rather than for the database. Small transient spikes under load are normal.",
+      "gridPos": {
+        "h": 6,
+        "w": 8,
+        "x": 0,
+        "y": 25
+      },
       "datasource": {
         "type": "prometheus",
         "uid": "prometheus"
       },
-      "gridPos": {
-        "h": 7,
-        "w": 8,
-        "x": 16,
-        "y": 22
-      },
       "targets": [
         {
-          "expr": "rate(pg_stat_database_deadlocks{datname=\"openpayments\"}[5m])",
-          "legendFormat": "deadlocks",
-          "refId": "A",
           "datasource": {
             "type": "prometheus",
             "uid": "prometheus"
-          }
+          },
+          "editorMode": "code",
+          "expr": "op_threadpool_queue",
+          "legendFormat": "queued items",
+          "range": true,
+          "instant": false,
+          "refId": "A"
         }
       ],
       "fieldConfig": {
         "defaults": {
-          "unit": "ops",
+          "unit": "short",
           "custom": {
             "drawStyle": "line",
             "lineWidth": 2,
             "fillOpacity": 8,
-            "showPoints": "never"
+            "showPoints": "never",
+            "spanNulls": false,
+            "axisPlacement": "auto",
+            "scaleDistribution": {
+              "type": "linear"
+            },
+            "lineInterpolation": "linear",
+            "axisSoftMin": 0
+          },
+          "color": {
+            "mode": "palette-classic"
           }
         },
         "overrides": []
       },
       "options": {
         "legend": {
+          "showLegend": true,
           "displayMode": "list",
           "placement": "bottom",
           "calcs": [
@@ -626,37 +766,31 @@
     },
     {
       "id": 12,
-      "title": "PgBouncer client wait",
       "type": "timeseries",
-      "description": "Pool wait is one of the 503 reasons.",
+      "title": "Gen 2 GC per second",
+      "description": "Gen 2 collections per second since process start. Gen 2 is a full blocking collection: any steady rate under payment load correlates with the p99 spikes in the latency row. Zero is the healthy steady state.",
+      "gridPos": {
+        "h": 6,
+        "w": 8,
+        "x": 8,
+        "y": 25
+      },
       "datasource": {
         "type": "prometheus",
         "uid": "prometheus"
       },
-      "gridPos": {
-        "h": 7,
-        "w": 8,
-        "x": 0,
-        "y": 29
-      },
       "targets": [
         {
-          "expr": "pgbouncer_pools_client_waiting_connections",
-          "legendFormat": "waiting clients",
-          "refId": "A",
           "datasource": {
             "type": "prometheus",
             "uid": "prometheus"
-          }
-        },
-        {
-          "expr": "pgbouncer_pools_client_maxwait_seconds",
-          "legendFormat": "oldest wait",
-          "refId": "B",
-          "datasource": {
-            "type": "prometheus",
-            "uid": "prometheus"
-          }
+          },
+          "editorMode": "code",
+          "expr": "op_gen2_gc_per_second",
+          "legendFormat": "gen2/s",
+          "range": true,
+          "instant": false,
+          "refId": "A"
         }
       ],
       "fieldConfig": {
@@ -666,13 +800,24 @@
             "drawStyle": "line",
             "lineWidth": 2,
             "fillOpacity": 8,
-            "showPoints": "never"
+            "showPoints": "never",
+            "spanNulls": false,
+            "axisPlacement": "auto",
+            "scaleDistribution": {
+              "type": "linear"
+            },
+            "lineInterpolation": "linear",
+            "axisSoftMin": 0
+          },
+          "color": {
+            "mode": "palette-classic"
           }
         },
         "overrides": []
       },
       "options": {
         "legend": {
+          "showLegend": true,
           "displayMode": "list",
           "placement": "bottom",
           "calcs": [
@@ -688,28 +833,31 @@
     },
     {
       "id": 13,
-      "title": "Database WAL rate",
       "type": "timeseries",
-      "description": "Write-ahead log rate; relevant to G3 and G6.",
+      "title": "Managed allocation rate",
+      "description": "Bytes allocated per second since process start. High allocation is what eventually forces Gen 2 collections; this is the leading indicator for the panel on its left.",
+      "gridPos": {
+        "h": 6,
+        "w": 8,
+        "x": 16,
+        "y": 25
+      },
       "datasource": {
         "type": "prometheus",
         "uid": "prometheus"
       },
-      "gridPos": {
-        "h": 7,
-        "w": 8,
-        "x": 8,
-        "y": 29
-      },
       "targets": [
         {
-          "expr": "rate(pg_wal_bytes[5m])",
-          "legendFormat": "WAL bytes/s",
-          "refId": "A",
           "datasource": {
             "type": "prometheus",
             "uid": "prometheus"
-          }
+          },
+          "editorMode": "code",
+          "expr": "op_allocation_rate_bytes_per_second",
+          "legendFormat": "allocated",
+          "range": true,
+          "instant": false,
+          "refId": "A"
         }
       ],
       "fieldConfig": {
@@ -719,13 +867,24 @@
             "drawStyle": "line",
             "lineWidth": 2,
             "fillOpacity": 8,
-            "showPoints": "never"
+            "showPoints": "never",
+            "spanNulls": false,
+            "axisPlacement": "auto",
+            "scaleDistribution": {
+              "type": "linear"
+            },
+            "lineInterpolation": "linear",
+            "axisSoftMin": 0
+          },
+          "color": {
+            "mode": "palette-classic"
           }
         },
         "overrides": []
       },
       "options": {
         "legend": {
+          "showLegend": true,
           "displayMode": "list",
           "placement": "bottom",
           "calcs": [
@@ -741,53 +900,59 @@
     },
     {
       "id": 14,
-      "title": "Database transactions/s",
       "type": "timeseries",
-      "description": "Commit and rollback rate.",
+      "title": "API CPU",
+      "description": "Process CPU time per second, in cores. One core is one fully busy core. Compare against the CPU budget for the cell rather than against a fixed number.",
+      "gridPos": {
+        "h": 6,
+        "w": 8,
+        "x": 0,
+        "y": 31
+      },
       "datasource": {
         "type": "prometheus",
         "uid": "prometheus"
       },
-      "gridPos": {
-        "h": 7,
-        "w": 8,
-        "x": 16,
-        "y": 29
-      },
       "targets": [
         {
-          "expr": "rate(pg_stat_database_xact_commit{datname=\"openpayments\"}[5m])",
-          "legendFormat": "commit",
-          "refId": "A",
           "datasource": {
             "type": "prometheus",
             "uid": "prometheus"
-          }
-        },
-        {
-          "expr": "rate(pg_stat_database_xact_rollback{datname=\"openpayments\"}[5m])",
-          "legendFormat": "rollback",
-          "refId": "B",
-          "datasource": {
-            "type": "prometheus",
-            "uid": "prometheus"
-          }
+          },
+          "editorMode": "code",
+          "expr": "rate(process_cpu_seconds_total{job=\"api\"}[5m])",
+          "legendFormat": "cores",
+          "range": true,
+          "instant": false,
+          "refId": "A"
         }
       ],
       "fieldConfig": {
         "defaults": {
-          "unit": "ops",
+          "unit": "short",
           "custom": {
             "drawStyle": "line",
             "lineWidth": 2,
             "fillOpacity": 8,
-            "showPoints": "never"
-          }
+            "showPoints": "never",
+            "spanNulls": false,
+            "axisPlacement": "auto",
+            "scaleDistribution": {
+              "type": "linear"
+            },
+            "lineInterpolation": "linear",
+            "axisSoftMin": 0
+          },
+          "color": {
+            "mode": "palette-classic"
+          },
+          "decimals": 2
         },
         "overrides": []
       },
       "options": {
         "legend": {
+          "showLegend": true,
           "displayMode": "list",
           "placement": "bottom",
           "calcs": [
@@ -803,53 +968,58 @@
     },
     {
       "id": 15,
-      "title": "API CPU and memory",
       "type": "timeseries",
-      "description": "API process resources. Runtime ThreadPool and GC panels arrive with OpenTelemetry in Task 14.",
+      "title": "API resident memory",
+      "description": "Resident working set. Memory should be flat between deployments and grow only with caches or fragmentation. A sawtooth that never returns to baseline is a leak; a step change is a deployment.",
+      "gridPos": {
+        "h": 6,
+        "w": 8,
+        "x": 8,
+        "y": 31
+      },
       "datasource": {
         "type": "prometheus",
         "uid": "prometheus"
       },
-      "gridPos": {
-        "h": 7,
-        "w": 12,
-        "x": 0,
-        "y": 36
-      },
       "targets": [
         {
-          "expr": "rate(process_cpu_seconds_total{job=\"api\"}[5m])",
-          "legendFormat": "CPU cores",
-          "refId": "A",
           "datasource": {
             "type": "prometheus",
             "uid": "prometheus"
-          }
-        },
-        {
+          },
+          "editorMode": "code",
           "expr": "process_resident_memory_bytes{job=\"api\"}",
-          "legendFormat": "resident bytes",
-          "refId": "B",
-          "datasource": {
-            "type": "prometheus",
-            "uid": "prometheus"
-          }
+          "legendFormat": "resident",
+          "range": true,
+          "instant": false,
+          "refId": "A"
         }
       ],
       "fieldConfig": {
         "defaults": {
-          "unit": "short",
+          "unit": "bytes",
           "custom": {
             "drawStyle": "line",
             "lineWidth": 2,
             "fillOpacity": 8,
-            "showPoints": "never"
+            "showPoints": "never",
+            "spanNulls": false,
+            "axisPlacement": "auto",
+            "scaleDistribution": {
+              "type": "linear"
+            },
+            "lineInterpolation": "linear",
+            "axisSoftMin": 0
+          },
+          "color": {
+            "mode": "palette-classic"
           }
         },
         "overrides": []
       },
       "options": {
         "legend": {
+          "showLegend": true,
           "displayMode": "list",
           "placement": "bottom",
           "calcs": [
@@ -865,28 +1035,31 @@
     },
     {
       "id": 16,
-      "title": "Database locks held",
       "type": "timeseries",
-      "description": "Lock waits are tracked separately; deadlock_timeout is 100 ms.",
+      "title": "OS threads",
+      "description": "Operating-system threads in the API process. A jump with no change in load means thread-pool starvation or blocked I/O, and usually shows up in the ThreadPool queue first.",
+      "gridPos": {
+        "h": 6,
+        "w": 8,
+        "x": 16,
+        "y": 31
+      },
       "datasource": {
         "type": "prometheus",
         "uid": "prometheus"
       },
-      "gridPos": {
-        "h": 7,
-        "w": 12,
-        "x": 12,
-        "y": 36
-      },
       "targets": [
         {
-          "expr": "sum(pg_locks_count{datname=\"openpayments\"})",
-          "legendFormat": "locks",
-          "refId": "A",
           "datasource": {
             "type": "prometheus",
             "uid": "prometheus"
-          }
+          },
+          "editorMode": "code",
+          "expr": "process_num_threads{job=\"api\"}",
+          "legendFormat": "threads",
+          "range": true,
+          "instant": false,
+          "refId": "A"
         }
       ],
       "fieldConfig": {
@@ -896,13 +1069,1099 @@
             "drawStyle": "line",
             "lineWidth": 2,
             "fillOpacity": 8,
-            "showPoints": "never"
+            "showPoints": "never",
+            "spanNulls": false,
+            "axisPlacement": "auto",
+            "scaleDistribution": {
+              "type": "linear"
+            },
+            "lineInterpolation": "linear",
+            "axisSoftMin": 0
+          },
+          "color": {
+            "mode": "palette-classic"
           }
         },
         "overrides": []
       },
       "options": {
         "legend": {
+          "showLegend": true,
+          "displayMode": "list",
+          "placement": "bottom",
+          "calcs": [
+            "lastNotNull",
+            "max"
+          ]
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      }
+    },
+    {
+      "id": 17,
+      "type": "row",
+      "title": "4 \u00b7 Database & durability",
+      "description": "Is PostgreSQL healthy, and are committed payments durable? Zero deadlocks alone does not prove either.",
+      "collapsed": false,
+      "panels": [],
+      "gridPos": {
+        "h": 1,
+        "w": 24,
+        "x": 0,
+        "y": 37
+      }
+    },
+    {
+      "id": 18,
+      "type": "timeseries",
+      "title": "Database transactions/s",
+      "description": "Commit and rollback rate on the payments database. Under D47 each payment is several transactions, so this is several times the payment rate. A rollback rate that drifts up means conditional updates or constraint checks are fighting.",
+      "gridPos": {
+        "h": 7,
+        "w": 8,
+        "x": 0,
+        "y": 38
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "editorMode": "code",
+          "expr": "rate(pg_stat_database_xact_commit{datname=\"openpayments\"}[5m])",
+          "legendFormat": "commit",
+          "range": true,
+          "instant": false,
+          "refId": "A"
+        },
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "editorMode": "code",
+          "expr": "rate(pg_stat_database_xact_rollback{datname=\"openpayments\"}[5m])",
+          "legendFormat": "rollback",
+          "range": true,
+          "instant": false,
+          "refId": "B"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "ops",
+          "custom": {
+            "drawStyle": "line",
+            "lineWidth": 2,
+            "fillOpacity": 8,
+            "showPoints": "never",
+            "spanNulls": false,
+            "axisPlacement": "auto",
+            "scaleDistribution": {
+              "type": "linear"
+            },
+            "lineInterpolation": "linear",
+            "axisSoftMin": 0
+          },
+          "color": {
+            "mode": "palette-classic"
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "showLegend": true,
+          "displayMode": "list",
+          "placement": "bottom",
+          "calcs": [
+            "lastNotNull",
+            "max"
+          ]
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      }
+    },
+    {
+      "id": 19,
+      "type": "timeseries",
+      "title": "Database WAL rate",
+      "description": "WAL bytes written per second. Every committed payment is durable only once its WAL record is on disk, so this is the volume that fsync has to keep up with. A step change with flat traffic means more writes per payment.",
+      "gridPos": {
+        "h": 7,
+        "w": 8,
+        "x": 8,
+        "y": 38
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "editorMode": "code",
+          "expr": "rate(pg_wal_bytes[5m])",
+          "legendFormat": "WAL",
+          "range": true,
+          "instant": false,
+          "refId": "A"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "Bps",
+          "custom": {
+            "drawStyle": "line",
+            "lineWidth": 2,
+            "fillOpacity": 8,
+            "showPoints": "never",
+            "spanNulls": false,
+            "axisPlacement": "auto",
+            "scaleDistribution": {
+              "type": "linear"
+            },
+            "lineInterpolation": "linear",
+            "axisSoftMin": 0
+          },
+          "color": {
+            "mode": "palette-classic"
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "showLegend": true,
+          "displayMode": "list",
+          "placement": "bottom",
+          "calcs": [
+            "lastNotNull",
+            "max"
+          ]
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      }
+    },
+    {
+      "id": 20,
+      "type": "timeseries",
+      "title": "Database locks held",
+      "description": "Locks held on the payments database, summed across lock modes and relations. It is a pressure signal, not a correctness signal: a steadily climbing count with flat traffic points at longer transactions or missing indexes.",
+      "gridPos": {
+        "h": 7,
+        "w": 8,
+        "x": 16,
+        "y": 38
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "editorMode": "code",
+          "expr": "sum(pg_locks_count{datname=\"openpayments\"})",
+          "legendFormat": "locks",
+          "range": true,
+          "instant": false,
+          "refId": "A"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "custom": {
+            "drawStyle": "line",
+            "lineWidth": 2,
+            "fillOpacity": 8,
+            "showPoints": "never",
+            "spanNulls": false,
+            "axisPlacement": "auto",
+            "scaleDistribution": {
+              "type": "linear"
+            },
+            "lineInterpolation": "linear",
+            "axisSoftMin": 0
+          },
+          "color": {
+            "mode": "palette-classic"
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "showLegend": true,
+          "displayMode": "list",
+          "placement": "bottom",
+          "calcs": [
+            "lastNotNull",
+            "max"
+          ]
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      }
+    },
+    {
+      "id": 21,
+      "type": "stat",
+      "title": "Deadlocks/s",
+      "description": "Deadlocks actually raised by PostgreSQL, independent of the application's retry counter. Must stay at zero: docs/decisions.md sets deadlock_timeout to 100 ms so deadlocks surface instead of hiding as lock timeouts.",
+      "gridPos": {
+        "h": 6,
+        "w": 6,
+        "x": 0,
+        "y": 45
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "editorMode": "code",
+          "expr": "sum(rate(pg_stat_database_deadlocks{datname=\"openpayments\"}[5m])) or vector(0)",
+          "legendFormat": "deadlocks/s",
+          "range": true,
+          "instant": false,
+          "refId": "A"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "ops",
+          "mappings": [],
+          "color": {
+            "mode": "thresholds"
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "red",
+                "value": 0.001
+              }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "colorMode": "value",
+        "graphMode": "none",
+        "justifyMode": "auto",
+        "textMode": "auto",
+        "wideLayout": true,
+        "showPercentChange": false,
+        "orientation": "auto"
+      }
+    },
+    {
+      "id": 22,
+      "type": "stat",
+      "title": "Abandoned commits",
+      "description": "Commits still running after the commit wait limit (E1). Any value above zero is a paging condition: the outcome of that payment is unknown and a retry can double-capture. This mirrors the CommitWarning alert in deploy/compose/prometheus/alerts.yml.",
+      "gridPos": {
+        "h": 6,
+        "w": 6,
+        "x": 6,
+        "y": 45
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "editorMode": "code",
+          "expr": "sum(op_abandoned_commits) or vector(0)",
+          "legendFormat": "abandoned",
+          "range": true,
+          "instant": false,
+          "refId": "A"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "mappings": [],
+          "color": {
+            "mode": "thresholds"
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "red",
+                "value": 1
+              }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "colorMode": "value",
+        "graphMode": "none",
+        "justifyMode": "auto",
+        "textMode": "auto",
+        "wideLayout": true,
+        "showPercentChange": false,
+        "orientation": "auto"
+      }
+    },
+    {
+      "id": 23,
+      "type": "stat",
+      "title": "Commit warnings (5m)",
+      "description": "Commits that returned a replication warning in the last 5 minutes. A warning means the commit reached the primary but the standby acknowledgement did not come back, so the outcome is unknown. Mirrors the CommitWarning alert.",
+      "gridPos": {
+        "h": 6,
+        "w": 6,
+        "x": 12,
+        "y": 45
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "editorMode": "code",
+          "expr": "sum(increase(op_commit_warnings_total[5m])) or vector(0)",
+          "legendFormat": "warnings",
+          "range": true,
+          "instant": false,
+          "refId": "A"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "mappings": [],
+          "color": {
+            "mode": "thresholds"
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "red",
+                "value": 1
+              }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "colorMode": "value",
+        "graphMode": "none",
+        "justifyMode": "auto",
+        "textMode": "auto",
+        "wideLayout": true,
+        "showPercentChange": false,
+        "orientation": "auto"
+      }
+    },
+    {
+      "id": 24,
+      "type": "timeseries",
+      "title": "PgBouncer waiting clients",
+      "description": "Clients queued for a server connection, by pool. Non-zero means the connection pool is the bottleneck and the API is waiting before it even reaches PostgreSQL. D1 sizes the pool; a sustained queue means the sizing is wrong or the pool is leaking connections.",
+      "gridPos": {
+        "h": 6,
+        "w": 8,
+        "x": 0,
+        "y": 51
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "editorMode": "code",
+          "expr": "sum by (database) (pgbouncer_pools_client_waiting_connections)",
+          "legendFormat": "{{database}}",
+          "range": true,
+          "instant": false,
+          "refId": "A"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "custom": {
+            "drawStyle": "line",
+            "lineWidth": 2,
+            "fillOpacity": 8,
+            "showPoints": "never",
+            "spanNulls": false,
+            "axisPlacement": "auto",
+            "scaleDistribution": {
+              "type": "linear"
+            },
+            "lineInterpolation": "linear",
+            "axisSoftMin": 0
+          },
+          "color": {
+            "mode": "palette-classic"
+          },
+          "noValue": "no waiting clients"
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "showLegend": true,
+          "displayMode": "list",
+          "placement": "bottom",
+          "calcs": [
+            "lastNotNull",
+            "max"
+          ]
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      }
+    },
+    {
+      "id": 25,
+      "type": "timeseries",
+      "title": "PgBouncer oldest client wait",
+      "description": "Age of the longest-waiting client in each pool. Waiting clients with an old max wait is a saturated pool; waiting clients that clear in milliseconds is normal contention.",
+      "gridPos": {
+        "h": 6,
+        "w": 8,
+        "x": 8,
+        "y": 51
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "editorMode": "code",
+          "expr": "max by (database) (pgbouncer_pools_client_maxwait_seconds)",
+          "legendFormat": "{{database}}",
+          "range": true,
+          "instant": false,
+          "refId": "A"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "s",
+          "custom": {
+            "drawStyle": "line",
+            "lineWidth": 2,
+            "fillOpacity": 8,
+            "showPoints": "never",
+            "spanNulls": false,
+            "axisPlacement": "auto",
+            "scaleDistribution": {
+              "type": "linear"
+            },
+            "lineInterpolation": "linear",
+            "axisSoftMin": 0
+          },
+          "color": {
+            "mode": "palette-classic"
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "showLegend": true,
+          "displayMode": "list",
+          "placement": "bottom",
+          "calcs": [
+            "lastNotNull",
+            "max"
+          ]
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      }
+    },
+    {
+      "id": 26,
+      "type": "timeseries",
+      "title": "Unresolved operations by kind",
+      "description": "Payments, attempts and refunds whose outcome is not established (PSP_PENDING or UNKNOWN). Stage 1 has no reconciler, so anything here waits for a person: docs/runbooks/unknown-outcomes.md. No series means nothing is unresolved.",
+      "gridPos": {
+        "h": 6,
+        "w": 8,
+        "x": 16,
+        "y": 51
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "editorMode": "code",
+          "expr": "sum by (kind) (op_unresolved_count)",
+          "legendFormat": "{{kind}}",
+          "range": true,
+          "instant": false,
+          "refId": "A"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "custom": {
+            "drawStyle": "line",
+            "lineWidth": 2,
+            "fillOpacity": 8,
+            "showPoints": "never",
+            "spanNulls": false,
+            "axisPlacement": "auto",
+            "scaleDistribution": {
+              "type": "linear"
+            },
+            "lineInterpolation": "linear",
+            "axisSoftMin": 0
+          },
+          "color": {
+            "mode": "palette-classic"
+          },
+          "noValue": "nothing unresolved"
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "showLegend": true,
+          "displayMode": "list",
+          "placement": "bottom",
+          "calcs": [
+            "lastNotNull",
+            "max"
+          ]
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      }
+    },
+    {
+      "id": 27,
+      "type": "timeseries",
+      "title": "Age of the oldest unresolved operation",
+      "description": "How long the oldest unresolved payment, attempt or refund has been stuck, by kind. CK5 tolerance is 60 s; past that it is an incident, not a delay. Mirrors the UnresolvedOperationAging alert.",
+      "gridPos": {
+        "h": 6,
+        "w": 8,
+        "x": 0,
+        "y": 57
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "editorMode": "code",
+          "expr": "max by (kind) (op_unresolved_oldest_age_seconds)",
+          "legendFormat": "{{kind}}",
+          "range": true,
+          "instant": false,
+          "refId": "A"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "s",
+          "custom": {
+            "drawStyle": "line",
+            "lineWidth": 2,
+            "fillOpacity": 8,
+            "showPoints": "never",
+            "spanNulls": false,
+            "axisPlacement": "auto",
+            "scaleDistribution": {
+              "type": "linear"
+            },
+            "lineInterpolation": "linear",
+            "axisSoftMin": 0
+          },
+          "color": {
+            "mode": "thresholds"
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "orange",
+                "value": 60
+              },
+              {
+                "color": "red",
+                "value": 300
+              }
+            ]
+          },
+          "noValue": "Nothing unresolved"
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "showLegend": true,
+          "displayMode": "list",
+          "placement": "bottom",
+          "calcs": [
+            "lastNotNull",
+            "max"
+          ]
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      }
+    },
+    {
+      "id": 28,
+      "type": "timeseries",
+      "title": "Unresolved money held",
+      "description": "Minor units held by unresolved payments, attempts and refunds. This is the number to read before deciding whether an unresolved backlog is an inconvenience or a financial exposure.",
+      "gridPos": {
+        "h": 6,
+        "w": 8,
+        "x": 8,
+        "y": 57
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "editorMode": "code",
+          "expr": "sum by (kind) (op_unresolved_amount_minor)",
+          "legendFormat": "{{kind}}",
+          "range": true,
+          "instant": false,
+          "refId": "A"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "custom": {
+            "drawStyle": "line",
+            "lineWidth": 2,
+            "fillOpacity": 8,
+            "showPoints": "never",
+            "spanNulls": false,
+            "axisPlacement": "auto",
+            "scaleDistribution": {
+              "type": "linear"
+            },
+            "lineInterpolation": "linear",
+            "axisSoftMin": 0
+          },
+          "color": {
+            "mode": "palette-classic"
+          },
+          "noValue": "nothing unresolved"
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "showLegend": true,
+          "displayMode": "list",
+          "placement": "bottom",
+          "calcs": [
+            "lastNotNull",
+            "max"
+          ]
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      }
+    },
+    {
+      "id": 29,
+      "type": "row",
+      "title": "5 \u00b7 Payment pipeline",
+      "description": "Is the state machine progressing, and are the emitters this row depends on actually running?",
+      "collapsed": false,
+      "panels": [],
+      "gridPos": {
+        "h": 1,
+        "w": 24,
+        "x": 0,
+        "y": 63
+      }
+    },
+    {
+      "id": 30,
+      "type": "timeseries",
+      "title": "Payments by state",
+      "description": "Current payment count by state. Not emitted yet: the metric is in docs/metrics.md but the reconciler that publishes it is Stage 2. An empty panel here is a missing emitter, not a healthy system.",
+      "gridPos": {
+        "h": 6,
+        "w": 8,
+        "x": 0,
+        "y": 64
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "editorMode": "code",
+          "expr": "op_payments_by_state",
+          "legendFormat": "{{state}}",
+          "range": true,
+          "instant": false,
+          "refId": "A"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "custom": {
+            "drawStyle": "line",
+            "lineWidth": 2,
+            "fillOpacity": 8,
+            "showPoints": "never",
+            "spanNulls": false,
+            "axisPlacement": "auto",
+            "scaleDistribution": {
+              "type": "linear"
+            },
+            "lineInterpolation": "linear",
+            "axisSoftMin": 0
+          },
+          "color": {
+            "mode": "palette-classic"
+          },
+          "noValue": "Not emitted yet \u2014 Stage 2 reconciler"
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "showLegend": true,
+          "displayMode": "list",
+          "placement": "bottom",
+          "calcs": [
+            "lastNotNull",
+            "max"
+          ]
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      }
+    },
+    {
+      "id": 31,
+      "type": "timeseries",
+      "title": "Outbox oldest age",
+      "description": "Age of the oldest unpublished outbox row, i.e. how long an event has been waiting to leave the database. Not emitted yet: the outbox publisher is Phase 3. Once it exists, anything over a few seconds is a stalled publisher.",
+      "gridPos": {
+        "h": 6,
+        "w": 8,
+        "x": 8,
+        "y": 64
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "editorMode": "code",
+          "expr": "op_outbox_oldest_age_seconds",
+          "legendFormat": "oldest unpublished",
+          "range": true,
+          "instant": false,
+          "refId": "A"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "s",
+          "custom": {
+            "drawStyle": "line",
+            "lineWidth": 2,
+            "fillOpacity": 8,
+            "showPoints": "never",
+            "spanNulls": false,
+            "axisPlacement": "auto",
+            "scaleDistribution": {
+              "type": "linear"
+            },
+            "lineInterpolation": "linear",
+            "axisSoftMin": 0
+          },
+          "color": {
+            "mode": "palette-classic"
+          },
+          "noValue": "Not emitted yet \u2014 Phase 3 publisher"
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "showLegend": true,
+          "displayMode": "list",
+          "placement": "bottom",
+          "calcs": [
+            "lastNotNull",
+            "max"
+          ]
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      }
+    },
+    {
+      "id": 32,
+      "type": "timeseries",
+      "title": "Transaction retries/s by SQLSTATE",
+      "description": "Retries by SQLSTATE: only 40001 (serialization failure) and 40P01 (deadlock) are retried, at most twice. A flat zero line means no retries are happening; a missing panel would have been indistinguishable from a broken counter, which is why the zero is explicit.",
+      "gridPos": {
+        "h": 6,
+        "w": 8,
+        "x": 16,
+        "y": 64
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "editorMode": "code",
+          "expr": "sum by (sqlstate) (rate(op_tx_retries_total[5m]))",
+          "legendFormat": "{{sqlstate}}",
+          "range": true,
+          "instant": false,
+          "refId": "A"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "ops",
+          "custom": {
+            "drawStyle": "line",
+            "lineWidth": 2,
+            "fillOpacity": 8,
+            "showPoints": "never",
+            "spanNulls": false,
+            "axisPlacement": "auto",
+            "scaleDistribution": {
+              "type": "linear"
+            },
+            "lineInterpolation": "linear",
+            "axisSoftMin": 0
+          },
+          "color": {
+            "mode": "palette-classic"
+          },
+          "noValue": "no retries recorded"
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "showLegend": true,
+          "displayMode": "list",
+          "placement": "bottom",
+          "calcs": [
+            "lastNotNull",
+            "max"
+          ]
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      }
+    },
+    {
+      "id": 33,
+      "type": "timeseries",
+      "title": "Conditional updates that changed no row",
+      "description": "Conditional updates that matched nothing, so the caller re-read and answered from current state. This is the optimistic-concurrency conflict rate: a rising value with flat traffic means contention on hot payments.",
+      "gridPos": {
+        "h": 6,
+        "w": 8,
+        "x": 0,
+        "y": 70
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "editorMode": "code",
+          "expr": "sum(rate(op_conditional_update_zero_rows_total[5m])) or vector(0)",
+          "legendFormat": "zero rows",
+          "range": true,
+          "instant": false,
+          "refId": "A"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "ops",
+          "custom": {
+            "drawStyle": "line",
+            "lineWidth": 2,
+            "fillOpacity": 8,
+            "showPoints": "never",
+            "spanNulls": false,
+            "axisPlacement": "auto",
+            "scaleDistribution": {
+              "type": "linear"
+            },
+            "lineInterpolation": "linear",
+            "axisSoftMin": 0
+          },
+          "color": {
+            "mode": "palette-classic"
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "showLegend": true,
           "displayMode": "list",
           "placement": "bottom",
           "calcs": [
@@ -926,11 +2185,11 @@
     "list": []
   },
   "time": {
-    "from": "now-15m",
+    "from": "now-1h",
     "to": "now"
   },
   "timezone": "browser",
   "title": "Open Payments Overview",
   "uid": "open-payments-overview",
-  "version": 1
+  "version": 2
 }

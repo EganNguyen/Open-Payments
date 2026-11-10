@@ -2,7 +2,7 @@
 
 The metric contract between the API, the load harness, the dashboard and the correctness run. Task 14 emits these names; Task 11 reads them; this file is their one home.
 
-Status: Draft · Last updated: 2026-11-09
+Status: Draft · Last updated: 2026-11-10
 
 The stack is in [`deploy/compose/observability.yaml`](../deploy/compose/observability.yaml), with Prometheus at `http://127.0.0.1:9090`, Grafana at `http://127.0.0.1:3000` (`admin` / `admin` locally) and the [overview dashboard](../deploy/compose/grafana/dashboards/overview.json).
 
@@ -99,4 +99,14 @@ Check `http://127.0.0.1:9090/api/v1/targets` shows `postgres`, `pgbouncer` and `
 
 ## Alerts and gates
 
-The metric stack is a measurement tool, not a gate. A missed gate, including a failed correctness check, makes the run fail even if every panel is green. Alerts and thresholds are in the [scaling playbook](scaling-playbook.md#measures-and-gates) and are not duplicated here.
+The metric stack is a measurement tool, not a gate. A missed gate, including a failed correctness check, makes the run fail even if every panel is green. Alert thresholds for production are in the [scaling playbook](scaling-playbook.md#measures-and-gates) and are not duplicated here.
+
+The local stack loads three rules from `deploy/compose/prometheus/alerts.yml`. They fire in Prometheus only; routing to a pager is Stage 5's job. [D56](decisions.md#d56) requires each to be seen firing.
+
+| Alert | Fires when | Severity | Why |
+|---|---|---|---|
+| `CommitWarning` | `op_commit_warnings_total` rises within a minute | page | A commit returned a replication warning, so a payment's outcome is unknown ([E1](gates/stage-1-escalations.md#e1-task-13-npgsql-commit-cancellation-breaks-d28), [D28](decisions.md#d28)) |
+| `AbandonedCommitsStuck` | `op_abandoned_commits > 0` for 1 min | page | A commit ran past the commit wait limit for a minute: a standby or the network is stuck |
+| `UnresolvedOperationAging` | `op_unresolved_oldest_age_seconds` over 60 s, for 1 min | ticket | An operation's outcome isn't established past CK5's threshold; see the [runbook](runbooks/unknown-outcomes.md) |
+
+Check `http://127.0.0.1:9090/api/v1/targets` shows the `api` targets up: `:8081`, and `:8082` only when [two API instances](architecture/local-deployment.md#topology) run.
