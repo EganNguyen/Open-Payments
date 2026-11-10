@@ -42,7 +42,11 @@ public static class PaymentRules
             PaymentCommand.Expiry => Expire(current),
             PaymentCommand.Cancel => Cancel(current),
             PaymentCommand.ManualResolution resolution => Resolve(current, resolution),
+            PaymentCommand.ManualRefundResolution resolution => ResolveRefund(current, resolution),
             PaymentCommand.LateApproval approval => LateApproval(current, approval),
+            PaymentCommand.LateApprovalReversed reversed => ReverseLateApproval(current, reversed),
+            PaymentCommand.Escalate escalate => Escalate(current, escalate),
+            PaymentCommand.RefundEscalate escalate => EscalateRefund(current, escalate),
             _ => new TransitionResult.Rejected("unknown_command"),
         };
     }
@@ -536,26 +540,159 @@ public static class PaymentRules
             return new TransitionResult.Rejected("invalid_state");
         }
 
+        var attempt = current.Attempt;
+        if (attempt is null)
+        {
+            return new TransitionResult.Rejected("attempt_missing");
+        }
+
+        var attemptState = (attempt.Operation, command.Resolution) switch
+        {
+            (AttemptOperation.Sale, PaymentResolution.Authorize) => (AttemptState?)null,
+            (AttemptOperation.Capture, PaymentResolution.Authorize) => AttemptState.Failed,
+            (AttemptOperation.Capture, PaymentResolution.AwaitingMethod) => null,
+            (_, PaymentResolution.Authorize) => AttemptState.Succeeded,
+            (_, PaymentResolution.AwaitingMethod) => AttemptState.Failed,
+            (_, PaymentResolution.Capture) => AttemptState.Succeeded,
+            _ => null,
+        };
+        if (attemptState is null)
+        {
+            return new TransitionResult.Rejected("invalid_resolution");
+        }
+
+        var change = new AttemptChange(
+            attempt.Id,
+            attempt.Operation,
+            attemptState.Value,
+            attemptState == AttemptState.Failed ? "manual_resolution" : null);
         var release = current.HoldPosted
-            ? Posting.HoldRelease(CurrentAttempt(current), current.Amount, "manual")
+            ? Posting.HoldRelease(attempt.Id, current.Amount, "manual")
             : [];
         return command.Resolution switch
         {
             PaymentResolution.Authorize => Accept(
                 PaymentState.Authorized,
+                attempt: change,
                 ledger: current.HoldPosted
                     ? []
-                    : Posting.AuthorizationHold(CurrentAttempt(current), current.Amount),
-                events: [Event(current, CurrentAttempt(current).Value, "payment.authorized")]),
+                    : Posting.AuthorizationHold(attempt.Id, current.Amount),
+                events: [Event(current, attempt.Id.Value, "payment.authorized")]),
             PaymentResolution.AwaitingMethod => Accept(
                 PaymentState.AwaitingMethod,
+                attempt: change,
                 ledger: release),
             PaymentResolution.Capture => Accept(
                 PaymentState.Captured,
-                ledger: release.Concat(Posting.CaptureMoney(CurrentAttempt(current), current.Amount)).ToList(),
-                events: [Event(current, CurrentAttempt(current).Value, "payment.captured")]),
+                attempt: change,
+                ledger: release.Concat(Posting.CaptureMoney(attempt.Id, current.Amount)).ToList(),
+                events: [Event(current, attempt.Id.Value, "payment.captured")]),
             _ => new TransitionResult.Rejected("invalid_resolution"),
         };
+    }
+
+    private static TransitionResult ResolveRefund(
+        PaymentSnapshot current,
+        PaymentCommand.ManualRefundResolution command)
+    {
+        if (current.State is not (PaymentState.Captured or PaymentState.PartiallyRefunded)
+            || current.Refund is null
+            || current.Refund.Id != command.RefundId
+            || current.Refund.State != RefundState.Review)
+        {
+            return new TransitionResult.Rejected("refund_not_found");
+        }
+
+        var amount = current.Refund.Amount;
+        if (command.Resolution == RefundResolution.Release)
+        {
+            return Accept(
+                current.State,
+                refund: new RefundChange(command.RefundId, RefundState.Failed, "manual_release"),
+                ledger: Posting.RefundRelease(command.RefundId, amount),
+                events: [Event(current, command.RefundId.Value, "payment.refund_failed")]);
+        }
+
+        var newState = current.RefundedMinor + amount.Minor == current.CapturedMinor
+            ? PaymentState.Refunded
+            : PaymentState.PartiallyRefunded;
+        return Accept(
+            newState,
+            refund: new RefundChange(command.RefundId, RefundState.Succeeded),
+            ledger: Posting.RefundConfirmation(command.RefundId, amount),
+            events: [Event(current, command.RefundId.Value, "payment.refunded")]);
+    }
+
+    private static TransitionResult ReverseLateApproval(
+        PaymentSnapshot current,
+        PaymentCommand.LateApprovalReversed command)
+    {
+        if (current.Attempt is null
+            || current.Attempt.Id != command.AttemptId
+            || current.Attempt.Operation != AttemptOperation.Sale
+            || current.Attempt.State != AttemptState.Review)
+        {
+            return new TransitionResult.Rejected("invalid_operation");
+        }
+
+        var state = current.State == PaymentState.Review
+            ? PaymentState.AwaitingMethod
+            : current.State;
+        return Accept(
+            state,
+            new AttemptChange(
+                command.AttemptId,
+                AttemptOperation.Sale,
+                AttemptState.Failed,
+                "late_approval_reversed"));
+    }
+
+    private static TransitionResult Escalate(
+        PaymentSnapshot current,
+        PaymentCommand.Escalate command)
+    {
+        if (command.Operation == AttemptOperation.Void)
+        {
+            return new TransitionResult.Rejected("invalid_operation");
+        }
+
+        if (current.Attempt is null
+            || current.Attempt.Id != command.AttemptId
+            || current.Attempt.State != AttemptState.Unknown)
+        {
+            return new TransitionResult.Rejected("attempt_not_unknown");
+        }
+
+        var allowed = command.Operation switch
+        {
+            AttemptOperation.Authorize or AttemptOperation.Sale => current.State == PaymentState.Unknown,
+            AttemptOperation.Capture => current.State == PaymentState.Authorized,
+            _ => false,
+        };
+        if (!allowed)
+        {
+            return new TransitionResult.Rejected("invalid_state");
+        }
+
+        return Accept(
+            PaymentState.Review,
+            new AttemptChange(command.AttemptId, command.Operation, AttemptState.Review));
+    }
+
+    private static TransitionResult EscalateRefund(
+        PaymentSnapshot current,
+        PaymentCommand.RefundEscalate command)
+    {
+        if (current.Refund is null
+            || current.Refund.Id != command.RefundId
+            || current.Refund.State != RefundState.Unknown)
+        {
+            return new TransitionResult.Rejected("refund_not_found");
+        }
+
+        return Accept(
+            current.State,
+            refund: new RefundChange(command.RefundId, RefundState.Review));
     }
 
     private static TransitionResult LateApproval(

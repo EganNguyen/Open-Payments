@@ -99,4 +99,19 @@ public abstract record PaymentCommand(DateTimeOffset OccurredAt)
         Money? AnswerAmount,
         string? FailureCode,
         DateTimeOffset OccurredAt) : PaymentCommand(OccurredAt);
+
+    public sealed record Escalate(
+        AttemptId AttemptId,
+        AttemptOperation Operation,
+        DateTimeOffset OccurredAt) : PaymentCommand(OccurredAt);
+
+    public sealed record RefundEscalate(RefundId RefundId, DateTimeOffset OccurredAt) : PaymentCommand(OccurredAt);
+
+    public sealed record ManualRefundResolution(
+        RefundId RefundId,
+        RefundResolution Resolution,
+        DateTimeOffset OccurredAt) : PaymentCommand(OccurredAt);
+
+    public sealed record LateApprovalReversed(AttemptId AttemptId, DateTimeOffset OccurredAt)
+        : PaymentCommand(OccurredAt);
 }

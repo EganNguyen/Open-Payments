@@ -11,7 +11,7 @@ PSP_PENDING,AWAITING_METHOD,PSP declined or proof it cannot succeed
 PSP_PENDING,ACTION_REQUIRED,PSP requires customer action
 PSP_PENDING,UNKNOWN,Timeout or stale attempt
 PSP_PENDING,REVIEW,Amount or currency mismatch
-UNKNOWN,REVIEW,Amount or currency mismatch
+UNKNOWN,REVIEW,Amount or currency mismatch or escalation
 ACTION_REQUIRED,PSP_PENDING,Customer finished
 ACTION_REQUIRED,AUTHORIZED,PSP reports approved
 ACTION_REQUIRED,AWAITING_METHOD,Action failed
@@ -21,7 +21,7 @@ UNKNOWN,AWAITING_METHOD,Declined or proven not charged
 UNKNOWN,ACTION_REQUIRED,Inquiry says customer must act
 AWAITING_METHOD,REVIEW,Late approval on a failed attempt
 AUTHORIZED,CAPTURED,PSP confirms capture
-AUTHORIZED,REVIEW,Capture amount mismatch
+AUTHORIZED,REVIEW,Capture amount mismatch or escalation
 REVIEW,AUTHORIZED,Manual resolution
 REVIEW,AWAITING_METHOD,Manual resolution
 REVIEW,CAPTURED,Manual resolution

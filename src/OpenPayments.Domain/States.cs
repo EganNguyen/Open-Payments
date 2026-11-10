@@ -66,6 +66,12 @@ public enum PaymentResolution
     Capture,
 }
 
+public enum RefundResolution
+{
+    Confirm,
+    Release,
+}
+
 public sealed record AttemptSnapshot(
     AttemptId Id,
     AttemptOperation Operation,
