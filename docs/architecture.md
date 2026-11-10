@@ -110,6 +110,81 @@ Not on the diagram: observability, the Kubernetes platform, Redis, and the mock 
 
 **Why not more microservices?** Splitting payment and ledger would turn one database transaction into a network call and a saga, adding failure cases and latency on the hot path. The parts that benefit from independence are already separate, and [When to split a service](service-catalog.md#when-to-split-a-service) sets the rule for any more.
 
+### How services communicate
+
+The diagram above shows where components sit. This one shows how they talk to each other: solid lines are synchronous calls a caller waits on, dashed lines are asynchronous, and boxes inside a process share memory, not a network. Each line's failure effect is in the [dependency table](service-catalog.md#dependencies).
+
+```mermaid
+flowchart TB
+  Client[Shopper or merchant client]
+  Staff[Staff console]
+  PSP[(PSPs and banks)]
+  Ends[Merchant webhook endpoints]
+
+  subgraph SHARED[Shared]
+    Edge[Edge gateway]
+    Router[Cell router]
+  end
+
+  subgraph CELL[One cell]
+    subgraph APIP[Payments API process]
+      API[Payments API and callback receiver]
+      ModA[Payment-transition module]
+      PspA[PSP adapters]
+    end
+    Fraud[Fraud decision]
+    Redis[(Redis)]
+    subgraph RECP[Reconciler process]
+      Rec[Reconciler and timer jobs]
+      ModR[Payment-transition module]
+      PspR[PSP adapters]
+    end
+    Bouncer[PgBouncer]
+    DB[(PostgreSQL primary)]
+    Replica[(Read replica)]
+    Pub[Outbox publisher]
+    Broker[(Kafka or Redpanda)]
+    Proj[Ledger projector]
+    Hooks[Webhook dispatcher]
+  end
+
+  Client -->|HTTPS, API key| Edge
+  Edge -->|merchant and key mode| Router
+  Router -->|forward request| API
+  Staff -->|money actions over HTTPS| API
+  Staff -->|read only| Replica
+
+  API -->|risk check, about 50 ms| Fraud
+  Fraud -->|velocity counters| Redis
+  API -->|in-process call| ModA
+  API -->|in-process call| PspA
+  PspA -->|authorize, capture, refund, keyed by attempt| PSP
+  PSP -.->|callback| API
+
+  Rec -->|in-process call| PspR
+  PspR -->|inquire| PSP
+  Rec -->|in-process call| ModR
+
+  ModA -->|one transaction: state, ledger, outbox| Bouncer
+  ModR -->|one transaction: state, ledger, outbox| Bouncer
+  Bouncer --> DB
+  DB -.->|replication| Replica
+
+  Pub -.->|read committed outbox rows| DB
+  Pub -.->|publish events| Broker
+  Broker -.->|ledger events| Proj
+  Broker -.->|merchant events| Hooks
+  Hooks -.->|signed HTTPS, retries| Ends
+```
+
+Three rules follow from the diagram:
+
+- **Only two processes write money state,** the Payments API and the reconciler, both through the payment-transition module. The staff console reads a replica and moves money only by calling the API ([D2](decisions.md#d2), [D40](decisions.md#d40)).
+- **Nothing on a solid line waits on a dashed one.** The publisher, projector and dispatcher read only committed data, so a slow broker or merchant endpoint delays events but never a payment.
+- **No service calls another cell.** Each cell talks only to its own database, broker and workers; the edge gateway and cell router are the only shared hops.
+
+Protocols between internal services, such as the Payments API calling fraud, are not chosen yet. Stage 1 built the Payments API, payment-transition module, mock PSP adapter and staff console; the reconciler comes with Stage 2. The broker path arrives in Stage 3; the edge gateway and synchronous fraud in Stage 4, with the cell router only if cells are needed.
+
 ## Cells and routing
 
 - A **cell** is a complete stack (API pods, fraud, PSP adapters, database, broker, workers) serving a subset of merchants. If cells are needed, plan for about 1.5-2k completed payments/s per cell: 4 active plus 1 spare.

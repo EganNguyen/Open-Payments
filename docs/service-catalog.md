@@ -52,6 +52,8 @@ The staff console (`src/OpenPayments.Console`) is a ninth deployable, added by t
 
 ## Dependencies
 
+The [communication diagram](architecture.md#how-services-communicate) draws these lines.
+
 | From | To | Type | Purpose | If the dependency fails |
 |---|---|---|---|---|
 | Edge gateway | Cell router | Sync | Find the merchant's cell | Last known mapping |
