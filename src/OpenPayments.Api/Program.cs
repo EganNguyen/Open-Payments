@@ -3,6 +3,7 @@ using Microsoft.AspNetCore.Http.Json;
 using OpenPayments.Api;
 using OpenPayments.Domain;
 using OpenPayments.Psp;
+using OpenPayments.Psp.Resilience;
 using OpenPayments.Transitions;
 
 var builder = WebApplication.CreateBuilder(args);
@@ -36,9 +37,17 @@ builder.Services.AddHttpClient("psp", client =>
     client.BaseAddress = new Uri(
         builder.Configuration["PSP_URL"] ?? "http://127.0.0.1:9080");
     client.Timeout = Timeout.InfiniteTimeSpan;
+})
+.ConfigurePrimaryHttpMessageHandler(() => new SocketsHttpHandler
+{
+    // C16: a DNS change is seen within a minute, without a restart.
+    PooledConnectionLifetime = TimeSpan.FromMinutes(1),
 });
+builder.Services.AddSingleton<AccountGate>();
 builder.Services.AddSingleton<IPspAdapterFactory>(services =>
-    new MockPspAdapterFactory(services.GetRequiredService<IHttpClientFactory>().CreateClient("psp")));
+    new ResilientPspAdapterFactory(
+        new MockPspAdapterFactory(services.GetRequiredService<IHttpClientFactory>().CreateClient("psp")),
+        services.GetRequiredService<AccountGate>()));
 
 var app = builder.Build();
 if (app.Environment.IsDevelopment())

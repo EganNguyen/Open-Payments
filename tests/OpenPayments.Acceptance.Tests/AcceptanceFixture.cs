@@ -453,12 +453,11 @@ public sealed class TestPsp : IPspAdapterFactory, IPspAdapter
     }
 
     PspCapabilities IPspAdapterFactory.Capabilities(PspAccount account) =>
-        new(SupportsSale: _supportsSale, RecoveryMode: "authoritative_lookup", KeyRetention: TimeSpan.FromHours(2));
+        MockCapabilities.Create(_supportsSale);
 
     public IPspAdapter For(PspAccount account) => this;
 
-    public PspCapabilities Capabilities =>
-        new(SupportsSale: _supportsSale, RecoveryMode: "authoritative_lookup", KeyRetention: TimeSpan.FromHours(2));
+    public PspCapabilities Capabilities => MockCapabilities.Create(_supportsSale);
 
     public void Reset()
     {
@@ -576,6 +575,12 @@ public sealed class TestPsp : IPspAdapterFactory, IPspAdapter
 
     public Task<PspInquiry> RecoverRefundAsync(RefundId refund, CancellationToken ct) =>
         Task.FromResult<PspInquiry>(new PspInquiry.Inconclusive("not_used"));
+
+    public Task<PspInquiry> LookupByReferenceAsync(string pspReference, CancellationToken ct) =>
+        Task.FromResult<PspInquiry>(new PspInquiry.Inconclusive("not_used"));
+
+    public Task<PspInquiry> CancelForProofAsync(AttemptId attempt, string? pspReference, CancellationToken ct) =>
+        Task.FromResult<PspInquiry>(new PspInquiry.ProvenNotCharged("cancelled"));
 
     private async Task RecordAsync(string operation, AttemptId attempt, Money amount, CancellationToken ct)
     {

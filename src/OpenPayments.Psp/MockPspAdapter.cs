@@ -28,8 +28,7 @@ public sealed class MockPspAdapter : IPspAdapter
         _account = account;
     }
 
-    public PspCapabilities Capabilities { get; } =
-        new(SupportsSale: true, RecoveryMode: "authoritative_lookup", KeyRetention: TimeSpan.FromHours(2));
+    public PspCapabilities Capabilities { get; } = MockCapabilities.Create(supportsSale: true);
 
     public Task<PspResult> AuthorizeAsync(
         AttemptId attempt, Money amount, PaymentMethodRef method, CancellationToken ct) =>
@@ -95,6 +94,55 @@ public sealed class MockPspAdapter : IPspAdapter
             _ => new PspInquiry.Inconclusive(payload.Status ?? "unknown"),
         };
     }
+
+    public async Task<PspInquiry> LookupByReferenceAsync(string pspReference, CancellationToken ct)
+    {
+        using var request = new HttpRequestMessage(
+            HttpMethod.Get, "/lookup/" + Uri.EscapeDataString(pspReference));
+        using var response = await _client.SendAsync(request, ct);
+        if (!response.IsSuccessStatusCode)
+        {
+            throw new PspUnavailableException($"Mock PSP lookup answered {(int)response.StatusCode}.");
+        }
+
+        var payload = await response.Content.ReadFromJsonAsync<InquiryPayload>(Json, ct);
+        return FromInquiry(payload);
+    }
+
+    public async Task<PspInquiry> CancelForProofAsync(AttemptId attempt, string? pspReference, CancellationToken ct)
+    {
+        using var request = new HttpRequestMessage(
+            HttpMethod.Post, "/cancel-for-proof/" + attempt.Value.ToString("D"))
+        {
+            Content = JsonContent.Create(new { psp_reference = pspReference }, options: Json),
+        };
+        AddHeaders(request, attempt.Value);
+        using var response = await _client.SendAsync(request, ct);
+        if (!response.IsSuccessStatusCode)
+        {
+            throw new PspUnavailableException($"Mock PSP cancel-for-proof answered {(int)response.StatusCode}.");
+        }
+
+        var payload = await response.Content.ReadFromJsonAsync<InquiryPayload>(Json, ct);
+        return FromInquiry(payload);
+    }
+
+    private static PspInquiry FromInquiry(InquiryPayload? payload) =>
+        payload?.Status switch
+        {
+            "approved" => new PspInquiry.Answered(
+                new PspResult.Approved(payload.PspReference ?? string.Empty, Amount(payload))),
+            "declined" => new PspInquiry.Answered(
+                new PspResult.Declined(payload.FailureCode ?? "declined")),
+            "action_required" => new PspInquiry.Answered(
+                new PspResult.RequiresAction(
+                    payload.Action?.Type ?? "three_d_secure",
+                    payload.Action?.Url,
+                    payload.Action?.ExpiresAt ?? DateTimeOffset.UtcNow.AddMinutes(15))),
+            "not_found" => new PspInquiry.ProvenNotCharged("not_found"),
+            "cancelled" => new PspInquiry.ProvenNotCharged("cancelled"),
+            _ => new PspInquiry.Inconclusive(payload?.Status ?? "unknown"),
+        };
 
     public async Task<PspInquiry> RecoverRefundAsync(RefundId refund, CancellationToken ct)
     {
@@ -164,7 +212,15 @@ public sealed class MockPspAdapter : IPspAdapter
         using var response = await _client.SendAsync(request, ct);
         if (response.StatusCode == HttpStatusCode.TooManyRequests)
         {
-            throw new PspUnavailableException("The PSP rate limited the account.");
+            var retryAfter = response.Headers.RetryAfter?.Delta
+                ?? (response.Headers.RetryAfter?.Date - DateTimeOffset.UtcNow)
+                ?? TimeSpan.FromSeconds(1);
+            throw new PspRateLimitException(retryAfter < TimeSpan.Zero ? TimeSpan.Zero : retryAfter);
+        }
+
+        if (response.StatusCode is HttpStatusCode.Unauthorized or HttpStatusCode.Forbidden)
+        {
+            throw new PspUnauthorizedException();
         }
 
         if (!response.IsSuccessStatusCode)
@@ -228,10 +284,23 @@ public sealed class MockPspAdapter : IPspAdapter
     private sealed record ActionPayload(string Type, string? Url, DateTimeOffset ExpiresAt);
 }
 
+public static class MockCapabilities
+{
+    public static PspCapabilities Create(bool supportsSale) => new(
+        SupportsSale: supportsSale,
+        Unanswered: RecoveryMode.AuthoritativeLookup,
+        ConsistentLookupByReference: true,
+        ActionProof: ActionProof.ConfirmedCancel,
+        KeyRetention: TimeSpan.FromHours(2),
+        ReplayWindow: TimeSpan.FromMinutes(30),
+        AuthorizationWindow: TimeSpan.FromDays(7),
+        SettlementLag: TimeSpan.FromHours(1),
+        LookupQuietWindow: TimeSpan.Zero);
+}
+
 public sealed class MockPspAdapterFactory(HttpClient client) : IPspAdapterFactory
 {
-    public PspCapabilities Capabilities(PspAccount account) =>
-        new(SupportsSale: true, RecoveryMode: "authoritative_lookup", KeyRetention: TimeSpan.FromHours(2));
+    public PspCapabilities Capabilities(PspAccount account) => MockCapabilities.Create(supportsSale: true);
 
     public IPspAdapter For(PspAccount account) => new MockPspAdapter(client, account);
 }
