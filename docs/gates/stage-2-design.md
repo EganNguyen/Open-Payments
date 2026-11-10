@@ -42,6 +42,8 @@ Checked on 2026-11-10 against the repository, not assumed.
 
 **If O1 goes another way,** only Milestone I's adapter, its fixtures and C39 change. The mock covers all three recovery modes, so Milestones E-H don't depend on the choice.
 
+**O2-O7 were approved as recommended** by the owner in chat on 2026-11-10 ("approve all as recommended"): two Stripe sandboxes as two merchants, recovery chosen per situation (D60), D59-D63, the owner creating the sandboxes and keys, the timer values, and asking Stripe for the live limit in writing before Stage 4.
+
 ## Decisions for the owner to approve (O4)
 
 These are added to [Decisions](../decisions.md) as `Proposed`, and become `Committed` when this record is signed.
