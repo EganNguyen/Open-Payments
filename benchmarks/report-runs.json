@@ -60,27 +60,27 @@
     },
     {
       "id": "20261110T034647Z-13e851a-s6-7887",
-      "note": "D56 capacity: step 6 run 1 of 3, two API instances"
+      "exclude": "Invalid: k6 dropped 14,037 arrivals; failed p99 (two API instances). In BASELINE"
     },
     {
       "id": "20261110T040232Z-13e851a-s6-1e11",
-      "note": "D56 capacity: step 6 run 2 of 3, two API instances"
+      "exclude": "Invalid: k6 dropped 40,889 arrivals; failed p99 (two API instances). In BASELINE"
     },
     {
       "id": "20261110T041814Z-13e851a-s6-7017",
-      "note": "D56 capacity: step 6 run 3 of 3; CK5 failed on 177 UNKNOWN payments left by overload"
+      "exclude": "Invalid: k6 dropped 26,761 arrivals; failed p99 and CK5 under overload (no resolver until Stage 2). In BASELINE"
     },
     {
       "id": "20261110T043457Z-28e4bc5-s100-1e77",
-      "note": "D56 soak at 500 req/s, 60 min; config had ALTER SYSTEM drift (autovacuum off), fixed in D57"
+      "exclude": "Invalid: k6 dropped 9,866 arrivals; 500 req/s soak failed p99 589.57 ms (ALTER SYSTEM drift). In BASELINE"
     },
     {
       "id": "20261110T063020Z-74490ef-s100-4375",
-      "note": "D56 soak at 500 req/s, 60 min, D57 config; p99 rose during the primary's checkpoint"
+      "exclude": "Invalid: k6 dropped 2,038 arrivals; 500 req/s soak failed p99 298.14 ms (WAL commit stalls). In BASELINE"
     },
     {
       "id": "20261110T074536Z-2f1ca8a-s102-6ab6",
-      "note": "D56 soak at 250 req/s, 60 min, D57+D58. Every gate passed; invalid only on 22 arrivals k6 dropped (undersized generator, fixed in 3f56a33). Owner ruling: generator FAIL, payment system PASS"
+      "note": "60-minute soak at 250 req/s: 900,604 arrivals, 453,183 payments (API and DB counts match). Every gate passed; k6 dropped 22 arrivals (undersized generator, fixed in 3f56a33). Owner ruling: payment system PASS, generator FAIL"
     }
   ],
   "gate_order": [
@@ -179,7 +179,7 @@
       "requirement": "60 min at a stable rate: gates hold, CK1–CK6 pass, no upward trend in RSS, Gen 2 GC/s, ThreadPool queue, pool wait",
       "kind": "reliability",
       "status": "PASS",
-      "evidence": "At 250 req/s (125 completed payments/s) for 60 min, on the D57 config and D58 build: p99 28.60 ms, 5-minute p99 19–33 ms including the 30-minute checkpoint, 0 errors, CK1–CK6, CK9, CK10 pass. RSS flat at 172–179 MB after warm-up; Gen 2 GC, ThreadPool queue and pool wait 0 throughout. The run is invalid only because k6 dropped 22 of ~900,000 arrivals with 0.8 s of VU headroom (fixed in `3f56a33`); the owner ruled the generator failed and the payment system passed, and defers the rerun to Stage 2. At 500 req/s both 60-min soaks failed p99 (589.57 ms, 298.14 ms) on WAL commit stalls on the shared virtual disk.",
+      "evidence": "At 250 req/s (125 completed payments/s) for 60 min (900,604 arrivals, 453,183 payments), on the D57 config and D58 build: p99 28.60 ms, 5-minute p99 19–33 ms including the 30-minute checkpoint, 0 errors, CK1–CK6, CK9, CK10 pass. RSS flat at 172–179 MB after warm-up; Gen 2 GC, ThreadPool queue and pool wait 0 throughout. The run is invalid only because k6 dropped 22 of ~900,000 arrivals with 0.8 s of VU headroom (fixed in `3f56a33`); the owner ruled the generator failed and the payment system passed, and defers the rerun to Stage 2. At 500 req/s both 60-min soaks failed p99 (589.57 ms, 298.14 ms) on WAL commit stalls on the shared virtual disk.",
       "source": "s102-6ab6 · Prometheus · owner ruling"
     }
   ],
