@@ -1,0 +1,56 @@
+{
+  "_about": "Input for benchmarks/bench_page.py. List runs here; every number on the page is read from each run's result.md. Add a run with {\"id\": ...}; exclude one with {\"id\": ..., \"exclude\": \"why\"}. Gates with no run data yet are in static_gates; change their status only when their evidence exists.",
+  "milestone_completed_per_second": 500,
+  "milestone_runs": 3,
+  "milestone_target_rps": 1000,
+  "thresholds": { "p50_ms": 25, "p99_ms": 100, "error_rate_pct": 0.1 },
+  "correctness_requires": "CK7 and CK8 start in Phase 2, and CK11 isn't built.",
+  "runs": [
+    { "id": "20261109T040109Z-3d728c1-s0-3b3c", "exclude": "Sent no API token; every request 401" },
+    { "id": "20261109T040758Z-4540c23-s0-2958", "exclude": "Ran before the full reset: count mismatch (E8)" },
+    { "id": "20261109T042813Z-18d0f63-s0-2291", "exclude": "Counted setup() latency (E8)" },
+    { "id": "20261109T043519Z-3faaaf6-s0-14c1" },
+    { "id": "20261109T044032Z-3faaaf6-s1-005e" },
+    { "id": "20261109T044543Z-3faaaf6-s3-7dce" },
+    { "id": "20261109T045857Z-e4bff52-s5-47d3" },
+    { "id": "20261109T050918Z-786d8ef-s6-0bba", "note": "Ends the D47 search under E4" },
+    { "id": "20261109T082010Z-7323d59-s6-5db4", "note": "Fresh DB; BASELINE records p99 173.47 ms, invalid on its completed count" },
+    { "id": "20261109T100730Z-96384d2-s6-1daa", "exclude": "Another session's run, not in BASELINE" },
+    { "id": "20261109T110048Z-9874593-s6-0fae", "exclude": "Another session's run, not in BASELINE" },
+    { "id": "20261109T112159Z-9874593-s6-7b7b", "exclude": "Another session's run, not in BASELINE" }
+  ],
+  "gate_order": ["correctness", "duplicates", "throughput", "platform_overhead", "error_rate", "bounded_retries", "tx1", "tx2", "c54", "recovery", "psp_lifecycle", "crash_recovery", "diagnostics", "soak", "run_validity"],
+  "static_gates": [
+    { "id": "bounded_retries", "name": "Bounded retries", "requirement": "No transaction > 2 retries; app retries agree with PG deadlocks", "kind": "reliability", "status": "INCONCLUSIVE", "evidence": "Retry counts by SQLSTATE aren't in the run report.", "source": "op_tx_retries_total · not reported" },
+    { "id": "tx1", "name": "Forced deadlock", "requirement": "TX1 and C34 pass, deadlocks > 0 seen", "kind": "reliability", "status": "INCONCLUSIVE", "evidence": "TX1 isn't built. A fixture test raises a real deadlock (`0f92846`), but it isn't TX1.", "source": "no evidence" },
+    { "id": "tx2", "name": "Retry exhaustion", "requirement": "TX2 passes", "kind": "reliability", "status": "INCONCLUSIVE", "evidence": "TX2 isn't built.", "source": "no evidence" },
+    { "id": "c54", "name": "Restart durability", "requirement": "C54 passes, fault verified", "kind": "reliability", "status": "INCONCLUSIVE", "evidence": "C54 isn't built. Crash tests K1–K3 pass 6 of 6 (`823a100`), related evidence, not this gate.", "source": "K1–K3" },
+    { "id": "recovery", "name": "Recovery", "requirement": "First success ≤ 30 s; p99 under SLO ≤ 2 min after removal", "kind": "reliability", "status": "INCONCLUSIVE", "evidence": "No fault-driver run yet.", "source": "ack log · none" },
+    { "id": "psp_lifecycle", "name": "PSP lifecycle", "requirement": "Every interrupted payment classed L0–L5", "kind": "reliability", "status": "INCONCLUSIVE", "evidence": "Needs CK11.", "source": "no evidence" },
+    { "id": "crash_recovery", "name": "Crash recovery", "requirement": "Resolver reconciles unknown outcomes", "kind": "reliability", "status": "NOT_APPLICABLE", "evidence": "The resolver arrives in Stage 2. Expected until then.", "source": "spec §7" },
+    { "id": "diagnostics", "name": "Diagnostics", "requirement": "`pg_stat_statements` and manifest complete", "kind": "evidence", "status": "INCONCLUSIVE", "evidence": "Runs record `config.json`; the §8.1 manifest isn't written yet.", "source": "manifest.json · none" },
+    { "id": "soak", "name": "Soak", "requirement": "No upward trend in RSS, Gen 2 GC/s, pool wait", "kind": "reliability", "status": "INCONCLUSIVE", "evidence": "Needs a stable rate first (D56).", "source": "not run" }
+  ],
+  "not_established": [
+    "**No capacity `C` and no instance count `N`.** Laptop runs are previews; D53 moves both to the first Linux run.",
+    "Nothing about the **5,000 payments/s** target. A laptop result can't be scaled to it.",
+    "No bottleneck is named from a generator limit or from an invalid run."
+  ],
+  "d56": [
+    { "check": "Capacity", "run": "Step 4 once, step 6 three times, each from a reset, two API instances behind nginx", "passes_if": "Valid runs whose gates all pass; sets the stable rate", "result": "NOT RUN" },
+    { "check": "Soak", "run": "60 min at the stable rate", "passes_if": "Gates hold; CK1–CK6 pass; no upward trend in memory, Gen 2 GC, ThreadPool queue, pool wait", "result": "BLOCKED", "note": "needs stable rate" },
+    { "check": "L3, scaled", "run": "3× the stable rate for 10 min", "passes_if": "Excess rejected as 429/503; no restart or OOM; p99 < 100 ms within 2 min after; CK1–CK6 pass", "result": "BLOCKED", "note": "needs stable rate" },
+    { "check": "C1, scaled", "run": "Primary CPU throttled ~5× slower at stable load", "passes_if": "Fast 503 shedding; `40P01`/`40001` retries < 1%; no ThreadPool starvation", "result": "BLOCKED", "note": "needs stable rate" },
+    { "check": "C2", "run": "PgBouncer pool shrunk below demand, then restored", "passes_if": "Waits bounded by `query_wait_timeout`, failed as 503; recovers with no restart", "result": "NOT RUN" },
+    { "check": "C7, partial", "run": "Primary killed under load; higher-replay standby promoted by hand", "passes_if": "RPO 0: every 200/202 payment on the new primary; CK1, CK3 pass", "result": "NOT RUN" },
+    { "check": "Alerts", "run": "`CommitWarning`, `AbandonedCommitsStuck`, `UnresolvedOperationAging`", "passes_if": "Each seen firing in a running Prometheus", "result": "NOT RUN" }
+  ],
+  "reproduce": [
+    ["Stack", "Docker Compose: PostgreSQL 18.6 primary with two quorum standbys, PgBouncer 1.26.1, one mock PSP; API instances per run"],
+    ["Mock PSP", "Fixed 200 ms, 0 ms jitter, 3% declines"],
+    ["Mix", "D47, `TWO_CALL_SHARE=0.2`: 40% sale, 10% authorize, 10% capture, 15% status, 10% refund, 10% retry, 5% other"],
+    ["Generator", "k6 `ramping-arrival-rate`, open model"],
+    ["Validity rules", "No dropped arrivals, generator CPU ≤ 80%, mock added p99 ≤ 5 ms, shares within `max(2 pp, 3·√(p(1−p)/n))`"],
+    ["Rebuild this page", "`scripts/bench-page.sh` after adding a run to `benchmarks/report-runs.json`"]
+  ]
+}

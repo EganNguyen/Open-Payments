@@ -1,0 +1,561 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="description" content="Open Payments benchmark report: the highest valid result, the verdict and the rule that produced it, gates with sources, and every run.">
+<!-- Template for benchmarks/bench_page.py. Data goes into the report-data slot; edit layout here, never numbers. -->
+<style>body{margin:0}[hidden]{display:none!important}img{max-width:100%}</style>
+<title>OP-BENCH Results</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans+Condensed:wght@500;600;700&family=IBM+Plex+Sans:wght@400;500;600&display=swap">
+<style>
+/* Layout: a lab report. Verdict first, then the rule that produced it, then the gates, then the numbers, then the runs they came from.
+   Every figure carries a source chip; a value nobody measured is shown as "not measured", never as zero. */
+:root {
+  --bg: #F3F6FA; --surface: #FFFFFF; --ink: #142033; --muted: #5A6678; --rule: #DAE1EA; --rule-strong: #B9C4D2;
+  --accent: #2C67C4; --accent-soft: #E6EEFA;
+  --pass: #1E7A4C; --pass-soft: #E3F3EA; --fail: #BE3A2C; --fail-soft: #FBE7E4;
+  --inc: #9A6100; --inc-soft: #FBF1DE; --na: #687384; --na-soft: #ECEFF3;
+  --plot-grid: #E4E9F0;
+  --font-display: "IBM Plex Sans Condensed", "Arial Narrow", system-ui, sans-serif;
+  --font-body: "IBM Plex Sans", system-ui, -apple-system, "Segoe UI", sans-serif;
+  --font-mono: "IBM Plex Mono", ui-monospace, "SF Mono", Menlo, monospace;
+}
+@media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) {
+  --bg: #0D131B; --surface: #141C27; --ink: #E2E8F0; --muted: #94A1B3; --rule: #263142; --rule-strong: #3A4759;
+  --accent: #6A9BE6; --accent-soft: #1A2A44;
+  --pass: #4FC48C; --pass-soft: #143224; --fail: #F07A6C; --fail-soft: #3A1C19;
+  --inc: #E5AE45; --inc-soft: #36290F; --na: #8C97A7; --na-soft: #1D2531;
+  --plot-grid: #1F2938; color-scheme: dark; } }
+:root[data-theme="dark"] {
+  --bg: #0D131B; --surface: #141C27; --ink: #E2E8F0; --muted: #94A1B3; --rule: #263142; --rule-strong: #3A4759;
+  --accent: #6A9BE6; --accent-soft: #1A2A44;
+  --pass: #4FC48C; --pass-soft: #143224; --fail: #F07A6C; --fail-soft: #3A1C19;
+  --inc: #E5AE45; --inc-soft: #36290F; --na: #8C97A7; --na-soft: #1D2531;
+  --plot-grid: #1F2938; color-scheme: dark; }
+
+* { box-sizing: border-box; }
+body { background: var(--bg); color: var(--ink); font-family: var(--font-body); font-size: 15px; line-height: 1.55; }
+.page { max-width: 1120px; margin: 0 auto; padding-block: 28px 64px;
+  padding-left: max(16px, env(safe-area-inset-left, 0px)); padding-right: max(16px, env(safe-area-inset-right, 0px)); }
+h1, h2, h3 { font-family: var(--font-display); text-wrap: balance; margin: 0; line-height: 1.15; }
+h2 { font-size: 22px; font-weight: 600; }
+h3 { font-size: 16px; font-weight: 600; }
+p { margin: 0; max-width: 68ch; }
+a { color: var(--accent); }
+code, .mono { font-family: var(--font-mono); font-size: 0.86em; }
+.num { font-variant-numeric: tabular-nums; }
+:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; border-radius: 3px; }
+.muted { color: var(--muted); }
+.eyebrow { font-family: var(--font-mono); font-size: 11.5px; letter-spacing: 0.08em; text-transform: uppercase; color: var(--muted); }
+
+/* Report header */
+.masthead { display: grid; gap: 18px; padding-bottom: 22px; border-bottom: 2px solid var(--ink); }
+.mast-top { display: flex; flex-wrap: wrap; justify-content: space-between; gap: 8px 24px; align-items: baseline; }
+.mast-top h1 { font-size: clamp(30px, 5vw, 44px); font-weight: 700; letter-spacing: -0.01em; }
+.idline { font-family: var(--font-mono); font-size: 13px; color: var(--muted); display: flex; flex-wrap: wrap; gap: 4px 18px; }
+.idline b { color: var(--ink); font-weight: 500; }
+
+.verdict { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1.25fr); gap: 0; border: 1px solid var(--rule-strong); background: var(--surface); }
+.verdict > div { padding: 20px 22px; min-width: 0; }
+.verdict-main { border-right: 1px solid var(--rule); display: grid; gap: 14px; align-content: start; }
+.verdict-word { font-family: var(--font-display); font-size: clamp(30px, 4.6vw, 40px); font-weight: 700; color: var(--inc); letter-spacing: 0.01em; line-height: 1; }
+.verdict-tags { display: flex; flex-wrap: wrap; gap: 8px; }
+.tag { font-family: var(--font-mono); font-size: 12px; font-weight: 600; letter-spacing: 0.06em; padding: 3px 8px; border: 1px solid var(--rule-strong); color: var(--muted); }
+.tag.label { border-color: var(--accent); color: var(--accent); }
+.reasons { margin: 0; padding: 0; list-style: none; display: grid; gap: 10px; }
+.reasons li { display: grid; grid-template-columns: 22px minmax(0,1fr); gap: 8px; }
+.reasons li::before { content: attr(data-n); font-family: var(--font-mono); font-size: 12px; color: var(--inc); padding-top: 2px; }
+
+/* Headline: the highest valid result, with its gates beside it */
+.headline { display: grid; grid-template-columns: minmax(0, 1.25fr) minmax(0, 1fr); border: 1px solid var(--rule-strong); background: var(--surface); }
+.hl-main { padding: 22px 24px; display: grid; gap: 14px; align-content: start; border-right: 1px solid var(--rule); min-width: 0; }
+.hl-eyebrow { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 10px; }
+.hl-eyebrow .tag { font-size: 11px; padding: 2px 7px; }
+.hl-figure { display: flex; flex-wrap: wrap; align-items: flex-end; gap: 6px 16px; }
+.hl-num { font-family: var(--font-display); font-size: clamp(60px, 11vw, 104px); font-weight: 700; line-height: 0.88; letter-spacing: -0.025em; color: var(--ink); }
+.hl-unit { font-family: var(--font-mono); font-size: 12.5px; letter-spacing: 0.08em; text-transform: uppercase; color: var(--muted); line-height: 1.35; padding-bottom: 6px; }
+.hl-context { font-size: 14px; color: var(--muted); }
+.milestone { display: grid; gap: 6px; }
+.ms-track { position: relative; height: 10px; background: var(--rule); }
+.ms-fill { position: absolute; inset: 0 auto 0 0; background: var(--accent); }
+.ms-ghost { position: absolute; right: -6px; top: 50%; width: 12px; height: 12px; margin-top: -6px; border-radius: 50%; border: 2px solid var(--muted); background: var(--surface); }
+.ms-scale { display: flex; justify-content: space-between; font-family: var(--font-mono); font-size: 11px; color: var(--muted); }
+.ms-note { font-size: 12.5px; color: var(--muted); }
+dl.hl-stats { margin: 0; display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); align-content: stretch; }
+dl.hl-stats > div { padding: 16px 20px; display: grid; gap: 6px; align-content: start; border-bottom: 1px solid var(--rule); min-width: 0; }
+dl.hl-stats > div:nth-child(odd) { border-right: 1px solid var(--rule); }
+dl.hl-stats > div:nth-last-child(-n+2) { border-bottom: 0; }
+dl.hl-stats dt { font-family: var(--font-mono); font-size: 11px; letter-spacing: 0.07em; text-transform: uppercase; color: var(--muted); }
+dl.hl-stats dd { margin: 0; font-family: var(--font-display); font-size: 26px; font-weight: 600; line-height: 1.1; }
+.gauge { height: 4px; background: var(--rule); position: relative; }
+.gauge i { position: absolute; inset: 0 auto 0 0; background: var(--pass); }
+.gate-of { font-size: 12px; color: var(--muted); }
+
+/* Verdict ladder: spec §7's evaluation order, with where it stopped */
+.ladder { list-style: none; margin: 0; padding: 0; display: grid; gap: 0; }
+.ladder li { display: grid; grid-template-columns: 34px minmax(0,1fr) auto; gap: 10px; align-items: start; padding: 10px 0; border-top: 1px solid var(--rule); }
+.ladder li:first-child { border-top: 0; padding-top: 0; }
+.ladder .k { font-family: var(--font-mono); font-size: 12px; color: var(--muted); padding-top: 2px; }
+.ladder .out { font-family: var(--font-mono); font-size: 12px; white-space: nowrap; padding-top: 2px; }
+.ladder li.hit { background: var(--inc-soft); margin: 0 -22px; padding-left: 22px; padding-right: 22px; border-top-color: transparent; }
+.ladder li.hit .out { color: var(--inc); font-weight: 600; }
+.ladder li.skip { color: var(--muted); }
+.ladder li.skip .out { color: var(--na); }
+
+/* Sections: label column on wide screens */
+.section { display: grid; grid-template-columns: 200px minmax(0, 1fr); gap: 24px; padding-block: 36px; border-bottom: 1px solid var(--rule); }
+.section > header { display: grid; gap: 6px; align-content: start; position: sticky; top: calc(env(safe-area-inset-top, 0px) + 16px); }
+.section > header p { font-size: 13px; color: var(--muted); }
+.section > .body { min-width: 0; display: grid; gap: 20px; }
+
+/* Status chips: state in form, not only colour */
+.st { display: inline-flex; align-items: center; gap: 6px; font-family: var(--font-mono); font-size: 11.5px; font-weight: 600; letter-spacing: 0.04em; padding: 2px 8px; white-space: nowrap; border: 1px solid transparent; }
+.st::before { font-size: 11px; }
+.st.pass { background: var(--pass-soft); color: var(--pass); border-color: var(--pass); }
+.st.pass::before { content: "\2713"; }
+.st.fail { background: var(--fail); color: var(--surface); }
+.st.fail::before { content: "\2715"; }
+.st.inc { background: transparent; color: var(--inc); border: 1px dashed var(--inc); }
+.st.inc::before { content: "?"; }
+.st.na { color: var(--na); border-color: var(--rule-strong);
+  background: repeating-linear-gradient(135deg, var(--na-soft) 0 4px, transparent 4px 8px); }
+.st.na::before { content: "\2013"; }
+.st.notrun { color: var(--muted); border: 1px solid var(--rule-strong); background: transparent; }
+.st.notrun::before { content: "\25CB"; }
+
+/* Source chip: where a number came from */
+.src { font-family: var(--font-mono); font-size: 11px; color: var(--accent); background: var(--accent-soft); padding: 1px 6px; white-space: nowrap; border: 0; cursor: help; }
+.unmeasured { font-family: var(--font-mono); font-size: 12px; color: var(--muted); border: 1px dashed var(--rule-strong); padding: 1px 6px; white-space: nowrap; }
+
+/* Establishes / does not */
+.claims { display: grid; grid-template-columns: repeat(2, minmax(0,1fr)); gap: 16px; }
+.claims > div { background: var(--surface); border: 1px solid var(--rule); padding: 18px 20px; display: grid; gap: 12px; align-content: start; min-width: 0; }
+.claims ul { margin: 0; padding-left: 18px; display: grid; gap: 8px; }
+.claims .no { border-color: var(--rule-strong); border-style: dashed; }
+
+/* Tables */
+.tablewrap { overflow-x: auto; border: 1px solid var(--rule); background: var(--surface); }
+table { border-collapse: collapse; width: 100%; font-size: 13.5px; }
+th, td { text-align: left; padding: 9px 12px; border-bottom: 1px solid var(--rule); vertical-align: top; }
+th { font-family: var(--font-mono); font-size: 11px; font-weight: 500; letter-spacing: 0.06em; text-transform: uppercase; color: var(--muted); background: var(--bg); white-space: nowrap; }
+tbody tr:last-child td { border-bottom: 0; }
+td.r, th.r { text-align: right; }
+td.num { font-variant-numeric: tabular-nums; white-space: nowrap; }
+tr.invalid td { color: var(--muted); }
+tr.invalid td.step { text-decoration: line-through; text-decoration-color: var(--fail); }
+.over { color: var(--fail); font-weight: 600; }
+.bar { display: grid; grid-template-columns: 52px 72px; gap: 8px; align-items: center; justify-content: end; }
+.bar i { display: block; height: 6px; background: var(--rule); position: relative; }
+.bar i b { position: absolute; inset: 0 auto 0 0; background: var(--accent); }
+.gate-name { font-weight: 500; }
+.gate-req { color: var(--muted); font-size: 12.5px; }
+
+/* Chart */
+.figure { background: var(--surface); border: 1px solid var(--rule); padding: 18px 18px 12px; display: grid; gap: 12px; min-width: 0; }
+.figure figcaption { display: flex; flex-wrap: wrap; justify-content: space-between; gap: 8px 20px; align-items: baseline; }
+.legend { display: flex; flex-wrap: wrap; gap: 6px 16px; font-size: 12.5px; color: var(--muted); }
+.legend span { display: inline-flex; align-items: center; gap: 6px; }
+.chart-scroll { overflow-x: auto; }
+svg.chart { display: block; width: 100%; min-width: 560px; height: auto; font-family: var(--font-mono); }
+.chart .grid line { stroke: var(--plot-grid); stroke-width: 1; }
+.chart .axis text { fill: var(--muted); font-size: 11px; }
+.chart .gate { stroke-width: 1.25; stroke-dasharray: 5 4; }
+.chart .gate.p99 { stroke: var(--fail); }
+.chart .gate.p50 { stroke: var(--inc); }
+.chart .gate-label { font-size: 10.5px; }
+.chart .l99 { stroke: var(--accent); stroke-width: 2; fill: none; }
+.chart .l50 { stroke: var(--muted); stroke-width: 1.5; fill: none; }
+.chart .dash { stroke-dasharray: 3 4; }
+.chart .pt { cursor: pointer; }
+.chart .pt:focus { outline: none; }
+.chart .pt:focus circle, .chart .pt:hover circle { stroke-width: 3; }
+.readout { font-family: var(--font-mono); font-size: 12.5px; color: var(--muted); min-height: 1.6em; }
+.readout b { color: var(--ink); font-weight: 500; }
+
+/* Run ledger */
+.filters { display: flex; flex-wrap: wrap; gap: 6px; }
+.filters button { font: 500 12.5px var(--font-body); padding: 5px 12px; border: 1px solid var(--rule-strong); background: var(--surface); color: var(--ink); cursor: pointer; }
+.filters button[aria-pressed="true"] { background: var(--ink); color: var(--surface); border-color: var(--ink); }
+.runid { display: inline-flex; align-items: center; gap: 6px; }
+.copy { font: 500 11px var(--font-body); border: 1px solid var(--rule-strong); background: transparent; color: var(--muted); padding: 1px 6px; cursor: pointer; }
+.copy:hover { color: var(--ink); border-color: var(--ink); }
+
+/* Reproduction */
+dl.kv { display: grid; grid-template-columns: 160px minmax(0,1fr); gap: 0; margin: 0; background: var(--surface); border: 1px solid var(--rule); }
+dl.kv dt, dl.kv dd { padding: 10px 14px; border-bottom: 1px solid var(--rule); margin: 0; min-width: 0; }
+dl.kv dt { font-family: var(--font-mono); font-size: 11.5px; letter-spacing: 0.05em; text-transform: uppercase; color: var(--muted); }
+dl.kv dt:last-of-type, dl.kv dd:last-of-type { border-bottom: 0; }
+pre.cmd { margin: 0; background: var(--surface); border: 1px solid var(--rule); padding: 14px 16px; overflow-x: auto; font-family: var(--font-mono); font-size: 12.5px; line-height: 1.6; }
+
+footer.foot { padding-top: 28px; font-size: 12.5px; color: var(--muted); display: grid; gap: 6px; }
+
+@media (max-width: 860px) {
+  .section { grid-template-columns: minmax(0,1fr); gap: 14px; padding-block: 28px; }
+  .section > header { position: static; }
+  .verdict, .headline { grid-template-columns: minmax(0,1fr); }
+  .hl-main { border-right: 0; border-bottom: 1px solid var(--rule); }
+  .verdict-main { border-right: 0; border-bottom: 1px solid var(--rule); }
+  .claims { grid-template-columns: minmax(0,1fr); }
+  dl.kv { grid-template-columns: minmax(0,1fr); }
+  dl.kv dt { border-bottom: 0; padding-bottom: 0; }
+}
+@media (prefers-reduced-motion: no-preference) {
+  .chart .pt circle { transition: stroke-width 120ms ease; }
+}
+</style>
+<style>
+.st.missing { color: var(--inc); border: 1px dashed var(--inc); background: transparent; }
+.st.missing::before { content: "!"; }
+.empty { padding: 18px 20px; background: var(--surface); border: 1px dashed var(--rule-strong); color: var(--muted); }
+</style>
+</head>
+<body>
+<script type="application/json" id="report-data">/*REPORT_DATA*/</script>
+<div class="page">
+
+  <header class="masthead">
+    <div class="mast-top">
+      <div style="display:grid;gap:6px">
+        <span class="eyebrow">Open Payments · Stage 1 · Benchmark report</span>
+        <h1>OP-BENCH Results</h1>
+      </div>
+      <div class="idline" id="idline"></div>
+    </div>
+    <section class="headline" id="headline" aria-label="Highest valid result"></section>
+    <section class="verdict" aria-label="Overall verdict">
+      <div class="verdict-main">
+        <span class="eyebrow">Overall verdict</span>
+        <div class="verdict-word" id="verdict-word"></div>
+        <div class="verdict-tags"><span class="tag label" id="label-tag" title="Laptop result. Only a Linux run from Phase 3 on can be RECORDED."></span></div>
+        <p class="muted" style="font-size:13.5px" id="verdict-note"></p>
+      </div>
+      <div style="display:grid;gap:12px;align-content:start">
+        <span class="eyebrow">How the verdict was reached · evaluated in order</span>
+        <ol class="ladder" id="ladder"></ol>
+      </div>
+    </section>
+  </header>
+
+  <section class="section" id="claims">
+    <header><span class="eyebrow">§1</span><h2>What the evidence supports</h2><p>Read this before any number below.</p></header>
+    <div class="body">
+      <div class="claims">
+        <div><h3>Established, on this laptop</h3><ul id="established"></ul></div>
+        <div class="no"><h3>Not established</h3><ul id="not-established"></ul></div>
+      </div>
+    </div>
+  </section>
+
+  <section class="section" id="gates">
+    <header><span class="eyebrow">§2</span><h2>Gates</h2><p>Each gate gets its own result. <span class="st na" style="font-size:10.5px">NOT_APPLICABLE</span> is never a pass.</p></header>
+    <div class="body">
+      <div class="tablewrap"><table>
+        <thead><tr><th>Gate</th><th>Result</th><th>Evidence</th><th>Source</th></tr></thead>
+        <tbody id="gate-rows"></tbody>
+      </table></div>
+    </div>
+  </section>
+
+  <section class="section" id="ramp">
+    <header><span class="eyebrow">§3</span><h2>Runs in this report</h2><p>Platform overhead against offered load, then every number from each run's <code>result.md</code>.</p></header>
+    <div class="body" id="ramp-body">
+      <figure class="figure" style="margin:0" id="chart-figure">
+        <figcaption>
+          <h3>Platform overhead against offered load</h3>
+          <div class="legend">
+            <span><svg width="22" height="8" aria-hidden="true"><line x1="0" y1="4" x2="22" y2="4" stroke="var(--accent)" stroke-width="2"/></svg>p99</span>
+            <span><svg width="22" height="8" aria-hidden="true"><line x1="0" y1="4" x2="22" y2="4" stroke="var(--muted)" stroke-width="1.5"/></svg>p50</span>
+            <span><svg width="12" height="12" aria-hidden="true"><circle cx="6" cy="6" r="4" fill="var(--accent)"/></svg>valid run</span>
+            <span><svg width="12" height="12" aria-hidden="true"><circle cx="6" cy="6" r="4" fill="var(--surface)" stroke="var(--accent)" stroke-width="1.5"/></svg>invalid run</span>
+          </div>
+        </figcaption>
+        <div class="chart-scroll"><svg class="chart" id="chart" viewBox="0 0 720 312" role="img"></svg></div>
+        <div class="readout" id="readout" aria-live="polite">Hover or focus a point to see its run and source.</div>
+      </figure>
+      <div class="tablewrap"><table>
+        <thead><tr><th>Step</th><th class="r">Target req/s</th><th class="r">Admitted req/s</th><th class="r">Completed payments/s</th><th class="r">p50</th><th class="r">p95</th><th class="r">p99</th><th class="r">API CPU</th><th>Result</th><th>Run</th></tr></thead>
+        <tbody id="step-rows"></tbody>
+      </table></div>
+      <p class="muted" style="font-size:13px">Rates are whole payments and requests per second, rounded down so the page never overstates; hover a rate for the recorded value. Latency is platform overhead: k6's <code>http_req_duration{scenario:mix}</code> minus the mock's fixed 200 ms. API CPU is percent of one core.</p>
+    </div>
+  </section>
+
+  <section class="section" id="d56">
+    <header><span class="eyebrow">§4</span><h2>D56 laptop verification</h2><p>Pass conditions fixed by the owner on 2026-11-10, before any run.</p></header>
+    <div class="body">
+      <div class="tablewrap"><table>
+        <thead><tr><th>Check</th><th>Run</th><th>Passes if</th><th>Result</th></tr></thead>
+        <tbody id="d56-rows"></tbody>
+      </table></div>
+    </div>
+  </section>
+
+  <section class="section" id="runs">
+    <header><span class="eyebrow">§5</span><h2>Run ledger</h2><p>Every listed run and whether this report uses it. Excluded runs stay visible.</p></header>
+    <div class="body">
+      <div class="filters" role="group" aria-label="Filter runs">
+        <button type="button" id="f-all" data-f="all" aria-pressed="true">All <span class="num" data-count="all"></span></button>
+        <button type="button" id="f-included" data-f="included" aria-pressed="false">In report <span class="num" data-count="included"></span></button>
+        <button type="button" id="f-excluded" data-f="excluded" aria-pressed="false">Excluded <span class="num" data-count="excluded"></span></button>
+        <button type="button" id="f-missing" data-f="missing" aria-pressed="false">Missing <span class="num" data-count="missing"></span></button>
+      </div>
+      <div class="tablewrap"><table>
+        <thead><tr><th>Run ID</th><th>Step</th><th>Status</th><th>Reason</th></tr></thead>
+        <tbody id="ledger-rows"></tbody>
+      </table></div>
+    </div>
+  </section>
+
+  <section class="section" id="repro">
+    <header><span class="eyebrow">§6</span><h2>Reproduce</h2><p>What a rerun needs to match.</p></header>
+    <div class="body">
+      <dl class="kv" id="repro-list"></dl>
+      <pre class="cmd">docker compose -f deploy/compose/compose.yaml up -d --wait
+scripts/migrate.sh
+benchmarks/run.sh &lt;step&gt; --env local --stage phase1 --psp-latency 200</pre>
+    </div>
+  </section>
+
+  <footer class="foot">
+    <span id="foot-generated"></span>
+    <span>Every value on this page is a laptop preview. None of it sizes production.</span>
+  </footer>
+</div>
+
+<script>
+(function () {
+  var D = JSON.parse(document.getElementById("report-data").textContent);
+  var T = D.thresholds;
+  function $(id) { return document.getElementById(id); }
+  function esc(s) { return String(s).replace(/[&<>"]/g, function (c) { return { "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]; }); }
+  // `code` and **bold** in config text, after escaping
+  function rich(s) { return esc(s).replace(/`([^`]+)`/g, "<code>$1</code>").replace(/\*\*([^*]+)\*\*/g, "<b>$1</b>"); }
+  function fix(v, d) { return v.toLocaleString("en-US", { minimumFractionDigits: d, maximumFractionDigits: d }); }
+  function whole(v) { return Math.floor(v + 1e-9).toLocaleString("en-US"); }
+  var NM = '<span class="unmeasured">not measured</span>';
+  function rate(v) { return v == null ? NM : '<span title="recorded ' + fix(v, 2) + '">' + whole(v) + "</span>"; }
+  function ms(v, gate) {
+    if (v == null) return NM;
+    var s = fix(v, 2) + " ms";
+    return gate != null && v > gate ? '<span class="over">' + s + "</span>" : s;
+  }
+  function src(label, title) { return '<button class="src" title="' + esc(title || label) + '">' + esc(label) + "</button>"; }
+  var CHIP = { PASS: "pass", FAIL: "fail", INCONCLUSIVE: "inc", NOT_APPLICABLE: "na" };
+  function chip(status) { return '<span class="st ' + (CHIP[status] || "notrun") + '">' + esc(status) + "</span>"; }
+  // ["CK1","CK2","CK3","CK9"] -> "CK1–CK3, CK9"
+  function ckRanges(ids) {
+    var n = ids.map(function (s) { return parseInt(s.slice(2), 10); }).sort(function (a, b) { return a - b; });
+    var out = [], i = 0;
+    while (i < n.length) {
+      var j = i;
+      while (j + 1 < n.length && n[j + 1] === n[j] + 1) j++;
+      out.push(j - i >= 2 ? "CK" + n[i] + "–CK" + n[j] : n.slice(i, j + 1).map(function (x) { return "CK" + x; }).join(", "));
+      i = j + 1;
+    }
+    return out.join(", ");
+  }
+
+  // Masthead
+  $("idline").innerHTML = "<span>as of <b>" + esc(D.as_of) + "</b></span><span>tree <b>" + esc(D.tree) + "</b></span><span>rules <b>spec §7</b></span><span>mix <b>D47</b></span>";
+
+  // Headline
+  var H = D.headline;
+  if (!H) {
+    $("headline").innerHTML = '<div class="hl-main"><span class="eyebrow">Highest valid result</span><p class="hl-context">No run in this report is both valid and passing its gates yet.</p></div>';
+  } else {
+    var pct = Math.min(100, H.completed_exact / H.milestone * 100);
+    function gauge(v, gate) { return v == null ? "" : '<div class="gauge"><i style="width:' + Math.min(100, v / gate * 100).toFixed(1) + '%"></i></div>'; }
+    $("headline").innerHTML =
+      '<div class="hl-main">' +
+        '<div class="hl-eyebrow"><span class="eyebrow">Highest valid result · step ' + esc(H.step) + '</span><span class="st pass">VALID</span><span class="tag label">' + esc(D.label) + "</span></div>" +
+        '<div class="hl-figure"><span class="hl-num num" title="recorded ' + fix(H.completed_exact, 2) + '">' + whole(H.completed_exact) + '</span><span class="hl-unit">completed<br>payments/s</span></div>' +
+        '<p class="hl-context">At ' + whole(H.target) + " req/s offered (" + (H.admitted == null ? "admitted not measured" : whole(H.admitted) + " admitted") + "), D47 mix. Every gate passed. " + src(H.short_id, H.run_id + " · result.md") + "</p>" +
+        '<div class="milestone"><div class="ms-track" role="img" aria-label="' + whole(H.completed_exact) + " of the " + H.milestone + ' completed payments per second laptop milestone"><span class="ms-fill" style="width:' + pct.toFixed(2) + '%"></span></div>' +
+        '<div class="ms-scale"><span class="num">0</span><span class="num">' + (H.milestone / 2).toLocaleString("en-US") + '</span><span class="num">' + H.milestone.toLocaleString("en-US") + " · D51 milestone</span></div>" +
+        '<p class="ms-note">' + H.milestone_pct.toFixed(1) + "% of the laptop milestone, which needs three valid runs at or above it.</p></div>" +
+      "</div>" +
+      '<dl class="hl-stats">' +
+        "<div><dt>Platform p50</dt><dd class=\"num\">" + (H.p50 == null ? "—" : fix(H.p50, 2) + " ms") + "</dd>" + gauge(H.p50, T.p50_ms) + '<span class="gate-of">gate ≤ ' + T.p50_ms + " ms</span></div>" +
+        "<div><dt>Platform p99</dt><dd class=\"num\">" + (H.p99 == null ? "—" : fix(H.p99, 2) + " ms") + "</dd>" + gauge(H.p99, T.p99_ms) + '<span class="gate-of">gate ≤ ' + T.p99_ms + " ms</span></div>" +
+        "<div><dt>Unexpected errors</dt><dd class=\"num\">" + (H.error_pct == null ? "—" : fix(H.error_pct, 3) + "%") + "</dd>" + gauge(H.error_pct, T.error_rate_pct) + '<span class="gate-of">gate &lt; ' + T.error_rate_pct + "%</span></div>" +
+        "<div><dt>Correctness</dt><dd>" + H.checks_passed + " of " + H.checks_applicable + " pass</dd>" + gauge(H.checks_passed, H.checks_applicable || 1) + '<span class="gate-of">' + esc(ckRanges(H.checks_passing)) + (H.checks_na.length ? " · " + esc(ckRanges(H.checks_na)) + " n/a" : "") + "</span></div>" +
+        "<div><dt>API CPU</dt><dd class=\"num\">" + (H.api_cpu_pct == null ? "—" : fix(H.api_cpu_pct, 1) + "%") + '</dd><span class="gate-of">of one core · no gate</span></div>' +
+        "<div><dt>Pool wait · deadlocks</dt><dd class=\"num\">" + (H.pool_wait_s == null ? "—" : fix(H.pool_wait_s, 1) + " s") + " · " + (H.deadlocks == null ? "—" : whole(H.deadlocks)) + '</dd><span class="gate-of">no gate</span></div>' +
+      "</dl>";
+  }
+
+  // Verdict
+  var V = D.verdict;
+  var word = $("verdict-word");
+  word.textContent = V.verdict;
+  word.style.color = V.verdict === "PASS" ? "var(--pass)" : V.verdict === "FAIL" ? "var(--fail)" : "var(--inc)";
+  $("label-tag").textContent = D.label;
+  $("verdict-note").innerHTML = "Built by <code>benchmarks/bench_page.py</code> from each listed run's <code>result.md</code>, under the suite's verdict rules. The OP-BENCH orchestrator isn't built yet.";
+  var counts = {};
+  D.gates.forEach(function (g) { counts[g.status] = (counts[g.status] || 0) + 1; });
+  var rules = [
+    "Any correctness gate fails → <b>FAIL</b>.",
+    "Any run invalid, required scenario skipped, value null, or required gate inconclusive → <b>INCONCLUSIVE</b>.",
+    "Any performance or reliability gate missed → <b>FAIL</b>.",
+    "Otherwise → <b>PASS</b>."
+  ];
+  var byId = {};
+  D.gates.forEach(function (g) { byId[g.id] = g; });
+  $("ladder").innerHTML = rules.map(function (r, i) {
+    var n = i + 1, cls = n < V.rule ? "skip" : n === V.rule ? "hit" : "skip";
+    var out = n < V.rule ? "not triggered" : n === V.rule ? "stopped here" : "not reached";
+    var extra = "";
+    if (n === V.rule && V.triggers.length) {
+      var names = V.triggers.map(function (t) { return esc(byId[t] ? byId[t].name : t); });
+      extra = " Triggered by " + (names.length <= 3 ? names.join(", ") : names.length + " of " + D.gates.length + ' gates, listed in <a href="#gates">§2</a>') + ".";
+    }
+    return '<li class="' + cls + '"><span class="k">' + n + "</span><span>" + r + extra + '</span><span class="out">' + out + "</span></li>";
+  }).join("");
+
+  // Claims
+  var est = D.gates.filter(function (g) { return g.status === "PASS"; }).map(function (g) {
+    return "<li><b>" + esc(g.name) + ".</b> " + rich(g.evidence) + " " + src(g.source) + "</li>";
+  });
+  if (H) est.unshift("<li>Highest valid result: <b>" + whole(H.completed_exact) + " completed payments/s</b> at step " + esc(H.step) + ". " + src(H.short_id, H.run_id) + "</li>");
+  $("established").innerHTML = est.join("") || "<li>Nothing yet.</li>";
+  var notEst = D.not_established.map(function (s) { return "<li>" + rich(s) + "</li>"; });
+  var tp = byId.throughput;
+  if (tp && tp.status !== "PASS") notEst.splice(2, 0, "<li>The <b>D51 laptop milestone</b> isn't met. " + rich(tp.evidence) + "</li>");
+  $("not-established").innerHTML = notEst.join("");
+
+  // Gates
+  $("gate-rows").innerHTML = D.gates.map(function (g) {
+    var srcCell = g.runs && g.runs.length ? src(g.source, g.runs.join("\n")) : (g.source === "no evidence" || /none|not /.test(g.source) ? '<span class="unmeasured">' + esc(g.source) + "</span>" : src(g.source));
+    return '<tr><td><div class="gate-name">' + esc(g.name) + '</div><div class="gate-req">' + rich(g.requirement) + "</div></td><td>" + chip(g.status) + "</td><td>" + rich(g.evidence) + "</td><td>" + srcCell + "</td></tr>";
+  }).join("");
+
+  // Runs in the report
+  var used = D.runs.filter(function (r) { return r.status === "included"; });
+  used.sort(function (a, b) { return (a.target - b.target) || String(a.started_at).localeCompare(String(b.started_at)); });
+  $("step-rows").innerHTML = used.map(function (r) {
+    var cpu = r.api_cpu_pct;
+    var bar = cpu == null ? NM : '<div class="bar"><span class="num">' + fix(cpu, 1) + '%</span><i aria-hidden="true"><b style="width:' + Math.min(100, cpu / 200 * 100).toFixed(1) + '%"></b></i></div>';
+    var res = r.valid ? (r.gates_passed ? '<span class="st pass">VALID</span>' : '<span class="st fail">GATE MISSED</span>') : '<span class="st fail">INVALID</span>';
+    var why = (r.invalid_because || []).concat(r.gate_reasons || []);
+    return '<tr class="' + (r.valid ? "" : "invalid") + '"><td class="step num">' + esc(r.step) + (r.note ? '<div class="gate-req">' + esc(r.note) + "</div>" : "") + "</td>" +
+      '<td class="r num">' + (r.target == null ? NM : whole(r.target)) + '</td><td class="r num">' + rate(r.admitted) + '</td><td class="r num">' + rate(r.completed) + "</td>" +
+      '<td class="r num">' + ms(r.p50, T.p50_ms) + '</td><td class="r num">' + ms(r.p95) + '</td><td class="r num">' + ms(r.p99, T.p99_ms) + "</td>" +
+      '<td class="r">' + bar + "</td><td>" + res + (why.length ? '<div class="gate-req">' + esc(why.join("; ")) + "</div>" : "") + "</td><td>" + src(r.short_id, r.run_id + " · result.md") + "</td></tr>";
+  }).join("");
+
+  // Chart
+  var chart = $("chart"), NS = "http://www.w3.org/2000/svg";
+  var pts = used.filter(function (r) { return r.target != null && (r.p50 != null || r.p99 != null); });
+  if (!pts.length) {
+    $("chart-figure").outerHTML = '<p class="empty">No performance runs in this report.</p>';
+  } else {
+    var X0 = 64, X1 = 690, Y0 = 270, Y1 = 24;
+    var tMin = Math.min.apply(null, pts.map(function (r) { return r.target; }).concat([1]));
+    var tMax = Math.max.apply(null, pts.map(function (r) { return r.target; }).concat([1000]));
+    var lx0 = Math.log10(tMin) - 0.15, lx1 = Math.log10(tMax) + 0.15;
+    var ly0 = Math.log10(4), ly1 = Math.log10(250);
+    function sx(v) { return X0 + (Math.log10(v) - lx0) / (lx1 - lx0) * (X1 - X0); }
+    function sy(v) { var c = Math.min(Math.max(v, 4), 250); return Y0 - (Math.log10(c) - ly0) / (ly1 - ly0) * (Y0 - Y1); }
+    function el(name, attrs, text) { var e = document.createElementNS(NS, name); for (var k in attrs) e.setAttribute(k, attrs[k]); if (text != null) e.textContent = text; chart.appendChild(e); return e; }
+    // offsets for runs sharing a target
+    var groups = {};
+    pts.forEach(function (r) { (groups[r.target] = groups[r.target] || []).push(r); });
+    pts.forEach(function (r) { var g = groups[r.target], i = g.indexOf(r); r._x = sx(r.target) + (g.length > 1 ? (i - (g.length - 1) / 2) * 20 : 0); });
+    [5, 10, 25, 50, 100, 200].forEach(function (v) {
+      el("line", { x1: X0, x2: X1, y1: sy(v), y2: sy(v), stroke: "var(--plot-grid)" });
+      el("text", { x: 56, y: sy(v) + 4, "text-anchor": "end", fill: "var(--muted)", "font-size": 11 }, v === 5 ? "5 ms" : String(v));
+    });
+    Object.keys(groups).map(Number).forEach(function (t) {
+      el("line", { x1: sx(t), x2: sx(t), y1: Y1, y2: Y0, stroke: "var(--plot-grid)" });
+      el("text", { x: sx(t), y: 290, "text-anchor": "middle", fill: "var(--muted)", "font-size": 11 }, t.toLocaleString("en-US"));
+    });
+    el("line", { x1: X0, x2: X1, y1: Y0, y2: Y0, stroke: "var(--rule-strong)" });
+    el("text", { x: X1, y: 307, "text-anchor": "end", fill: "var(--muted)", "font-size": 11 }, "offered req/s (log)");
+    el("line", { x1: X0, x2: X1, y1: sy(T.p99_ms), y2: sy(T.p99_ms), class: "gate p99" });
+    el("text", { x: 70, y: sy(T.p99_ms) - 6, fill: "var(--fail)", "font-size": 10.5 }, "p99 gate " + T.p99_ms + " ms");
+    el("line", { x1: X0, x2: X1, y1: sy(T.p50_ms), y2: sy(T.p50_ms), class: "gate p50" });
+    el("text", { x: 70, y: sy(T.p50_ms) - 6, fill: "var(--inc)", "font-size": 10.5 }, "p50 gate " + T.p50_ms + " ms");
+    var valid = pts.filter(function (r) { return r.valid; });
+    var lastValid = valid.length ? valid[valid.length - 1] : null;
+    [["p99", "l99"], ["p50", "l50"]].forEach(function (m) {
+      var vs = valid.filter(function (r) { return r[m[0]] != null; });
+      if (vs.length > 1) el("polyline", { class: m[1], points: vs.map(function (r) { return r._x + "," + sy(r[m[0]]); }).join(" ") });
+      var anchor = vs.length ? vs[vs.length - 1] : null;
+      pts.filter(function (r) { return !r.valid && r[m[0]] != null && anchor && r.target >= anchor.target; }).forEach(function (r) {
+        el("polyline", { class: m[1] + " dash", points: anchor._x + "," + sy(anchor[m[0]]) + " " + r._x + "," + sy(r[m[0]]) });
+      });
+    });
+    var readout = $("readout");
+    pts.forEach(function (r) {
+      [["p99", "var(--accent)", 5], ["p50", "var(--muted)", 4]].forEach(function (m) {
+        var v = r[m[0]];
+        if (v == null) return;
+        var g = document.createElementNS(NS, "g");
+        g.setAttribute("class", "pt"); g.setAttribute("tabindex", "0");
+        var label = "Step " + r.step + ", " + m[0] + " " + fix(v, 2) + " ms, " + (r.valid ? "valid" : "invalid") + " run " + r.run_id;
+        g.setAttribute("aria-label", label);
+        var c = document.createElementNS(NS, "circle");
+        c.setAttribute("cx", r._x); c.setAttribute("cy", sy(v)); c.setAttribute("r", m[2]);
+        c.setAttribute("fill", r.valid ? m[1] : "var(--surface)"); c.setAttribute("stroke", m[1]); c.setAttribute("stroke-width", r.valid ? 0 : 1.75);
+        g.appendChild(c);
+        var tt = document.createElementNS(NS, "title"); tt.textContent = label; g.appendChild(tt);
+        function show() { readout.innerHTML = "<b>Step " + esc(r.step) + "</b> · " + m[0] + " <b>" + fix(v, 2) + " ms</b> · " + (r.valid ? "valid" : "invalid") + ' · <span class="mono">' + esc(r.run_id) + "</span>"; }
+        g.addEventListener("mouseenter", show); g.addEventListener("focus", show);
+        chart.appendChild(g);
+        if (v > 250 || v < 4) el("text", { x: r._x, y: v > 250 ? 18 : 266, "text-anchor": "middle", fill: "var(--fail)", "font-size": 10 }, "off scale");
+      });
+    });
+    var p99s = pts.filter(function (r) { return r.p99 != null; }).map(function (r) { return r.p99; });
+    chart.setAttribute("aria-label", "Platform overhead p50 and p99 in milliseconds, log scale, against offered requests per second, log scale. p99 ranges from " + fix(Math.min.apply(null, p99s), 2) + " to " + fix(Math.max.apply(null, p99s), 2) + " ms across " + pts.length + " runs.");
+  }
+
+  // D56
+  var D56 = { "NOT RUN": "notrun", BLOCKED: "notrun", PASS: "pass", FAIL: "fail", INCONCLUSIVE: "inc" };
+  $("d56-rows").innerHTML = D.d56.map(function (c) {
+    return '<tr><td class="gate-name">' + esc(c.check) + "</td><td>" + rich(c.run) + "</td><td>" + rich(c.passes_if) + '</td><td><span class="st ' + (D56[c.result] || "notrun") + '">' + esc(c.result) + "</span>" + (c.note ? '<div class="gate-req">' + rich(c.note) + "</div>" : "") + "</td></tr>";
+  }).join("");
+
+  // Ledger
+  var LCHIP = { included: '<span class="st pass">IN REPORT</span>', excluded: '<span class="st na">EXCLUDED</span>', missing: '<span class="st missing">MISSING</span>' };
+  $("ledger-rows").innerHTML = D.runs.map(function (r) {
+    var reason;
+    if (r.status === "missing") reason = "No <code>result.md</code> on this machine; nothing from this run is shown." + (r.note ? " " + esc(r.note) + "." : "");
+    else {
+      var bits = (r.invalid_because || []).concat(r.gate_reasons || []);
+      var base = r.status === "excluded" ? esc(r.exclude_reason) + "." : (r.valid && r.gates_passed ? "Valid; all gates pass." : r.valid ? "Valid; gate missed." : "Invalid.");
+      reason = base + (bits.length ? ' <span class="muted">' + esc(bits.join("; ")) + "</span>" : "") + (r.note && r.status !== "excluded" ? ' <span class="muted">' + esc(r.note) + ".</span>" : "");
+    }
+    return '<tr data-kind="' + r.status + '"><td><span class="runid"><code>' + esc(r.run_id) + '</code><button type="button" class="copy" data-id="' + esc(r.run_id) + '">Copy</button></span></td><td class="num">' + (r.step == null ? "—" : esc(r.step)) + "</td><td>" + LCHIP[r.status] + "</td><td>" + reason + "</td></tr>";
+  }).join("");
+  ["all", "included", "excluded", "missing"].forEach(function (k) {
+    var n = k === "all" ? D.runs.length : D.runs.filter(function (r) { return r.status === k; }).length;
+    document.querySelector('[data-count="' + k + '"]').textContent = "(" + n + ")";
+    if (k === "missing" && n === 0) $("f-missing").hidden = true;
+  });
+  var buttons = document.querySelectorAll(".filters button");
+  function applyFilter(f) {
+    buttons.forEach(function (b) { b.setAttribute("aria-pressed", String(b.dataset.f === f)); });
+    $("ledger-rows").querySelectorAll("tr").forEach(function (tr) { tr.hidden = f !== "all" && tr.dataset.kind !== f; });
+  }
+  buttons.forEach(function (b) { b.addEventListener("click", function () { applyFilter(b.dataset.f); }); });
+  $("ledger-rows").addEventListener("click", function (e) {
+    var btn = e.target.closest(".copy");
+    if (!btn) return;
+    function done(ok) { btn.textContent = ok ? "Copied" : "Select"; setTimeout(function () { btn.textContent = "Copy"; }, 1400); }
+    try {
+      navigator.clipboard.writeText(btn.dataset.id).then(function () { done(true); }, function () {
+        var rg = document.createRange(); rg.selectNodeContents(btn.previousElementSibling);
+        var s = window.getSelection(); s.removeAllRanges(); s.addRange(rg); done(false);
+      });
+    } catch (err) { done(false); }
+  });
+
+  // Reproduce and footer
+  $("repro-list").innerHTML = D.reproduce.map(function (kv) { return "<dt>" + esc(kv[0]) + "</dt><dd>" + rich(kv[1]) + "</dd>"; }).join("");
+  $("foot-generated").innerHTML = "Generated " + esc(D.as_of) + " at <code>" + esc(D.tree) + "</code> from " + used.length + " runs in report, " + D.runs.length + " listed in <code>benchmarks/report-runs.json</code>.";
+})();
+</script>
+</body>
+</html>

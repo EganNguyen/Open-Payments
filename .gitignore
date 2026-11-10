@@ -11,3 +11,4 @@ obj/
 TestResults/
 *.user
 benchmarks/runs/
+benchmarks/site/
