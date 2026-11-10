@@ -106,5 +106,11 @@
     "rate": 800,
     "duration_seconds": 600,
     "purpose": "Laptop limit search between steps 5 and 6: 800 req/s, about 400 completed payments/s"
+  },
+  {
+    "step": 106,
+    "rate": 100,
+    "duration_seconds": 3600,
+    "purpose": "D56 laptop soak baseline: 60 minutes at step 3's rate"
   }
 ]
