@@ -2,7 +2,7 @@
 
 The approval record for Stage 2, PSP and recovery: what was decided, what the owner must still decide, and what must be true before the build starts.
 
-Status: **Open: awaiting the owner. Not signed** · The build starts from: *not yet named* · Last updated: 2026-11-10
+Status: **Signed 2026-11-10. Build starts from `57e63c2`** · Last updated: 2026-11-10
 
 Stage 2 builds the real PSP adapter, callbacks, the reconciler and its timers, settlement ingestion, the review tooling and one 3D Secure flow, then freezes the API contract. The rules are in [Delivery workflow](../delivery-workflow.md#design-gate), and the tasks are in the [Stage 2 plan](../superpowers/plans/2026-11-10-stage-2-psp-and-recovery.md).
 
@@ -23,6 +23,8 @@ Checked on 2026-11-10 against the repository, not assumed.
 | The mock adapter declares `authoritative_lookup` and sale | `MockPspAdapter.cs:32` |
 
 ## Needs the owner
+
+**Answered 2026-11-10:** the owner approved every recommendation below in chat, recorded by Claude. O9 names `57e63c2`, the commit that added this record and the plan. The two sandbox accounts and their keys in O5 are still to be placed in `deploy/compose/secrets/` by the owner; Milestone I and G2 wait for them, and no builder creates an account or handles a secret.
 
 **Nothing below a task depends on may stay open when the gate closes.** Each has a recommendation.
 
@@ -137,11 +139,11 @@ The owner decided on 2026-11-10 that design gates analyze and design, and run a 
 
 | ☐ | Item | Needs |
 |---|---|---|
-| ☐ | O1-O7 and O9 answered | Owner |
+| ☑ | O1-O7 and O9 answered | Owner, in chat 2026-11-10 |
 | ☑ | Key-expiry method recorded | [By analysis](#key-expiry-decided-by-analysis), under D64 |
-| ☐ | D59-D63 `Committed` in [Decisions](../decisions.md) | Owner's approval |
+| ☑ | D59-D63 `Committed` in [Decisions](../decisions.md) | Owner's approval, 2026-11-10 |
 | ☑ | [Stage 2 plan](../superpowers/plans/2026-11-10-stage-2-psp-and-recovery.md) written | This gate |
-| ☐ | Signed below, naming the build's starting commit | Owner |
+| ☑ | Signed below, naming the build's starting commit | Owner |
 
 ## Risks carried into the build
 
@@ -160,4 +162,4 @@ The owner fills this in when the gate closes.
 
 | Approved by | Date | Build starts from commit |
 |---|---|---|
-| | | |
+| EganNguyen, in chat, recorded by Claude | 2026-11-10 | `57e63c2` |

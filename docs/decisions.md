@@ -501,7 +501,7 @@ All values are starting points until measured. Other docs state the resulting ru
 
 ### D59
 
-**A PSP answer is never dropped, and callbacks share its table.** Status: `Proposed`, at Stage 2's [design gate](gates/stage-2-design.md), for the owner. Settles review finding [L7](gates/stage-1-review.md#l7-a-refused-or-lost-transaction-b-drops-the-psps-answer).
+**A PSP answer is never dropped, and callbacks share its table.** Status: `Committed`, approved by the owner at Stage 2's [design gate](gates/stage-2-design.md) on 2026-11-10. Settles review finding [L7](gates/stage-1-review.md#l7-a-refused-or-lost-transaction-b-drops-the-psps-answer).
 
 - **Decision:** When transaction B loses its conditional update or `Decide` refuses it, the store re-reads and runs `Decide` once more. If it is refused again, the PSP's answer is inserted into `psp_events` as a parked event with `source = 'api_answer'`, in its own short transaction, and the client gets 202 with the current state. If that insert fails too, the answer is still 202, and recovery reads the answer back from the PSP. Callbacks insert into the same table and apply in the same transaction ([D30](#d30)). An event that can't apply yet is parked and retried by a worker, and past its limit it is left to the reconciler with an alert.
 - **Why:** Stage 1's review found the answer dropped with a 409 or a stale 200. With callbacks, the reconciler and timers, a race with transaction B becomes normal, and a refusal after the PSP acted tells the merchant something false.
@@ -509,7 +509,7 @@ All values are starting points until measured. Other docs state the resulting ru
 
 ### D60
 
-**An adapter declares recovery per situation.** Status: `Proposed`, at Stage 2's design gate, for the owner. Amends [D27](#d27).
+**An adapter declares recovery per situation.** Status: `Committed`, approved by the owner at Stage 2's [design gate](gates/stage-2-design.md) on 2026-11-10. Amends [D27](#d27).
 
 - **Decision:** `PspCapabilities` names three things: how to recover an operation the PSP never answered, with no PSP reference (replay, authoritative lookup or technical cancel); whether a lookup by the PSP's own reference is consistent, for when one is held; and how to prove an abandoned customer action can't complete (a confirmed cancel, or none). The reconciler chooses by what the attempt holds. A not-found is still proof only from a lookup the adapter declares authoritative, after its quiet window.
 - **Why:** One mode per adapter doesn't fit Stripe. Its search lags and isn't for read-after-write, so with no reference only a replay is safe. Once it has answered with its own ID, retrieving by that ID is direct. An abandoned 3D Secure attempt is proven not charged only by cancelling it ([E20](failure-scenarios.md#edge-cases)).
@@ -517,7 +517,7 @@ All values are starting points until measured. Other docs state the resulting ru
 
 ### D61
 
-**Resolving an operation resolves its key, in the store.** Status: `Proposed`, at Stage 2's design gate, for the owner. Answers [E3](gates/stage-1-escalations.md#e3-task-16-idempotency-key-retention-has-no-implementation)'s second check.
+**Resolving an operation resolves its key, in the store.** Status: `Committed`, approved by the owner at Stage 2's [design gate](gates/stage-2-design.md) on 2026-11-10. Answers [E3](gates/stage-1-escalations.md#e3-task-16-idempotency-key-retention-has-no-implementation)'s second check.
 
 - **Decision:** `payment_attempts` and `refunds` carry the idempotency key that started them, and a flag saying whether finishing them resolves it. Inside the transaction that moves an attempt or refund to `SUCCEEDED` or `FAILED`, the store sets the key's answer and `resolved_at`, by primary key, whoever applied it. The answer comes from one renderer in `OpenPayments.Transitions`, shared with the API. The authorize half of a two-call auto-capture doesn't resolve its key; the capture does.
 - **Why:** [D58](#d58) resolves keys only on the request path. A key whose operation the reconciler or a callback finished would stay unresolved forever, and the existing off-request update finds keys by `attempt_id`, which no index covers.
@@ -525,7 +525,7 @@ All values are starting points until measured. Other docs state the resulting ru
 
 ### D62
 
-**The reconciler claims work by lease, inside its own PSP quota.** Status: `Proposed`, at Stage 2's design gate, for the owner.
+**The reconciler claims work by lease, inside its own PSP quota.** Status: `Committed`, approved by the owner at Stage 2's [design gate](gates/stage-2-design.md) on 2026-11-10.
 
 - **Decision:** `OpenPayments.Reconciler` is its own deployable and also runs the timers and the parked-event worker. It claims due attempts and refunds with `for update skip locked` in a short transaction that sets `next_recovery_at` to a lease and commits. It calls the PSP outside any transaction, applies the answer through the normal conditional update, and records the last inquiry on the row. Recovery spends a token bucket per PSP account set to a share of that account's limit, 10% to start, and live traffic keeps the rest ([D34](#d34)). Replay stops at a replay window of at most a quarter of key retention, and escalation follows at its own age limit ([D45](#d45)).
 - **Why:** Holding a row lock across a PSP call breaks the rule of no network inside a transaction. Leases let two reconcilers run safely (C26), and the per-account quota keeps a backlog from starving live payments (C47).
@@ -533,7 +533,7 @@ All values are starting points until measured. Other docs state the resulting ru
 
 ### D63
 
-**Settlement is ingested per account and per file, resumably.** Status: `Proposed`, at Stage 2's design gate, for the owner. Details [D18](#d18).
+**Settlement is ingested per account and per file, resumably.** Status: `Committed`, approved by the owner at Stage 2's [design gate](gates/stage-2-design.md) on 2026-11-10. Details [D18](#d18).
 
 - **Decision:** A `settlement_files` row tracks each file per PSP account and its progress. Lines insert with `ON CONFLICT DO NOTHING`, then match by PSP reference. A matched capture, sale or refund line posts through `OpenPayments.Transitions`, with a ledger transaction ID derived from `(psp_account_id, file_id, line_no)` ([D32](#d32)). `UNMATCHED` and `MISMATCH` lines are discrepancies that page, and an operation with no line past the adapter's settlement lag gets a `settlement_missing` row. Fee and adjustment lines are stored and post nothing.
 - **Why:** C40 requires duplicate, unmatched, wrong and missing lines to end in a defined state, ledger entries to post once, and a killed ingest to resume.
