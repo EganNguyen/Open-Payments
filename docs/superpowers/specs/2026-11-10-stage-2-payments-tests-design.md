@@ -55,7 +55,7 @@ The measured window starts once the ramp reaches the rate. `setup()` traffic is 
 ## 4. Sequence of one run
 
 1. Full reset, then prefill the expiry backlog, then check that the tree is clean.
-2. Start the API, the reconciler and the mock; apply the phase2 profile.
+2. Check that the API, the reconciler and the mock are running; refuse to start if the reconciler isn't. Apply the phase2 profile and read it back from the mock.
 3. k6 ramps to the rate and holds it for the window. Samplers record every 10 s (§6).
 4. k6 stops. **Drain:** the mock keeps sending callbacks and the reconciler keeps working, until unresolved attempts, unresolved refunds and parked events are all 0, or 5 minutes pass.
 5. Copy the effect log after the drain, then run `op-checks --stage phase2`: CK1-CK10, with CK5 using its timeouts and CK7 and CK8 applicable.
@@ -69,7 +69,7 @@ Each gate has its own result: `PASS`, `FAIL`, `INCONCLUSIVE` or `NOT_APPLICABLE`
 
 | Gate | Pass |
 |---|---|
-| Platform overhead | p50 ≤ 25 ms, p99 ≤ 100 ms over the window (`op_platform_overhead_seconds`) |
+| Platform overhead | p50 ≤ 25 ms, p99 ≤ 100 ms over the window. Computed as `report.py` does today, as k6 end-to-end minus the configured 200 ms, which is valid because mock jitter is 0 |
 | Error rate | < 0.1%, excluding 402, 409, 429, 503 |
 | Validity | No dropped arrivals, generator CPU ≤ 80%, mock adds ≤ 5 ms at p99, mix shares within 2 pp |
 | Throughput count | DB count of completed payments and `op_payments_completed_total` agree within 0.5% |
