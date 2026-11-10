@@ -79,8 +79,8 @@
   },
   {
     "step": 101,
-    "rate": 1500,
-    "duration_seconds": 600,
-    "purpose": "D56 laptop L3: three times the stable rate for 10 minutes"
+    "rate": 500,
+    "duration_seconds": 960,
+    "purpose": "D56 laptop L3 baseline: the stable rate for 16 minutes; a second generator adds 1000 req/s from 120 s to 720 s, so offered load is 3 times the stable rate for 10 minutes"
   }
 ]
