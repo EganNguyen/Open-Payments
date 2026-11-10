@@ -152,6 +152,12 @@ public abstract record ApplyResult
     public sealed record Parked(PaymentView Payment) : ApplyResult;
 }
 
+/// <summary>What each timer batch changed in one tick (Task 28).</summary>
+public sealed record TimerSummary(
+    int ExpiredActions,
+    int CanceledPayments,
+    int ExpiredAuthorizations);
+
 /// <summary>
 /// The database shell around <see cref="PaymentRules"/>. It loads the snapshot, calls the pure
 /// decision, and writes state, ledger and outbox in one transaction. It holds no business rules.
@@ -178,6 +184,19 @@ public sealed class PaymentStore
 
     /// <summary>The event log, for the callback route and the reconciler (D59).</summary>
     public PspEventStore Events => _events;
+
+    /// <summary>
+    /// The adapter's authorization window (D60), used whenever a payment becomes AUTHORIZED.
+    /// Every adapter today declares seven days; the hook exists so an adapter that differs is
+    /// wired without changing the write path.
+    /// </summary>
+    public Func<string, TimeSpan> AuthorizationWindowFor { get; set; } = _ => DefaultAuthorizationWindow;
+
+    /// <summary>The authorization window both current adapters declare.</summary>
+    public static readonly TimeSpan DefaultAuthorizationWindow = TimeSpan.FromDays(7);
+
+    /// <summary>The customer-action window, starting value 15 minutes (payment lifecycle).</summary>
+    public static readonly TimeSpan ActionWindow = TimeSpan.FromMinutes(15);
 
     /// <summary>Test-only failpoint used by the atomicity test.</summary>
     public Action? BeforeOutboxInsert { get; set; }
@@ -324,6 +343,150 @@ public sealed class PaymentStore
         }
 
         return new ApplyResult.Parked(view);
+    }
+
+    /// <summary>
+    /// Task 28: the three timers. Each batch selects due payments with
+    /// <c>for update skip locked</c> and applies the same command and conditional update as any
+    /// other writer, so a timer and a request can never both win. One transaction holds the
+    /// batch's payment locks only while the local writes run; no PSP call is made here.
+    /// </summary>
+    public async Task<TimerSummary> RunTimersAsync(
+        DateTimeOffset now,
+        int batch,
+        CancellationToken cancellationToken)
+    {
+        await using var connection = await _runner.DataSource.OpenConnectionAsync(cancellationToken);
+        await using var transaction = await connection.BeginTransactionAsync(cancellationToken);
+
+        var actions = new List<(Guid Payment, Guid Merchant, Guid Attempt, AttemptOperation Operation)>();
+        await using (var query = new NpgsqlCommand(
+            """
+            select p.id, p.merchant_id, a.attempt_id, a.operation
+              from payments p
+              join payment_attempts a on a.payment_id = p.id and a.state = 'ACTION_REQUIRED'
+             where p.state = 'ACTION_REQUIRED'
+               and a.action_expires_at is not null
+               and a.action_expires_at <= @now
+             order by a.action_expires_at
+             limit @batch
+             for update of p skip locked
+            """,
+            connection,
+            transaction))
+        {
+            query.Parameters.AddWithValue("now", now);
+            query.Parameters.AddWithValue("batch", batch);
+            await using var reader = await query.ExecuteReaderAsync(cancellationToken);
+            while (await reader.ReadAsync(cancellationToken))
+            {
+                actions.Add((
+                    reader.GetGuid(0),
+                    reader.GetGuid(1),
+                    reader.GetGuid(2),
+                    StateText.Operation(reader.GetString(3))));
+            }
+        }
+
+        var awaiting = new List<(Guid Payment, Guid Merchant)>();
+        await using (var query = new NpgsqlCommand(
+            """
+            select id, merchant_id
+              from payments
+             where state = 'AWAITING_METHOD' and expires_at <= @now
+             order by expires_at
+             limit @batch
+             for update skip locked
+            """,
+            connection,
+            transaction))
+        {
+            query.Parameters.AddWithValue("now", now);
+            query.Parameters.AddWithValue("batch", batch);
+            await using var reader = await query.ExecuteReaderAsync(cancellationToken);
+            while (await reader.ReadAsync(cancellationToken))
+            {
+                awaiting.Add((reader.GetGuid(0), reader.GetGuid(1)));
+            }
+        }
+
+        var authorized = new List<(Guid Payment, Guid Merchant)>();
+        await using (var query = new NpgsqlCommand(
+            """
+            select id, merchant_id
+              from payments
+             where state = 'AUTHORIZED'
+               and authorized_until is not null
+               and authorized_until <= @now
+             order by authorized_until
+             limit @batch
+             for update skip locked
+            """,
+            connection,
+            transaction))
+        {
+            query.Parameters.AddWithValue("now", now);
+            query.Parameters.AddWithValue("batch", batch);
+            await using var reader = await query.ExecuteReaderAsync(cancellationToken);
+            while (await reader.ReadAsync(cancellationToken))
+            {
+                authorized.Add((reader.GetGuid(0), reader.GetGuid(1)));
+            }
+        }
+
+        var expiredActions = 0;
+        foreach (var item in actions)
+        {
+            var result = await ApplyInTransactionAsync(
+                connection,
+                transaction,
+                new PaymentId(item.Payment),
+                new MerchantId(item.Merchant),
+                new PaymentCommand.Timeout(new AttemptId(item.Attempt), item.Operation, now),
+                null,
+                cancellationToken);
+            if (result is ApplyResult.Applied)
+            {
+                expiredActions++;
+            }
+        }
+
+        var canceled = 0;
+        foreach (var item in awaiting)
+        {
+            var result = await ApplyInTransactionAsync(
+                connection,
+                transaction,
+                new PaymentId(item.Payment),
+                new MerchantId(item.Merchant),
+                new PaymentCommand.Cancel(now),
+                null,
+                cancellationToken);
+            if (result is ApplyResult.Applied)
+            {
+                canceled++;
+            }
+        }
+
+        var expiredAuthorizations = 0;
+        foreach (var item in authorized)
+        {
+            var result = await ApplyInTransactionAsync(
+                connection,
+                transaction,
+                new PaymentId(item.Payment),
+                new MerchantId(item.Merchant),
+                new PaymentCommand.Expiry(now),
+                null,
+                cancellationToken);
+            if (result is ApplyResult.Applied)
+            {
+                expiredAuthorizations++;
+            }
+        }
+
+        await transaction.CommitAsync(cancellationToken);
+        return new TimerSummary(expiredActions, canceled, expiredAuthorizations);
     }
 
     private static OperationRef? OperationFor(PaymentCommand answer) => answer switch
@@ -650,6 +813,10 @@ public sealed class PaymentStore
                    captured_minor = @captured,
                    refunded_minor = @refunded,
                    refund_pending_minor = @pending,
+                   authorized_until = case
+                       when @state = 'AUTHORIZED' then now() + @auth_window
+                       else authorized_until
+                   end,
                    event_seq = @event_seq,
                    version = version + 1,
                    updated_at = now()
@@ -660,6 +827,10 @@ public sealed class PaymentStore
             transaction))
         {
             update.Parameters.AddWithValue("state", StateText.Payment(accepted.NewState));
+            update.Parameters.AddWithValue(
+                "auth_window",
+                NpgsqlTypes.NpgsqlDbType.Interval,
+                AuthorizationWindowFor(view.Attempt?.Psp ?? "mock"));
             update.Parameters.AddWithValue("captured", captured);
             update.Parameters.AddWithValue("refunded", refunded);
             update.Parameters.AddWithValue("pending", pending);
@@ -741,11 +912,13 @@ public sealed class PaymentStore
             insert into payment_attempts
               (attempt_id, payment_id, merchant_id, operation, psp, psp_account_id,
                target_attempt_id, state, failure_code, method_ref, method_type,
-               idempotency_key, resolves_key, created_at)
+               idempotency_key, resolves_key, action_expires_at, created_at)
             values
               (@attempt, @payment, @merchant, @operation, @psp, @psp_account,
                @target, @state, @failure, @method_ref, @method_type,
-               @key, @resolves_key, now())
+               @key, @resolves_key,
+               case when @state = 'ACTION_REQUIRED' then now() + @action_window else null end,
+               now())
             """,
             connection,
             transaction);
@@ -762,6 +935,10 @@ public sealed class PaymentStore
         insert.Parameters.AddWithValue("method_type", (object?)methodType ?? DBNull.Value);
         insert.Parameters.AddWithValue("key", (object?)idempotencyKey ?? DBNull.Value);
         insert.Parameters.AddWithValue("resolves_key", resolvesKey);
+        insert.Parameters.AddWithValue(
+            "action_window",
+            NpgsqlTypes.NpgsqlDbType.Interval,
+            ActionWindow);
         await insert.ExecuteNonQueryAsync(cancellationToken);
     }
 
@@ -870,13 +1047,23 @@ public sealed class PaymentStore
             await using var update = new NpgsqlCommand(
                 """
                 update payment_attempts
-                   set state = @state, failure_code = @failure
+                   set state = @state,
+                       failure_code = @failure,
+                       action_expires_at = case
+                           when @state = 'ACTION_REQUIRED'
+                               then coalesce(action_expires_at, now() + @action_window)
+                           else null
+                       end
                  where payment_id = @payment and attempt_id = @attempt
                 """,
                 connection,
                 transaction);
             update.Parameters.AddWithValue("state", StateText.Attempt(change.State));
             update.Parameters.AddWithValue("failure", (object?)change.FailureCode ?? DBNull.Value);
+            update.Parameters.AddWithValue(
+                "action_window",
+                NpgsqlTypes.NpgsqlDbType.Interval,
+                ActionWindow);
             update.Parameters.AddWithValue("payment", view.Id.Value);
             update.Parameters.AddWithValue("attempt", change.Id.Value);
             await update.ExecuteNonQueryAsync(ct);

@@ -9,7 +9,13 @@ var database = builder.Configuration["DATABASE_URL"]
 #pragma warning disable CA2000 // The host owns the singleton until shutdown.
 builder.Services.AddSingleton(new TxRunner(database));
 #pragma warning restore CA2000
-builder.Services.AddSingleton<PaymentStore>();
+builder.Services.AddSingleton(services =>
+{
+    var store = new PaymentStore(services.GetRequiredService<TxRunner>());
+    var adapters = services.GetRequiredService<IPspAdapterFactory>();
+    store.AuthorizationWindowFor = psp => adapters.Capabilities(psp).AuthorizationWindow;
+    return store;
+});
 builder.Services.AddSingleton<RecoveryStore>();
 builder.Services.AddSingleton<AccountGate>();
 builder.Services.AddHttpClient("psp", client =>
@@ -20,6 +26,7 @@ builder.Services.AddHttpClient("psp", client =>
 builder.Services.AddSingleton<IPspAdapterFactory>(services =>
     new MockPspAdapterFactory(services.GetRequiredService<IHttpClientFactory>().CreateClient("psp")));
 builder.Services.AddSingleton(ReconcilerOptions.FromConfiguration(builder.Configuration));
+builder.Services.AddHostedService<TimerWorker>();
 builder.Services.AddHostedService<ParkedEventWorker>();
 builder.Services.AddHostedService<RecoveryWorker>();
 builder.Build().Run();

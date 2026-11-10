@@ -24,7 +24,13 @@ var database = NormalizeConnectionString(
     ?? Environment.GetEnvironmentVariable("DATABASE_URL")
     ?? "postgres://op_app:op_local_only@127.0.0.1:16432/openpayments");
 builder.Services.AddSingleton(_ => new TxRunner(database));
-builder.Services.AddSingleton<PaymentStore>();
+builder.Services.AddSingleton(services =>
+{
+    var store = new PaymentStore(services.GetRequiredService<TxRunner>());
+    var adapters = services.GetRequiredService<IPspAdapterFactory>();
+    store.AuthorizationWindowFor = psp => adapters.Capabilities(psp).AuthorizationWindow;
+    return store;
+});
 builder.Services.AddSingleton<IPspEventParser, MockPspEventParser>();
 builder.Services.AddSingleton<ICallbackSecretProvider, EnvironmentCallbackSecretProvider>();
 builder.Services.AddSingleton<ApiKeyAuthenticator>();

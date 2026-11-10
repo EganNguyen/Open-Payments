@@ -515,19 +515,19 @@ public sealed class PspEventStore(TxRunner runner)
 
         return e.Kind switch
         {
-            PspEventKind.Authorized when attempt.State == AttemptState.Pending =>
+            PspEventKind.Authorized when attempt.State is AttemptState.Pending or AttemptState.ActionRequired =>
                 (new PaymentCommand.PspAnswer(attempt.Id, attempt.Operation, PspAnswerOutcome.Approved, e.Amount, null, null, at), false),
             PspEventKind.Authorized when attempt.State == AttemptState.Failed =>
                 (new PaymentCommand.LateApproval(attempt.Id, attempt.Operation, e.Amount, null, at), false),
             PspEventKind.Authorized => (null, false),
-            PspEventKind.SaleCaptured when attempt.State == AttemptState.Pending =>
+            PspEventKind.SaleCaptured when attempt.State is AttemptState.Pending or AttemptState.ActionRequired =>
                 (new PaymentCommand.PspAnswer(attempt.Id, attempt.Operation, PspAnswerOutcome.Approved, e.Amount, null, null, at), false),
             PspEventKind.Captured when attempt.Operation == AttemptOperation.Capture && attempt.State == AttemptState.Pending =>
                 (new PaymentCommand.CaptureAnswer(attempt.Id, true, e.Amount, null, false, at), false),
-            PspEventKind.Declined when attempt.State == AttemptState.Pending =>
+            PspEventKind.Declined when attempt.State is AttemptState.Pending or AttemptState.ActionRequired =>
                 (new PaymentCommand.PspAnswer(attempt.Id, attempt.Operation, PspAnswerOutcome.Declined, null, e.FailureCode, null, at), false),
             PspEventKind.Declined when attempt.State == AttemptState.Succeeded => (null, true),
-            PspEventKind.ActionRequired when attempt.State == AttemptState.Pending =>
+            PspEventKind.ActionRequired when attempt.State is AttemptState.Pending or AttemptState.ActionRequired =>
                 (new PaymentCommand.PspAnswer(attempt.Id, attempt.Operation, PspAnswerOutcome.RequiresAction, e.Amount, null, e.ActionType, at), false),
             PspEventKind.Voided when attempt.Operation == AttemptOperation.Void && attempt.State == AttemptState.Pending =>
                 (new PaymentCommand.VoidAnswer(attempt.Id, true, false, null, at), false),

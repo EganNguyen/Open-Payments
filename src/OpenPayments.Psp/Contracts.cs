@@ -161,3 +161,10 @@ public interface IPspAdapterFactory
 
     IPspAdapter For(PspAccount account);
 }
+
+/// <summary>Capabilities by PSP name, for callers that know only the stored <c>psp</c> column.</summary>
+public static class PspAdapterFactoryExtensions
+{
+    public static PspCapabilities Capabilities(this IPspAdapterFactory factory, string psp) =>
+        factory.Capabilities(new PspAccount(Guid.Empty, default, psp, "test", string.Empty));
+}
