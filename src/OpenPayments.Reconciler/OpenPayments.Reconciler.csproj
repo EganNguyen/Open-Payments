@@ -8,6 +8,7 @@
     <ProjectReference Include="../OpenPayments.Transitions/OpenPayments.Transitions.csproj" />
     <ProjectReference Include="../OpenPayments.Psp/OpenPayments.Psp.csproj" />
     <PackageReference Include="Microsoft.Extensions.Hosting" />
+    <PackageReference Include="Microsoft.Extensions.Http" />
     <PackageReference Include="Microsoft.CodeAnalysis.BannedApiAnalyzers" PrivateAssets="all" />
     <AdditionalFiles Include="$(MSBuildThisFileDirectory)../../BannedSymbols.txt" />
   </ItemGroup>

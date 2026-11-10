@@ -1,3 +1,5 @@
+using OpenPayments.Psp;
+using OpenPayments.Psp.Resilience;
 using OpenPayments.Reconciler;
 using OpenPayments.Transitions;
 
@@ -8,6 +10,16 @@ var database = builder.Configuration["DATABASE_URL"]
 builder.Services.AddSingleton(new TxRunner(database));
 #pragma warning restore CA2000
 builder.Services.AddSingleton<PaymentStore>();
+builder.Services.AddSingleton<RecoveryStore>();
+builder.Services.AddSingleton<AccountGate>();
+builder.Services.AddHttpClient("psp", client =>
+{
+    client.BaseAddress = new Uri(builder.Configuration["PSP_URL"] ?? "http://127.0.0.1:9080");
+    client.Timeout = Timeout.InfiniteTimeSpan;
+});
+builder.Services.AddSingleton<IPspAdapterFactory>(services =>
+    new MockPspAdapterFactory(services.GetRequiredService<IHttpClientFactory>().CreateClient("psp")));
 builder.Services.AddSingleton(ReconcilerOptions.FromConfiguration(builder.Configuration));
 builder.Services.AddHostedService<ParkedEventWorker>();
+builder.Services.AddHostedService<RecoveryWorker>();
 builder.Build().Run();
