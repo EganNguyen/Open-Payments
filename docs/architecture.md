@@ -198,6 +198,71 @@ Protocols between internal services, such as the Payments API calling fraud, are
 
 ## Payment flow
 
+**End to end.** One card payment with a method, from the client's request to the merchant's webhook. Step numbers match **Make an attempt** below. Solid arrows are calls the caller waits on; dashed arrows are answers or asynchronous messages. The payment-transition module runs inside the Payments API and the reconciler, so its transactions appear as their calls to PostgreSQL.
+
+```mermaid
+sequenceDiagram
+  actor C as Client
+  box Shared
+    participant E as Edge gateway
+    participant R as Cell router
+  end
+  box One cell: customer waits
+    participant API as Payments API
+    participant F as Fraud decision
+    participant DB as PostgreSQL
+  end
+  participant PSP as PSP
+  box One cell: customer does not wait
+    participant Rec as Reconciler
+    participant Pub as Outbox publisher
+    participant K as Broker
+    participant L as Ledger projector
+    participant W as Webhook dispatcher
+  end
+  participant M as Merchant endpoint
+
+  C->>E: POST /v1/payments, API key, Idempotency-Key
+  E->>E: 1. Admit: authenticate, rate limit, permit
+  E->>R: forward
+  R->>API: forward to the merchant's cell
+  API->>DB: 2. Read the idempotency key
+  alt Key already used
+    API-->>C: Stored result, or 409 while it runs
+  else New attempt
+    API->>F: 3. Fraud check, 50 ms budget
+    F-->>API: allow, or block
+    alt Blocked
+      API->>DB: Commit a FAILED attempt
+      API-->>C: 402
+    else Allowed
+      API->>DB: 4. Transaction A: key, payment, attempt
+      API->>PSP: 5. Authorize or sale, keyed by attempt_id, with a deadline
+      alt PSP answers
+        PSP-->>API: approved, declined or action required
+        API->>DB: 6. Transaction B: state, attempt, key result, ledger, outbox
+        API-->>C: 7. Final answer
+      else Timeout
+        API->>DB: Transaction B: attempt UNKNOWN
+        API-->>C: 202 with the payment ID
+        PSP--)API: Callback with the result, if the PSP sends one
+        Rec->>PSP: Or inquire through the adapter's recovery mode
+        PSP-->>Rec: The real answer
+        Rec->>DB: Resolve through the module: state, ledger, outbox
+      end
+    end
+  end
+
+  Pub->>DB: Read committed outbox rows
+  Pub--)K: Publish events
+  K--)L: Ledger events
+  L->>L: Update balances
+  K--)W: Merchant events
+  W--)M: Signed webhook, retried until acknowledged or dead-lettered
+```
+
+The client's answer never waits on anything after step 7. If the publisher, broker, projector or dispatcher is slow or down, events wait in the outbox and the payment is unaffected.
+
 **Create a payment.** A create request without a payment method commits the payment in `AWAITING_METHOD` and returns. With a method, it continues as the first attempt below.
 
 **Make an attempt** ([D16](decisions.md#d16)):
