@@ -6,7 +6,7 @@ Status: Stage 1 built and reviewed, D56 laptop verification not yet run · Last 
 
 **Stage 1 is built:** the payments core, API, mock PSP, correctness checks, load harness and the staff console's first screens. The 5,000/s target is not proven: the measurements so far are laptop previews ([BASELINE](benchmarks/BASELINE.md)), and a capacity number needs a Linux run ([D53](docs/decisions.md#d53)).
 
-### Benchmark report
+## Benchmark report
 
 The [OP-BENCH Results](https://egannguyen.github.io/Open-Payments/) page shows the highest valid laptop result, then the overall verdict, every gate with its source, and every run, including excluded ones. It's generated from the recorded runs and is a laptop preview, not a capacity number. To update it, see [Keeping the results page in sync](docs/benchmarks/results-page.md).
 
@@ -71,7 +71,7 @@ Read them in this order if you are new.
 | [Payment lifecycle](docs/payment-lifecycle.md) | States, transitions, refund rules, merchant events | You work on payments or refunds |
 | [Engineering standards](docs/engineering-standards.md) | Load control, .NET, database, Kubernetes, security, observability | You write or operate code |
 | [Deadlock handling](docs/deadlock-handling.md) | Risks, prevention, retry behavior, proposed automation | Before writing database transaction code |
-| [Failure scenarios](docs/failure-scenarios.md) | 51 failures, 29 edge cases, 7 runbooks, drills | You plan for things going wrong |
+| [Failure scenarios](docs/failure-scenarios.md) | 51 failures, each with a recovery flow; 29 edge cases; 7 runbooks; drills | You plan for things going wrong |
 | [Scaling playbook](docs/scaling-playbook.md) | Ramp plan, sizing, decision gates, results log | You plan benchmarks |
 | [Local deployment](docs/architecture/local-deployment.md) | The MacBook stacks: topology, resources, what stays fixed | You run it locally |
 | [Production deployment](docs/architecture/prd-deployment.md) | Expected topology, sizing and estimate at 5,000 payments/s, not proven | You plan production |

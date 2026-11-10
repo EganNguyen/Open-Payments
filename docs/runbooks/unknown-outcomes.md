@@ -8,6 +8,8 @@ Status: Stage 1 procedure · Last updated: 2026-11-10
 
 An operation is unresolved when its outcome at the PSP isn't established: a payment in `PSP_PENDING` or `UNKNOWN`, or an attempt or refund in `PENDING` or `UNKNOWN`. It happens when the PSP call timed out or failed after the request may have been sent, or when the API stopped before recording the answer ([D27](../decisions.md#d27), [D28](../decisions.md#d28)). **The customer may have been charged.**
 
+The [recovery flows](../failure-scenarios.md#recovery-flows) show how these cases end: FS-09, FS-35, FS-43, FS-45 and FS-46.
+
 ## How you see it
 
 - **Alert** `UnresolvedOperationAging`: something has been unresolved for over 60 seconds, CK5's threshold.

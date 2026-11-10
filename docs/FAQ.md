@@ -724,7 +724,9 @@ Here: `ledger_transactions` carries both, and a late PSP event keeps its earlier
 6. Failure stays small (bulkheads, per-merchant limits, separate queues).
 7. Recovery is gradual, not a thundering herd.
 
-Every entry in [Failure scenarios](failure-scenarios.md) is one of these.
+Every entry in [Failure scenarios](failure-scenarios.md) is one of these. Each has a
+diagram of its recovery path, from the failure through recovery to normal operations
+([Recovery flows](failure-scenarios.md#recovery-flows)).
 
 ### What happens if the process crashes at each point?
 

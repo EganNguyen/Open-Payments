@@ -300,6 +300,8 @@ The client's answer never waits on anything after step 7. If the publisher, brok
 | During a commit | Unknown until read | Read the row. Nothing is retried blind ([D28](decisions.md#d28)) |
 | After B commits, before the response | final state and outbox event | Client retries; the idempotency record returns the stored result |
 
+The [recovery flows](failure-scenarios.md#recovery-flows) show each crash point end to end, from the failure to resumed normal operations.
+
 ## Data model
 
 Amounts are `bigint` minor units with a `currency` column. A currency table holds the exponent (2 for USD, 0 for JPY) and rounding rule. Floating point is never used for money. In code, `readonly record struct Money(long Minor, CurrencyCode Currency)` prevents mixing currencies.
@@ -636,7 +638,7 @@ Provider facts change, so recheck them at adapter time, and record results in th
 | Security and risk | PSP-hosted card fields, merchant PSP credentials, tenant isolation, secrets rotation, fast fraud rules with fallback | `Committed` |
 | Security and risk | Our own vault | Deferred ([D39](decisions.md#d39)) |
 | Payments | Client-side API access | `Committed`; client secret design `Open` until Stage 4 |
-| Operations | Metrics, logs, traces, alerts; runbooks and drills for 51 failure scenarios | `Committed` (none rehearsed) |
+| Operations | Metrics, logs, traces, alerts; runbooks, drills and a recovery flow for each of the 51 failure scenarios | `Committed` (none rehearsed) |
 | Merchant experience | Dashboard and checkout screens | `Proposed`: prototype outside this repo |
 | Operations | Staff console: payment search and detail, money actions through the API, audit log, staff roles with MFA | `Committed` ([console spec](superpowers/specs/2026-11-05-console-design.md)); first screens built in Stage 1 |
 | Payments | Retry on the same payment, customer-action state, cancel | `Committed` ([D16](decisions.md#d16), [D17](decisions.md#d17)) |

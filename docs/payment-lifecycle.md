@@ -345,7 +345,7 @@ An outbox event is written in the same transaction as every state change, and th
 - **Dispute after a full refund:** reject or defend, showing the refunded amount in evidence.
 - **Payouts:** query the PSP before retrying a payout.
 
-Other unusual cases are [edge cases](failure-scenarios.md#edge-cases) E6, E7, E8 and E10, and [failures](failure-scenarios.md#failure-catalogue) FS-07, FS-09 and FS-32.
+Other unusual cases are [edge cases](failure-scenarios.md#edge-cases) E6, E7, E8 and E10, and [failures](failure-scenarios.md#failure-catalogue) FS-07, FS-09 and FS-32, each with a [recovery flow](failure-scenarios.md#recovery-flows).
 
 ## Open questions
 

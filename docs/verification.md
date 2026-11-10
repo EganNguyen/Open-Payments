@@ -365,7 +365,7 @@ Update these counts as rows are ticked.
 | [Edge cases](failure-scenarios.md#edge-cases) (E1 to E29) | 29 | 0 |
 | [Runbooks](failure-scenarios.md#runbooks) (R1 to R7) | 7 | 0 (none rehearsed) |
 
-A scenario is verified only when its proof test has passed with a recorded run, and its runbook, if any, has been rehearsed.
+A scenario is verified only when its proof test has passed with a recorded run, and its runbook, if any, has been rehearsed. The [recovery flows](failure-scenarios.md#recovery-flows) show each scenario's path; a diagram is a design claim, and the proof test is still what verifies it.
 
 ## Build phases
 
