@@ -11,6 +11,7 @@ namespace OpenPayments.Console.Pages.Payments;
 public sealed class DetailModel(
     IConsoleReadStore store,
     ITimelineReader timeline,
+    IResolutionReader resolutions,
     IAuthorizationService authorization,
     IOptions<SearchOptions> options,
     TimeProvider time) : PageModel
@@ -28,6 +29,8 @@ public sealed class DetailModel(
     public StateView View { get; private set; } = null!;
 
     public IReadOnlyList<StaffAction> Actions { get; private set; } = [];
+
+    public Guid? OpenProposalId { get; private set; }
 
     public TimeSpan? Lag { get; private set; }
 
@@ -73,8 +76,14 @@ public sealed class DetailModel(
         Detail = await timeline.ReadAsync(payment.Id, payment.Currency, from, ct);
         View = StatePresentation.For(payment.State);
         var canAct = (await authorization.AuthorizeAsync(User, ConsolePolicies.CanAct)).Succeeded;
-        // Stage 1: REVIEW shows its wording and no resolution controls until C12.
-        Actions = StatePresentation.Shown(View, canAct, resolutionEnabled: false);
+        if (payment.State == "REVIEW")
+        {
+            OpenProposalId = (await resolutions.FindCaseAsync(payment.Id, null, null, ct))?.OpenProposalId;
+        }
+
+        Actions = StatePresentation.Shown(View, canAct, resolutionEnabled: true)
+            .Where(action => action != StaffAction.Approve || OpenProposalId is not null)
+            .ToList();
         return Page();
     }
 

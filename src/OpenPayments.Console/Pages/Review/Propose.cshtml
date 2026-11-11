@@ -1,0 +1,52 @@
+@page
+@model OpenPayments.Console.Pages.Review.ProposeModel
+@{
+    ViewData["Section"] = "attention";
+    ViewData["Title"] = "Record the PSP's answer";
+}
+<p><a href="/attention">Back to what needs attention</a></p>
+<h1>Record the PSP's answer</h1>
+
+@if (Model.Case is { } c)
+{
+    <p class="panel">
+        <span class="id">@c.PaymentId.ToString("D")</span> ·
+        @OpenPayments.Console.Presentation.MoneyFormat.Display(c.AmountMinor, c.Currency) @c.Currency
+    </p>
+}
+
+@if (Model.Error is not null)
+{
+    <div class="banner warning" role="alert" data-error>@Model.Error</div>
+}
+
+<form method="post" class="panel" data-propose-form>
+    <input type="hidden" name="PaymentId" value="@Model.PaymentId">
+    @if (Model.AttemptId is { } attempt)
+    {
+        <input type="hidden" name="AttemptId" value="@attempt">
+    }
+    @if (Model.RefundId is { } refund)
+    {
+        <input type="hidden" name="RefundId" value="@refund">
+    }
+    <input type="hidden" name="Kind" value="@Model.Kind">
+
+    <label for="outcome">What did the PSP say?
+        <select id="outcome" name="Outcome" required>
+            @foreach (var choice in Model.Outcomes)
+            {
+                <option value="@choice.Value">@choice.Label</option>
+            }
+        </select>
+    </label>
+    <label for="answer">The PSP's answer
+        <textarea id="answer" name="PspAnswer" required></textarea>
+    </label>
+    <label for="evidence">Evidence
+        <textarea id="evidence" name="Evidence" required></textarea>
+    </label>
+    <div class="actions">
+        <button type="submit" class="primary">Propose resolution</button>
+    </div>
+</form>

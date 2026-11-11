@@ -32,6 +32,9 @@ public sealed class PaymentApiOptions
     /// <summary>Each merchant's service credential, by merchant ID. From configuration only,
     /// never from a page.</summary>
     public Dictionary<string, string> Keys { get; set; } = new(StringComparer.OrdinalIgnoreCase);
+
+    /// <summary>The console's own key for the internal resolution route, from configuration.</summary>
+    public string? ResolutionKey { get; set; }
 }
 
 /// <summary>Refund, capture, void and cancel through the payment API, so the console has no
@@ -49,6 +52,75 @@ public sealed class PaymentApiClient(HttpClient http, IOptions<PaymentApiOptions
 
     public Task<ApiAnswer> RefundAsync(Guid merchantId, Guid paymentId, long amountMinor, string key, CancellationToken ct) =>
         SendAsync(merchantId, $"v1/payments/{paymentId:D}/refunds", new { amount_minor = amountMinor }, key, ct);
+
+    /// <summary>C5: apply an approved proposal through the internal route.</summary>
+    public async Task<ApiAnswer> ApplyResolutionAsync(Guid resolutionId, Guid approverId, CancellationToken ct)
+    {
+        var settings = options.Value;
+        if (string.IsNullOrEmpty(settings.ResolutionKey) || settings.BaseUrl is null)
+        {
+            return new ApiAnswer.Refused("no_credential");
+        }
+
+        using var request = new HttpRequestMessage(
+            HttpMethod.Post,
+            new Uri(settings.BaseUrl, $"internal/v1/resolutions/{resolutionId:D}/apply"))
+        {
+            Content = JsonContent.Create(new { approver_staff_id = approverId }),
+        };
+        request.Headers.Authorization = new System.Net.Http.Headers.AuthenticationHeaderValue(
+            "Bearer", settings.ResolutionKey);
+
+        using var timeout = CancellationTokenSource.CreateLinkedTokenSource(ct);
+        timeout.CancelAfter(settings.Timeout);
+        HttpResponseMessage response;
+        try
+        {
+            response = await http.SendAsync(request, timeout.Token);
+        }
+        catch (Exception exception) when (exception is OperationCanceledException or HttpRequestException)
+        {
+            return new ApiAnswer.StillChecking();
+        }
+
+        using (response)
+        {
+            var body = await response.Content.ReadAsStringAsync(ct);
+            return response.StatusCode switch
+            {
+                HttpStatusCode.OK => new ApiAnswer.Done(StateOf(body)),
+                HttpStatusCode.Conflict => new ApiAnswer.Conflict(ErrorOf(body)),
+                HttpStatusCode.Forbidden => new ApiAnswer.Refused(ErrorOf(body)),
+                HttpStatusCode.Unauthorized => new ApiAnswer.Refused("unauthenticated"),
+                HttpStatusCode.TooManyRequests or HttpStatusCode.ServiceUnavailable =>
+                    new ApiAnswer.Busy(response.Headers.RetryAfter?.Delta),
+                _ => new ApiAnswer.Refused(ErrorOf(body)),
+            };
+        }
+    }
+
+    private static string StateOf(string body)
+    {
+        using var document = JsonDocument.Parse(body);
+        return document.RootElement.TryGetProperty("state", out var state)
+            ? state.GetString() ?? string.Empty
+            : string.Empty;
+    }
+
+    private static string ErrorOf(string body)
+    {
+        try
+        {
+            using var document = JsonDocument.Parse(body);
+            return document.RootElement.TryGetProperty("error", out var error)
+                ? error.GetString() ?? "refused"
+                : "refused";
+        }
+        catch (JsonException)
+        {
+            return "refused";
+        }
+    }
 
     private async Task<ApiAnswer> SendAsync(Guid merchantId, string path, object body, string key, CancellationToken ct)
     {

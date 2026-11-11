@@ -183,6 +183,7 @@ public sealed class DbConsoleFactory : ConsoleFactory
         Settings["Console:Db:Replica"] = db.As(ConsoleDb.ReadUser, "replica");
         Settings["Console:Merchants:0"] = ConsoleDb.Merchant.ToString();
         Settings["Console:Api:Keys:" + ConsoleDb.Merchant.ToString("D")] = "test-service-key";
+        Settings["Console:Api:ResolutionKey"] = "test-console-key";
         configure?.Invoke(Settings);
     }
 }

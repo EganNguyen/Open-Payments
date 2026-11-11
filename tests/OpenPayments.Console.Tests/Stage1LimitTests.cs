@@ -11,7 +11,7 @@ namespace OpenPayments.Console.Tests;
 public sealed class Stage1LimitTests(ConsoleDb db)
 {
     [Fact]
-    public async Task Review_payment_shows_wording_with_no_resolution_controls()
+    public async Task Review_payment_shows_wording_and_offers_a_resolution()
     {
         await db.ResetAsync();
         var id = await db.SeedPaymentAsync("replica", "REVIEW");
@@ -22,8 +22,8 @@ public sealed class Stage1LimitTests(ConsoleDb db)
 
         Assert.Contains("Needs review", html, StringComparison.Ordinal);
         Assert.Contains("The PSP's answer disagrees with our record. A person must compare them.", System.Net.WebUtility.HtmlDecode(html), StringComparison.Ordinal);
-        Assert.DoesNotContain("data-action=", html, StringComparison.Ordinal);
-        Assert.DoesNotContain("Propose resolution", html, StringComparison.Ordinal);
+        Assert.Contains("data-action=\"propose\"", html, StringComparison.Ordinal);
+        Assert.Contains("Propose resolution", html, StringComparison.Ordinal);
     }
 
     [Fact]

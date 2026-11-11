@@ -1,0 +1,44 @@
+@page
+@model OpenPayments.Console.Pages.Review.DecideModel
+@{
+    ViewData["Section"] = "attention";
+    ViewData["Title"] = "Approve or reject";
+}
+<p><a href="/attention">Back to what needs attention</a></p>
+<h1>Approve or reject</h1>
+
+@if (Model.Proposal is { } p)
+{
+    <div class="panel">
+        <p><span class="id">@p.PaymentId.ToString("D")</span> · @OpenPayments.Console.Presentation.MoneyFormat.Display(p.AmountMinor, p.Currency) @p.Currency</p>
+        <p>Proposal: <strong>@OpenPayments.Console.Pages.Review.ResolutionChoices.Label(p.Outcome)</strong> · @p.State</p>
+        <p>PSP answer: <span data-psp-answer>@p.PspAnswer</span></p>
+        <p>Evidence: <span data-evidence>@p.Evidence</span></p>
+    </div>
+}
+
+@if (Model.Notice is not null)
+{
+    <div class="banner @Model.NoticeTone" role="status" data-notice>@Model.Notice</div>
+}
+
+@if (Model.OwnProposal && !Model.Decided)
+{
+    <div class="banner warning" role="status" data-own-proposal>
+        You proposed this; a different approver must decide it.
+    </div>
+}
+
+@if (!Model.Decided)
+{
+    <form method="post" class="panel" data-decide-form>
+        <input type="hidden" name="Id" value="@Model.Id">
+        <label for="reason">Reason
+            <textarea id="reason" name="Reason"></textarea>
+        </label>
+        <div class="actions">
+            <button type="submit" name="Decision" value="approve" class="primary" disabled="@Model.OwnProposal">Approve</button>
+            <button type="submit" name="Decision" value="reject" class="danger">Reject</button>
+        </div>
+    </form>
+}

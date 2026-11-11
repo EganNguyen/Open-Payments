@@ -35,7 +35,10 @@ public sealed class FakePaymentApi : HttpMessageHandler
     protected override async Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)
     {
         var body = request.Content is null ? string.Empty : await request.Content.ReadAsStringAsync(cancellationToken);
-        Calls.Enqueue((request.RequestUri!.AbsolutePath, request.Headers.GetValues("Idempotency-Key").Single(), body));
+        Calls.Enqueue((
+            request.RequestUri!.AbsolutePath,
+            request.Headers.TryGetValues("Idempotency-Key", out var keys) ? keys.Single() : string.Empty,
+            body));
         if (_answers.TryDequeue(out var answer))
         {
             return answer(request);

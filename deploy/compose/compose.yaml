@@ -104,6 +104,7 @@ services:
     environment:
       ASPNETCORE_URLS: http://+:8080
       DATABASE_URL: postgres://op_app:op_local_only@pgbouncer:6432/openpayments
+      Internal__Enabled: "true"
       PSP_URL: http://mock-psp:8080
       INFLIGHT_CAP: "500"
     depends_on:

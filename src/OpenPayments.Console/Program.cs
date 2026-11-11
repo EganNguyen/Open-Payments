@@ -80,6 +80,10 @@ builder.Services.AddSingleton<IQueueReader>(services => new QueueReader(
     services.GetRequiredService<Microsoft.Extensions.Options.IOptions<AttentionOptions>>(),
     services.GetRequiredService<Microsoft.Extensions.Options.IOptions<SearchOptions>>(),
     services.GetRequiredService<Microsoft.Extensions.Options.IOptions<OpenPayments.Console.Pages.Audit.AuditOptions>>()));
+builder.Services.AddSingleton<IResolutionReader>(services => new ResolutionReader(
+    services.GetRequiredKeyedService<NpgsqlDataSource>("replica")));
+builder.Services.AddSingleton<IResolutionWriter>(services => new ResolutionWriter(
+    services.GetRequiredKeyedService<NpgsqlDataSource>("primary")));
 builder.Services.AddScoped<AttentionBadge>();
 builder.Services.Configure<OpenPayments.Console.Actions.PaymentApiOptions>(configuration.GetSection("Console:Api"));
 builder.Services.AddHttpClient<OpenPayments.Console.Actions.PaymentApiClient>();

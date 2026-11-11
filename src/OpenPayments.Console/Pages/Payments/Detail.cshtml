@@ -53,7 +53,13 @@
             @foreach (var action in Model.Actions)
             {
                 var name = OpenPayments.Console.Pages.Payments.DetailModel.ActionName(action);
-                <a class="button @(action == StaffAction.Refund || action == StaffAction.Capture ? "primary" : null)" data-action="@name" href="/Payments/@p.Id.ToString("D")/Action/@name">@OpenPayments.Console.Pages.Payments.DetailModel.ActionLabel(action, p.State)</a>
+                var href = action switch
+                {
+                    StaffAction.ProposeResolution => $"/Review/Propose?id={p.Id:D}",
+                    StaffAction.Approve when Model.OpenProposalId is { } open => $"/Review/Decide?id={open:D}",
+                    _ => $"/Payments/{p.Id:D}/Action/{name}",
+                };
+                <a class="button @(action == StaffAction.Refund || action == StaffAction.Capture ? "primary" : null)" data-action="@name" href="@href">@OpenPayments.Console.Pages.Payments.DetailModel.ActionLabel(action, p.State)</a>
             }
         </div>
     }

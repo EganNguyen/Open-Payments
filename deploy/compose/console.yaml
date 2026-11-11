@@ -52,6 +52,7 @@ services:
       # D55: Keycloak reports the TOTP step as acr "mfa" (level 2), not in amr.
       Console__Oidc__RequiredAcr: mfa
       Console__Api__BaseUrl: http://api:8080/
+      Console__Api__ResolutionKey: console-resolve-local
       # Throughput and reliability panels. Empty or unreachable leaves those panels unavailable;
       # lifecycle and correctness still read from the replica.
       Console__Metrics__PrometheusUrl: http://prometheus:9090

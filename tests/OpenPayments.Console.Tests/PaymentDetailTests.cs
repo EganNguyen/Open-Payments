@@ -25,7 +25,8 @@ public sealed partial class PaymentDetailTests(ConsoleDb db)
 
         var view = StatePresentation.For(state);
         Assert.Contains(view.Wording, System.Net.WebUtility.HtmlDecode(html), StringComparison.Ordinal);
-        var expected = StatePresentation.Shown(view, canAct: true, resolutionEnabled: false)
+        var expected = StatePresentation.Shown(view, canAct: true, resolutionEnabled: true)
+            .Where(action => action != StaffAction.Approve)
             .Select(OpenPayments.Console.Pages.Payments.DetailModel.ActionName);
         Assert.Equal(expected, ActionAttribute().Matches(html).Select(match => match.Groups[1].Value));
     }
