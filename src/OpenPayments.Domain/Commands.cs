@@ -114,4 +114,12 @@ public abstract record PaymentCommand(DateTimeOffset OccurredAt)
 
     public sealed record LateApprovalReversed(AttemptId AttemptId, DateTimeOffset OccurredAt)
         : PaymentCommand(OccurredAt);
+
+    /// <summary>D18: a settlement line matched an operation. It never changes the payment state.</summary>
+    public sealed record SettlementMatched(
+        AttemptId? AttemptId,
+        RefundId? RefundId,
+        Money Amount,
+        Guid TransactionId,
+        DateTimeOffset OccurredAt) : PaymentCommand(OccurredAt);
 }

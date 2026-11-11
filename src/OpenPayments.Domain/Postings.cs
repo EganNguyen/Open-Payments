@@ -60,6 +60,7 @@ public static class Posting
     public const string MerchantPayable = "merchant_payable";
     public const string RefundReserved = "refund_reserved";
     public const string PspRefundPayable = "psp_refund_payable";
+    public const string SettlementBank = "settlement_bank";
 
     public static Guid Id(Guid baseId, string posting)
     {
@@ -121,6 +122,28 @@ public static class Posting
             amount,
             (RefundReserved, 'D', "real"),
             (MerchantPayable, 'C', "real"));
+
+    /// <summary>D21: the PSP pays the merchant; this clears the receivable the capture posted.</summary>
+    public static IReadOnlyList<LedgerLine> SettlementOfCapture(
+        Guid transactionId, AttemptId attempt, Money amount) =>
+        Transaction(
+            "settlement",
+            transactionId,
+            attempt.Value,
+            amount,
+            (SettlementBank, 'D', "real"),
+            (PspReceivable, 'C', "real"));
+
+    /// <summary>D21: a settled refund clears the payable the refund confirmation posted.</summary>
+    public static IReadOnlyList<LedgerLine> SettlementOfRefund(
+        Guid transactionId, RefundId refund, Money amount) =>
+        Transaction(
+            "settlement",
+            transactionId,
+            refund.Value,
+            amount,
+            (PspRefundPayable, 'D', "real"),
+            (SettlementBank, 'C', "real"));
 
     public static OutboxEvent Event(Guid baseId, string eventType, long sequence, Guid aggregateId) =>
         new(Id(baseId, "event:" + eventType), eventType, sequence, 1, aggregateId);

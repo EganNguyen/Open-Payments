@@ -50,6 +50,15 @@ groups:
           severity: ticket
         annotations:
           summary: "Keys resolved more than 24 h ago are still present; expiry is behind (D19, D64)."
+  - name: open-payments-settlement
+    rules:
+      - alert: SettlementDiscrepancy
+        expr: op_settlement_discrepancies_count{kind=~"line|missing"} > 0
+        for: 5m
+        labels:
+          severity: page
+        annotations:
+          summary: "Settlement has an unmatched, mismatched or missing line; the clearing position can't settle (C40, D18)."
   - name: open-payments-psp
     rules:
       - alert: PspBreakerOpen

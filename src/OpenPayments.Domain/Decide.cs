@@ -15,7 +15,9 @@ public static class PaymentRules
         ArgumentNullException.ThrowIfNull(command);
         ArgumentNullException.ThrowIfNull(rules);
 
-        if (current.IsFinal)
+        // D18: a settlement line never changes state, so it is accepted after a payment is final
+        // (a refund can settle after the payment already reached REFUNDED).
+        if (current.IsFinal && command is not PaymentCommand.SettlementMatched)
         {
             return new TransitionResult.Rejected("invalid_state");
         }
@@ -47,6 +49,7 @@ public static class PaymentRules
             PaymentCommand.LateApprovalReversed reversed => ReverseLateApproval(current, reversed),
             PaymentCommand.Escalate escalate => Escalate(current, escalate),
             PaymentCommand.RefundEscalate escalate => EscalateRefund(current, escalate),
+            PaymentCommand.SettlementMatched settlement => Settle(current, settlement),
             _ => new TransitionResult.Rejected("unknown_command"),
         };
     }
@@ -677,6 +680,50 @@ public static class PaymentRules
         return Accept(
             PaymentState.Review,
             new AttemptChange(command.AttemptId, command.Operation, AttemptState.Review));
+    }
+
+    private static TransitionResult Settle(
+        PaymentSnapshot current,
+        PaymentCommand.SettlementMatched command)
+    {
+        if (command.RefundId is { } refundId)
+        {
+            if (current.Refund is null || current.Refund.Id != refundId)
+            {
+                return new TransitionResult.Rejected("refund_not_found");
+            }
+
+            if (current.Refund.State != RefundState.Succeeded)
+            {
+                return new TransitionResult.Rejected("refund_not_settled");
+            }
+
+            return Accept(
+                current.State,
+                ledger: Posting.SettlementOfRefund(command.TransactionId, refundId, command.Amount));
+        }
+
+        if (command.AttemptId is not { } attemptId)
+        {
+            return new TransitionResult.Rejected("invalid_operation");
+        }
+
+        if (current.Attempt is null || current.Attempt.Id != attemptId)
+        {
+            return new TransitionResult.Rejected("attempt_not_found");
+        }
+
+        if (current.Attempt.State != AttemptState.Succeeded
+            || current.State is not (PaymentState.Captured
+                or PaymentState.PartiallyRefunded
+                or PaymentState.Refunded))
+        {
+            return new TransitionResult.Rejected("attempt_not_settled");
+        }
+
+        return Accept(
+            current.State,
+            ledger: Posting.SettlementOfCapture(command.TransactionId, attemptId, command.Amount));
     }
 
     private static TransitionResult EscalateRefund(

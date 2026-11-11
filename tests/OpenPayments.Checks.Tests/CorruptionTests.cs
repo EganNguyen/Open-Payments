@@ -356,6 +356,29 @@ public sealed class CorruptionTests : IClassFixture<DbFixture>
     }
 
     [Fact]
+    public async Task CK8_detects_a_late_file_and_fails_on_zero_rows()
+    {
+        await _fixture.ResetAsync();
+        await SeedCleanFixtureAsync();
+        await ExecuteAsync($"""
+            insert into settlement_files
+              (psp_account_id, file_id, business_date, state, lines_total, received_at)
+            values ('{PspAccount}', 'file-late', current_date, 'receiving', 1,
+                    now() - interval '25 hours');
+            insert into settlement_lines
+              (psp, psp_account_id, file_id, line_no, kind, amount_minor, currency, state, received_at)
+            values ('mock', '{PspAccount}', 'file-late', 1, 'capture', 100, 'USD', 'RECEIVED',
+                    now() - interval '25 hours');
+            """);
+
+        var check = (await RunChecksAsync("phase2", BaselineEffect()))
+            .Single(result => result.Check == "CK8");
+
+        Assert.False(check.Passed);
+        Assert.Contains(check.SampleIds, id => id.StartsWith("file:", StringComparison.Ordinal));
+    }
+
+    [Fact]
     public async Task Every_check_fails_on_zero_rows()
     {
         await _fixture.ResetAsync();

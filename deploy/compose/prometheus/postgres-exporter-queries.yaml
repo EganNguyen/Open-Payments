@@ -85,3 +85,22 @@ op_expiry_backlog:
     - oldest_age_seconds:
         usage: GAUGE
         description: Age of the oldest eligible row.
+
+# D18/C40: settlement inputs that cannot settle the clearing position. A line is unmatched or
+# mismatched, or an operation has no line past its settlement lag. These page.
+op_settlement_discrepancies:
+  query: |
+    select 'line' as kind, count(*)::float8 as count
+    from settlement_lines
+    where state in ('UNMATCHED', 'MISMATCH')
+    union all
+    select 'missing' as kind, count(*)::float8
+    from settlement_missing
+    where found_at is null
+  metrics:
+    - kind:
+        usage: LABEL
+        description: line or missing.
+    - count:
+        usage: GAUGE
+        description: Open settlement discrepancies.
