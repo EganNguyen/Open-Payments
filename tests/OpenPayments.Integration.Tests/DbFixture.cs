@@ -177,6 +177,20 @@ public sealed class DbFixture : IAsyncLifetime
         return connection;
     }
 
+    public async Task<string?> TextAsync(string sql)
+    {
+        await using var connection = await OpenAdminAsync();
+        await using var command = new NpgsqlCommand(sql, connection);
+        return (string?)await command.ExecuteScalarAsync();
+    }
+
+    public async Task<Guid> GuidAsync(string sql)
+    {
+        await using var connection = await OpenAdminAsync();
+        await using var command = new NpgsqlCommand(sql, connection);
+        return (Guid)(await command.ExecuteScalarAsync())!;
+    }
+
     public async Task<long> ScalarAsync(string sql)
     {
         await using var connection = await OpenAdminAsync();

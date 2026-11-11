@@ -82,6 +82,7 @@ public sealed class AcceptanceFixture : IAsyncLifetime
         {
             builder.UseSetting("DATABASE_URL", AppConnectionString);
             builder.UseSetting("INFLIGHT_CAP", "500");
+            builder.UseSetting("Internal:Enabled", "true");
             builder.ConfigureLogging(logging => logging.AddProvider(Logs));
             builder.ConfigureServices(services =>
             {
@@ -199,6 +200,13 @@ public sealed class AcceptanceFixture : IAsyncLifetime
         var connection = new NpgsqlConnection(AdminConnectionString);
         await connection.OpenAsync();
         return connection;
+    }
+
+    public async Task<string?> TextAsync(string sql)
+    {
+        await using var connection = await OpenAdminAsync();
+        await using var command = new NpgsqlCommand(sql, connection);
+        return (string?)await command.ExecuteScalarAsync();
     }
 
     public async Task<long> CountAsync(string sql)

@@ -6,7 +6,7 @@ using OpenPayments.Transitions;
 
 namespace OpenPayments.Api;
 
-public sealed record ApiKeyIdentity(MerchantId MerchantId, string Mode);
+public sealed record ApiKeyIdentity(MerchantId MerchantId, string Mode, IReadOnlyList<string> Scopes);
 
 public sealed class ApiKeyAuthenticator(TxRunner runner)
 {
@@ -24,12 +24,12 @@ public sealed class ApiKeyAuthenticator(TxRunner runner)
         var hash = SHA256.HashData(Encoding.UTF8.GetBytes(header["Bearer ".Length..]));
         await using var connection = await runner.DataSource.OpenConnectionAsync(cancellationToken);
         await using var command = new NpgsqlCommand(
-            "select merchant_id, mode from api_keys where key_hash = @hash and revoked_at is null",
+            "select merchant_id, mode, scopes from api_keys where key_hash = @hash and revoked_at is null",
             connection);
         command.Parameters.AddWithValue("hash", hash);
         await using var reader = await command.ExecuteReaderAsync(cancellationToken);
         return await reader.ReadAsync(cancellationToken)
-            ? new ApiKeyIdentity(new MerchantId(reader.GetGuid(0)), reader.GetString(1))
+            ? new ApiKeyIdentity(new MerchantId(reader.GetGuid(0)), reader.GetString(1), reader.GetFieldValue<string[]>(2))
             : null;
     }
 }

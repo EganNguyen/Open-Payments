@@ -41,6 +41,7 @@ builder.Services.AddSingleton<CanonicalLog>();
 builder.Services.AddSingleton<PaymentMetrics>();
 builder.Services.AddSingleton<RequestTelemetry>();
 builder.Services.AddSingleton<PaymentFlow>();
+builder.Services.AddSingleton<ResolutionStore>();
 builder.Services.AddHttpClient("psp", client =>
 {
     client.BaseAddress = new Uri(
@@ -316,6 +317,8 @@ app.MapPost("/v1/payments/{id:guid}/cancel", async (
         new PaymentId(id), identity!.MerchantId, key, hash, context.RequestAborted);
     return ToResult(answer, context);
 });
+
+app.MapInternalRoutes();
 
 app.Run();
 
