@@ -28,6 +28,9 @@ public sealed class IndexModel(IQueueReader queues, IOptions<SearchOptions> sear
 
     public IReadOnlyList<QueueView> Clear => Result is null ? [] : [.. Result.Queues.Where(q => q.Count == 0)];
 
+    public int UnresolvedCount =>
+        Result?.Queues.FirstOrDefault(q => q.Queue == Queue.Unresolved)?.Count ?? 0;
+
     /// <summary>When the data was true: the replica's lag before now.</summary>
     public DateTimeOffset CheckedAt => Now - (Result?.Lag ?? TimeSpan.Zero);
 

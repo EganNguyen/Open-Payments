@@ -20,6 +20,11 @@ public sealed class DetailModel(
 
     [BindProperty(SupportsGet = true)] public int Fresh { get; set; }
 
+    /// <summary>N3: which Needs attention queue sent the person here.</summary>
+    [BindProperty(SupportsGet = true)] public string? From { get; set; }
+
+    public string? CasePanel { get; private set; }
+
     public bool Missing { get; private set; }
 
     public PaymentRow Payment { get; private set; } = null!;
@@ -73,6 +78,15 @@ public sealed class DetailModel(
         }
 
         Payment = payment;
+        CasePanel = From switch
+        {
+            "review" => "This case needs review: compare our record with the PSP's answer, then propose a resolution.",
+            "approval" => "A proposed resolution is waiting for a different approver.",
+            "unresolved" => "The outcome is unknown. We're checking automatically; don't start a new charge.",
+            "expiring" => "This authorization ends soon. Capture or void it before the PSP expires it.",
+            "orphan" => "An action has no recorded result. Check the PSP before acting again.",
+            _ => null,
+        };
         Detail = await timeline.ReadAsync(payment.Id, payment.Currency, from, ct);
         View = StatePresentation.For(payment.State);
         var canAct = (await authorization.AuthorizeAsync(User, ConsolePolicies.CanAct)).Succeeded;

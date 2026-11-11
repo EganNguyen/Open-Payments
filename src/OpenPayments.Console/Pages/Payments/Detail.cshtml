@@ -24,6 +24,11 @@
 
 <partial name="_DataAsOf" model="(Model.Lag, Model.Now)" />
 
+@if (Model.CasePanel is not null)
+{
+    <div class="banner warning" data-case-panel>@Model.CasePanel</div>
+}
+
 <div class="panel">
     <p><span class="status @Model.View.ToneClass" data-state="@p.State"><svg class="icon" aria-hidden="true"><use href="/icons/ledger.svg#@Model.View.Icon"></use></svg>@Model.View.Label</span></p>
     @if (!string.IsNullOrEmpty(Model.View.Wording))

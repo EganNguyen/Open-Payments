@@ -35,6 +35,8 @@ public sealed record QueueView(Queue Queue, IReadOnlyList<AttentionRow> Rows, in
 
 public sealed record AttentionQueues(IReadOnlyList<QueueView> Queues, TimeSpan Lag);
 
+public sealed record QueuePage(IReadOnlyList<AttentionRow> Rows, int Count);
+
 public interface IQueueReader
 {
     /// <summary>Every queue, read from the replica. Throws <see cref="ReplicaUnavailableException"/>.</summary>
@@ -42,6 +44,9 @@ public interface IQueueReader
 
     /// <summary>Rows this person can act on, by role. Zero for a role with no money action.</summary>
     Task<int> CountActionableAsync(Staff staff, DateTimeOffset now, CancellationToken ct);
+
+    /// <summary>N3: one queue, oldest first, 50 rows at a time.</summary>
+    Task<QueuePage> ReadQueueAsync(Queue queue, int page, CancellationToken ct);
 }
 
 /// <summary>Needs attention settings, all configuration.</summary>
@@ -57,6 +62,11 @@ public sealed class AttentionOptions
 
     /// <summary>Counts stop here, so every count query is bounded.</summary>
     public const int CountCap = 1000;
+
+    /// <summary>N4: from this many unresolved operations, the page says to check the PSP's status page.</summary>
+    public int ManyUnresolved { get; set; } = 50;
+
+    public string? PspStatusUrl { get; set; }
 }
 
 public sealed class QueueReader(
@@ -245,6 +255,146 @@ public sealed class QueueReader(
             new(Queue.Expiring, Top(rows[Queue.Expiring]), (int)counts[3]),
         };
         return new AttentionQueues(views, lag);
+    }
+
+    public async Task<QueuePage> ReadQueueAsync(Queue queue, int page, CancellationToken ct)
+    {
+        if (queue == Queue.Orphan)
+        {
+            var intents = await audit.FindOrphanIntentsAsync(auditOptions.Value.IntentLimit, ct);
+            var rows = intents.Where(i => i.PaymentId is not null)
+                .Select(i => new AttentionRow(
+                    Queue.Orphan, i.PaymentId!.Value, Guid.Empty, "action:" + i.Action, 0, string.Empty,
+                    i.CreatedAt, null, i.StaffId, null, false))
+                .OrderBy(row => row.At)
+                .ToList();
+            var emails = await EmailsAsync([.. rows.Select(row => row.Actor!.Value)], ct);
+            return new QueuePage(
+                [.. rows.Skip((page - 1) * 50).Take(50).Select(row => row with { ActorEmail = emails.GetValueOrDefault(row.Actor!.Value) })],
+                rows.Count);
+        }
+
+        var sql = QueuePageSql[queue];
+        var settings = options.Value;
+        await using var connection = await replica.OpenConnectionAsync(ct);
+        await using var countCommand = new NpgsqlCommand(sql.Count, connection);
+        AddQueueParameters(countCommand, settings, null);
+        var count = Convert.ToInt32(await countCommand.ExecuteScalarAsync(ct) ?? 0);
+
+        await using var command = new NpgsqlCommand(sql.Rows, connection);
+        AddQueueParameters(command, settings, null);
+        command.Parameters.AddWithValue("offset", (page - 1) * 50);
+        command.Parameters.AddWithValue("limit", 50);
+        var list = new List<AttentionRow>();
+        try
+        {
+            await using var reader = await command.ExecuteReaderAsync(ct);
+            while (await reader.ReadAsync(ct))
+            {
+                list.Add(ReadRow(queue, reader));
+            }
+        }
+        catch (PostgresException exception) when (exception.SqlState == PostgresErrorCodes.QueryCanceled)
+        {
+            throw new ReadTimeoutException(exception);
+        }
+
+        return new QueuePage(list, count);
+    }
+
+    private static readonly IReadOnlyDictionary<Queue, (string Rows, string Count)> QueuePageSql =
+        new Dictionary<Queue, (string Rows, string Count)>
+        {
+            [Queue.Review] = (
+                """
+                select * from (
+                  select p.id, p.merchant_id, 'payment', p.amount_minor, p.currency, p.updated_at,
+                         null::text, null::uuid, False
+                    from payments p where p.state = 'REVIEW' and p.merchant_id = any(@merchants)
+                  union all
+                  select p.id, p.merchant_id, 'attempt:' || a.operation, p.amount_minor, p.currency,
+                         a.created_at, null::text, null::uuid, False
+                    from payment_attempts a join payments p on p.id = a.payment_id
+                   where a.state = 'REVIEW' and a.merchant_id = any(@merchants)
+                  union all
+                  select p.id, p.merchant_id, 'refund', f.amount_minor, p.currency, f.created_at,
+                         null::text, null::uuid, False
+                    from refunds f join payments p on p.id = f.payment_id
+                   where f.state = 'REVIEW' and f.merchant_id = any(@merchants)
+                ) q order by q.updated_at, q.id limit @limit offset @offset
+                """,
+                """
+                select
+                  (select count(*) from (select 1 from payments where state = 'REVIEW' and merchant_id = any(@merchants) limit 1001) x)
+                  + (select count(*) from (select 1 from payment_attempts where state = 'REVIEW' and merchant_id = any(@merchants) limit 1001) x)
+                  + (select count(*) from (select 1 from refunds where state = 'REVIEW' and merchant_id = any(@merchants) limit 1001) x)
+                """),
+            [Queue.Unresolved] = (
+                """
+                select * from (
+                  select p.id, p.merchant_id, 'payment', p.amount_minor, p.currency, p.updated_at,
+                         p.state, null::uuid, False
+                    from payments p
+                   where p.state in ('PSP_PENDING','UNKNOWN') and p.merchant_id = any(@merchants)
+                     and p.updated_at < @cutoff
+                  union all
+                  select p.id, p.merchant_id, 'attempt:' || a.operation, p.amount_minor, p.currency,
+                         a.created_at, a.state, null::uuid, False
+                    from payment_attempts a join payments p on p.id = a.payment_id
+                   where a.state in ('PENDING','UNKNOWN') and a.operation in ('capture','void')
+                     and a.merchant_id = any(@merchants) and a.created_at < @cutoff
+                  union all
+                  select p.id, p.merchant_id, 'refund', f.amount_minor, p.currency, f.created_at,
+                         f.state, null::uuid, False
+                    from refunds f join payments p on p.id = f.payment_id
+                   where f.state in ('PENDING','UNKNOWN') and f.merchant_id = any(@merchants)
+                     and f.created_at < @cutoff
+                ) q order by q.updated_at, q.id limit @limit offset @offset
+                """,
+                """
+                select
+                  (select count(*) from (select 1 from payments where state in ('PSP_PENDING','UNKNOWN') and merchant_id = any(@merchants) and updated_at < @cutoff limit 1001) x)
+                  + (select count(*) from (select 1 from payment_attempts where state in ('PENDING','UNKNOWN') and operation in ('capture','void') and merchant_id = any(@merchants) and created_at < @cutoff limit 1001) x)
+                  + (select count(*) from (select 1 from refunds where state in ('PENDING','UNKNOWN') and merchant_id = any(@merchants) and created_at < @cutoff limit 1001) x)
+                """),
+            [Queue.Expiring] = (
+                """
+                select p.id, p.merchant_id, 'payment', p.amount_minor, p.currency, p.authorized_until,
+                       null::text, null::uuid, False
+                  from payments p
+                 where p.state = 'AUTHORIZED' and p.merchant_id = any(@merchants)
+                   and p.authorized_until < @until
+                 order by p.authorized_until limit @limit offset @offset
+                """,
+                "select count(*) from (select 1 from payments where state = 'AUTHORIZED' and merchant_id = any(@merchants) and authorized_until < @until limit 1001) x"),
+            [Queue.Approval] = (
+                """
+                select p.id, p.merchant_id, r.kind, p.amount_minor, p.currency, r.created_at,
+                       r.outcome, r.proposed_by, False
+                  from console.review_resolutions r join payments p on p.id = r.payment_id
+                 where r.state = 'proposed' and p.merchant_id = any(@merchants)
+                 order by r.created_at limit @limit offset @offset
+                """,
+                "select count(*) from (select 1 from console.review_resolutions r join payments p on p.id = r.payment_id where r.state = 'proposed' and p.merchant_id = any(@merchants) limit 1001) x"),
+        };
+
+    private void AddQueueParameters(NpgsqlCommand command, AttentionOptions settings, Guid? me)
+    {
+        command.Parameters.AddWithValue("merchants", search.Value.Merchants.ToArray());
+        if (command.CommandText.Contains("@cutoff", StringComparison.Ordinal))
+        {
+            command.Parameters.AddWithValue("cutoff", DateTimeOffset.UtcNow - settings.UnresolvedAfter);
+        }
+
+        if (command.CommandText.Contains("@until", StringComparison.Ordinal))
+        {
+            command.Parameters.AddWithValue("until", DateTimeOffset.UtcNow + settings.ExpiringWithin);
+        }
+
+        if (me is { } id)
+        {
+            command.Parameters.AddWithValue("me", id);
+        }
     }
 
     public async Task<int> CountActionableAsync(Staff staff, DateTimeOffset now, CancellationToken ct)

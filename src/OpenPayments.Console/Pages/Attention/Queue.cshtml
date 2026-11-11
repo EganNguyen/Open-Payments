@@ -1,0 +1,43 @@
+@page "/attention/{queue}"
+@model OpenPayments.Console.Pages.Attention.QueueModel
+@using OpenPayments.Console.Data
+@using OpenPayments.Console.Presentation
+@{
+    ViewData["Section"] = "attention";
+    ViewData["Title"] = Model.Title;
+}
+<p><a href="/attention#q-@Model.Key">Back to what needs attention</a></p>
+<h1>@Model.Title, @Model.Result.Count</h1>
+@if (Model.Result.Rows.Count == 0)
+{
+    <p class="panel">Nothing in this queue.</p>
+}
+else
+{
+    <ul class="qrows">
+        @foreach (var row in Model.Result.Rows)
+        {
+            <li>
+                <a class="qrow" href="/Payments/@row.PaymentId.ToString("D")?from=@Model.Key" data-row="@row.PaymentId.ToString("D")">
+                    @if (row.Queue != Queue.Orphan)
+                    {
+                        <span class="amount">@MoneyFormat.DisplayWithCode(row.AmountMinor, row.Currency)</span>
+                    }
+                    <span class="reason">@AttentionPresentation.Reason(row, Model.Now)</span>
+                    <span class="mono">@row.PaymentId.ToString("D")[..8]…</span>
+                </a>
+            </li>
+        }
+    </ul>
+    <nav class="actions" aria-label="Pages">
+        @if (Model.PageNumber > 1)
+        {
+            <a class="button" href="/attention/@Model.Key?page=@(Model.PageNumber - 1)">Newer</a>
+        }
+        <span class="muted">Page @Model.PageNumber of @Model.Pages</span>
+        @if (Model.PageNumber < Model.Pages)
+        {
+            <a class="button" href="/attention/@Model.Key?page=@(Model.PageNumber + 1)">Older</a>
+        }
+    </nav>
+}

@@ -134,6 +134,28 @@ public sealed class BrowserTests(ConsoleDb db, Browsers browsers)
     }
 
     [Fact]
+    public async Task Attention_summary_and_first_row_fit_812_at_390()
+    {
+        await using var site = await SiteAsync();
+        await using var context = await ContextAsync(site, 390, ColorScheme.Light);
+        var tab = await context.NewPageAsync();
+        await tab.GotoAsync(site.Url("/attention"));
+
+        var bottom = await tab.EvaluateAsync<double>(
+            """
+            () => {
+              const summary = document.querySelector('nav.summary');
+              const first = document.querySelector('[data-row]');
+              return Math.max(
+                summary ? summary.getBoundingClientRect().bottom : 0,
+                first ? first.getBoundingClientRect().bottom : 0);
+            }
+            """);
+
+        Assert.True(bottom <= 812, $"Needs attention's first row ends at {bottom} px, past 812 px.");
+    }
+
+    [Fact]
     public async Task Double_tap_on_confirm_causes_one_action()
     {
         await using var site = await SiteAsync();

@@ -36,12 +36,24 @@ else
 {
     <div class="checked">
         <p class="muted">Checked <time datetime="@Model.CheckedAt.UtcDateTime.ToString("O")" title="@Model.CheckedAt.UtcDateTime.ToString("yyyy-MM-dd HH:mm:ss") UTC">@Model.CheckedAt.UtcDateTime.ToString("HH:mm:ss") UTC</time></p>
-        <a class="button" href="/">Refresh</a>
+        <a class="button" href="/attention" hx-get="/attention" hx-select="#queues" hx-target="#queues" hx-swap="outerHTML">Refresh</a>
     </div>
 
+    <div id="queues" aria-live="polite">
     @if (Model.Result is not null)
     {
         <partial name="_DataAsOf" model="((TimeSpan?)Model.Result.Lag, Model.Now)" />
+    }
+
+    @if (Model.UnresolvedCount >= Model.Settings.ManyUnresolved)
+    {
+        <div class="banner warning" data-many-unresolved role="status">
+            Many operations are unresolved. Check the PSP's status before acting.
+            @if (Model.Settings.PspStatusUrl is { Length: > 0 } status)
+            {
+                <a href="@status" rel="noopener noreferrer">PSP status</a>
+            }
+        </div>
     }
 
     <nav class="summary" aria-label="Queues">
@@ -117,4 +129,5 @@ else
     {
         <p class="muted clear">Also clear: @string.Join(", ", Model.Clear.Select(q => AttentionPresentation.For(q.Queue).Title)).</p>
     }
+    </div>
 }
